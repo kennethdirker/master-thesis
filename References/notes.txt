@@ -1,0 +1,135 @@
+=========================== Project =======================
+
+Calibration pipeline:
+    ASTRON scans the universe with LOFAR (LOw-Frequency-ARray), a network of 
+    antennas distributed all over Europe. The main radar installation
+    is located in Drenthe, near Exloo.
+    The readings from the different stations all need to be unified in order
+    to be of use. The data is unified by executing a pipeline of different
+    calibration steps, which is executed on a server cluster (I think DAS 6?).
+
+    A small description of how data is computed:
+    The readings from LOFAR first get saved to the Long Term Archive, which
+    is a shared filesystem contained on harddrives. Then, the data is
+    processed/calibrated on their server cluster. The processing pipeline is
+    described in a language called CWL. Toil, a CWL workflow runner, is than
+    used to execute the pipeline and process the data. To note, the data is
+    not streamed into the pipeline! Data is calibrated in batches. These batches each contain many GB of data ASTRON 
+    would like to make the pipeline streamed, but this is future work.
+    After each calculation step, the newly processed data is saved back
+    to the shared filesystem, instead of sending the data directly to the 
+    next calibration step. This is an artefact of using Toil, which spins
+    up tasks for each step. 
+    This pipeline is available on the LINC repository on ASTRON's github.
+    
+    Instead of starting a task for every step, ASTRON would like to see if 
+    some steps can be combined into single tasks, omitting unnecessary I/O.
+    Optimizing the pipeline by combining CWL artefacts might be possible, 
+    but combined with the desire to transition the pipeline language to 
+    something more flexible and modern than CWL, the preferred action of ASTRON
+    is to transform their CWL pipeline to an entirely different 
+    solution. What this solution may be needs to be researched.
+
+    The goal of this thesis project is to find a good alternative pipelining 
+    solution to CWL and to develop a compiler that can fully translate the 
+    CWL pipeline codebase to this new solution.
+
+    Research questions:
+        ? What characteristics make a solution suitable to replace CWL/Toil at ASTRON?
+        ? What alternatives to CWL are suitable to be used by ASTRON as workflow description format / workflow manager?
+        ? How can existing CWL code be used or transformed for the new alternative?
+        ? How do we proof that workflow functionality is preserved in the new alternative? 
+        
+
+
+    Questions to be asked in general: 
+        ? What are the limitations posed by CWL/Toil that ASTRON wants to work around?
+        ? What are the CWL specifications that need to be ported to the new solution?
+        ? What characteristics make a solution suitable to replace CWL?
+        ? What alternatives to CWL exist?
+        ? How do we transform CWL to the new solution?
+        ? How do we proof that the conversion is 100% sound?
+        ? Are there any limitations to the solution?
+
+    CWL alternatives:
+        - DASK
+        - Parsl
+        - Snakemake
+        - Apache Arrow
+        - Legate (NVIDIA)
+
+    The initial candidate language is DASK, a Python library that allows for 
+    parallel code execution on distributed clusters. 
+    The LINQ pipeline itself is written in CWL version 1.2, which is the 
+    version that the compiler must support. Support of further versions can be 
+    implemented if time allows it. Automatic optimization of the pipeline via
+    combining pipeline steps falls outside of the scope of this thesis.
+
+=========================== CWL ================================
+CWL (Common Workflow Language):
+    YAML schema that describes workflows.
+    CWL workflows can be executed using workflow runners. These runners can 
+    execute workflows on a single VM, but also using multiple VMs on clusters
+    in parallel. Right now ASTRON uses CWL version 1.2, but newer versions do
+    exist.
+    Docs: https://www.commonwl.org/v1.2/CommandLineTool.html
+    
+    * Document preprocessing (See docs, 2.4)
+    * Requirements and hints (See docs, 3.3)
+    * Parameter References (See docs, 3.4)
+    * Expressions (See docs, 3.5)
+
+Benten:
+    Language server for CWL documents.
+    Enhances CWL document editing experience.
+    Allows building a acyclic directed workflow graph from a CWL file. 
+    https://github.com/rabix/benten
+
+Toil:
+    Workflow runner.
+    Executes a workflow (CWL as well as other formats). Can auto setup VMs.
+    Programs that have independent io can be executed in parallel.
+    Problem: No in-depth optimization! 
+        Programs that have io dependencies have to be executed serialized.
+        Per program, VMs are launched, creating io overhead between serialized
+        programs. This should be optimized!  
+    Solution: Combine serializable steps. 
+        Combine dependent steps to be executed in serial on a single VM.
+        This reduces io overhead!
+    https://github.com/DataBiosphere/toil
+
+
+======================== Python libraries ===========================
+DASK:
+    Python framework for parallel execution of jobs on multiple machines. 
+    Workflows are described in Python. Steps in workflow can be assigned on
+    what specific machine/cluster the VM needs to be executed!
+    https://www.dask.org
+
+Snakemake:
+
+
+cwl-utils: (???????)
+    https://github.com/common-workflow-language/cwl-utils
+
+YAtiML:
+    YAML checker/ YAML -> Python object converter
+    CWL is YAML, so could probably be of use.
+    https://research-software-directory.org/software/yatiml
+
+============================= HPC computing libraries ===================================
+Apache Arraw:
+
+Legate:
+    Builds on Apache Arrow. Python library framework for executing code on
+    CPU and GPU on potentially multiple nodes.
+    Legate is still under construction and thus incomplete!
+    https://docs.nvidia.com/legate/24.06/
+
+
+=============================== Data ================================
+ASTRON repository:
+    Contains CWL workflows, steps, and jobs.
+    Workflows are executed using Toil, each step in its own VM.
+    https://git.astron.nl/RD/LINC
+

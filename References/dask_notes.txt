@@ -1,0 +1,43 @@
+We don't want to use CWL.
+    - Fully convert to something else.
+Modularity needs to be maintained:
+    - Each step/workflow file needs its own file.
+Scripting:
+    - JavaScript scripts can be converted to Python code as callable function.
+    - Function containing script needs to be able to be merged with other steps.
+Optimization:
+    - Optimization happens by merging steps that require containers.
+        - Steps need to use the same container images for this to work.
+            * Limitation: Steps that are not executed in a container but on the cluster host might
+                require the host environment; Requirements that might not be present in the
+                container specified in the CWL step file. This is a limitation and should be
+                dealt with by the users. 
+    ? When does optimization happen?
+        - Can't happen at convert time, because workflow modularity needs to be maintained.
+        - Some runner needs to optimize the workflow at runtime!
+            - Runner needs to recursively build task tree from workflow files and then optimize.
+            ? Why should converted workflow files contain runnable code?
+                * Reason for question: Runner needs to know workflow structure before launching steps
+                    as this is needed for merging different steps together.
+                * If a runner is executing the workflow, all code to execute the workflow
+                    should be in the runner program code. Does distributing runner code over multiple
+                    files make sense? Why do we want distributed code instead of a runner that
+                    reads formatted config files?
+                    ? Client indicated that CWL has limitations. What are these limitations?
+                        - Their runner (Toil) is not programmable and has limitations.
+                            Example: Can't loop a step for x amount of times depending on some condition.
+                        ? What are the exact limitations?
+Containerization:
+    - Combined steps are created by putting multiple scripts in the same container.
+    - Inline scripts need to be handled.
+    - In the end, runner needs to be able to run/combine steps into containers.
+
+
+Steps / Workflow:
+    - 
+    ? How does a step/workflow run? 2 options:
+        - Executed by a runner.
+            - Requires 
+        - Executed by the step/workflow itself.
+            ? Does every file now need a main function?
+        

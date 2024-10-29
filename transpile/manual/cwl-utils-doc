@@ -1,0 +1,65 @@
+cwl-object:
+    arguments
+    attrs
+    baseCommand:
+        str []
+    class_:
+        str: CommandLineTool | Workflow
+    cwlVersion:
+        str: v1.2
+    doc
+    extension_fields
+    fromDoc
+    hints:
+        []:
+        cwl_utils.parser.cwl_v1_2.InlineJavascriptRequirement
+        cwl_utils.parser.cwl_v1_2.ShellCommandRequirement
+        cwl_utils.parser.cwl_v1_2.InitialWorkDirRequirement
+        cwl_utils.parser.cwl_v1_2.
+    id
+    inputs:
+        []:
+            cwl_utils.parser.cwl_v1_2.CommandInputParameter:
+                attrs
+                default
+                doc
+                extension_fields
+                format
+                fromDoc
+                id
+                inputBinding
+                label
+                loadContents
+                loadListing
+                loadingOptions
+                save
+                secondaryFiles
+                streamable
+                type_
+    intent
+    label
+    loadingOptions
+    outputs:
+        cwl)_utils.parser.cwl_v1_2.CommandOutputParameter []:
+            attrs
+            doc
+            extension_fields
+            format
+            fromDoc
+            id
+            label
+            loadingOptions
+            outputBinding
+            save
+            secondaryFiles
+            streamable
+            type_
+
+    permanentFailCodes
+    requirements
+    save
+    stderr
+    stdin
+    stdout
+    successCodes
+    temporaryFailCodes

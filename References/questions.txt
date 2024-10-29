@@ -1,0 +1,84 @@
+LOFAR calibration:
+    ? How does the pipeline work?
+        ? Station specific or collectively?
+            All readings are saved on disk in shared file storage.
+            After this, all computing is done on the cluster!
+            After each calculation step results are written to shared file storage!
+            Shared storage consists of harddisk drives -> so little slow! 
+        - Green (Default PreProcessing Pipeline (DPPP):
+            Predicting visibilities, manipulating the data, finding station-based solutions, applying these to the data
+            ? What are visibilities?
+        - Yellow (LOFAR Solution Tool (LoSoTo)):
+            Isolate direction independant systematic effect.
+            ? Deeper explanation?
+
+    https://arxiv.org/pdf/1811.07954
+    ? How much do we have to account for steps failing?
+        ? Data from previous steps is available in shared filesystem. Restart step?
+            ? If combined steps become too big, is the performance penalty
+              small enough for the system to be justified?
+                - Ask how many failures occur with Toil!
+    
+    ? Is Long Term Archive used for intermediate results?
+        - Yes, right now results are written to the shared long term archive 
+          after every step.
+
+LINC:
+    ? Are all steps pure python scripts?
+        - No, javascript expressions are present in some steps.
+        - No, command line programs are used.
+        - No, inline python scripts are used.
+        ? Why is steps/plot_unflagged.cwl not a python script file?
+        ? Why do javascript scripts like check_demix.cwl exist?
+            * I assume it's because it's faster and doesn't require 
+            additional container setup?
+            -I was right about this! The JS expressions restructure
+            the data structures for the next workflow step.
+                - These don't have to stay as JS! 
+
+
+CWL:
+    ? What is Schema Salad?
+        https://www.commonwl.org/v1.2/SchemaSalad.html#Identifier_resolution
+    Data Links:
+        Connection from a "source" to a "sink" parameter.
+        ? Used in this project?
+            Referenced in the CWL Command Line Tool docs
+
+DASK 
+    ? How do we use containers with DASK?
+        - DASK has K8 support.
+        ? Maybe K8 is overkill?
+            - SLURM was mentioned as a good option.
+            - Use Python Docker bindings. Requires some setup (same goes for K8 I guess).
+              Worker needs to be able to create containers rootless containers, but
+              this shouldn't be a problem.
+            ? Which method is more efficient?
+
+    ? What Task Scheduler to use?
+        - Fully depends on the workload. Should ask for running statistics.
+            * Problem for later.
+
+Containers/Pods:
+    ? How do we extract results from containers and write them to shared memory?
+
+Compiler:
+    ? How to check input and output types?
+    ? Convert JS to Python?
+        ? Do we convert to a quicker compiled language?
+            ? Does this require extra setup?
+    ? How to run steps?
+        - CWL step document needs to be converted to a python function, which
+          can be used to build a DASK Task Graph.
+    ? How to specify where a container is run?
+        - Dask provides ways to name workers, which can be specified to run a
+          command on when a task is submitted to the client.
+          https://distributed.dask.org/en/latest/locality.html?highlight=client.submit
+          ? Do we even want to do this?
+    ? How to check whether convertion was succesful?
+        - Use Benten CWL visualizer and DASK build-in Task graph visualizer to
+          manually compare graphs. 
+        ? If the computational result of 2 graphs is the same, are the graphs
+          then isomorphic to each other?
+    ? End solution applicable to all CWL?
+        - CWL 1.2 is must have, could be expanded to work on newer versions.
