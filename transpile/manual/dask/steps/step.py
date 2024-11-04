@@ -1,5 +1,5 @@
 import types
-from typings import Any
+from typing import Any
 from abc import ABC
 
 
@@ -43,28 +43,11 @@ class Step(ABC):
     # def script(self, args: dict[str, str]):
         # """
         # """
-        
+
     
-    def run_step(self, args: dict[str, str]) -> Any:
-        """
-        Execute the step .
-        """
-        if not self.valid():
-            # TODO Check if this is the right way of doing this
-            # TODO Get filename of subclass
-            raise Exception(f"{self.id} is not a valid step, aborting.")
-            # raise Exception(f"File {file} is not a valid step, aborting.")
-
-        # TODO Check input
-        # TODO Containers
-        # TODO Couple inputs
-        # 
-
-        return
-    
-    def get_step(self) -> function:
-        pass
-
+    # def get_script(self) -> function:
+        # if hasattr(self, "script"):
+            # return getattr(self, "script")
 
 
     def valid(self) -> bool:
