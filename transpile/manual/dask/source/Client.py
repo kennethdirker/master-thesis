@@ -42,7 +42,8 @@ class Client:
 
 
     def exec_task_graph(self):
-        # 
+        # Send dependency graph to the Runner, which creates a dask.Delayed
+        # object. The dask.Delayed is then executed on the cluster.
         pass
 
 
