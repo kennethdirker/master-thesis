@@ -30,14 +30,6 @@ Client
 		Convert dependency tree to Python format
 			Req: Determine Python format
 			Expand supported scripting capabilities (Process function)
-
-            Runner
-	Execute step with DASK
-	Define input and output classes
-	Execute chain of steps
-	Container management with Singularity
-	Container input and output
-	Resource manager that keeps track of which node has what data
 	
 ===============================================================================
 
