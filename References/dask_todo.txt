@@ -1,24 +1,65 @@
-Step:
-Generic process execution:
-1.  Load input object.
-2.  Load, process and validate a CWL document, yielding one or more process objects. The $namespaces present in the CWL document are also used when validating and processing the input object.
-3.  If there are multiple process objects (due to $graph) and which process object to start with is not specified in the input object (via a cwl:tool entry) or by any other means (like a URL fragment) then choose the process with the id of "#main" or "main".
-4.  Validate the input object against the inputs schema for the process.
-5.  Validate process requirements are met.
-6.  Perform any further setup required by the specific process type.
-7.  Execute the process.
-8.  Capture results of process execution into the output object.
-9.  Validate the output object against the outputs schema for the process (with the exception of ExpressionTool outputs, which are always considered valid).
-10. Report the output object to the process caller.
+Tree form:
+Client
+	Reader 
+		Convert file to dependency tree
+			Read CWL
+				Step to object
+				Workflow to object
+				objects to dependency tree
+			Read Python
+				Req: Determine Python format
+					Step to object
+					Workflow to object
+					objects to dependency tree
+	Runner
+		Optimize
+			Group serializable steps into single container
+		Executing dependency trees
+			Execute step
+			Resource manager
+				Load files to mount on correct node
+				Update resource manager with outputs
+			Containers
+				Start containers (if none available)
+				Stop containers (or reuse)
+			Chain step inputs/outputs
+			Execute grouped steps
+			Create Dask.Delayed graph
+			Execute Dask.Delayed graph
+	Transpiler
+		Convert dependency tree to Python format
+			Req: Determine Python format
+			Expand supported scripting capabilities (Process function)
 
+            Runner
+	Execute step with DASK
+	Define input and output classes
+	Execute chain of steps
+	Container management with Singularity
+	Container input and output
+	Resource manager that keeps track of which node has what data
+	
+===============================================================================
 
+In order:
+Reader
+	Load CWL step into python object
+	Load CWL workflow into dependency tree
 
+Determine Python workflow format
+Reader
+	Read Python step format into python object
+	Read Python workflow format into dependency tree
 
+Transpiler
+	Convert dependency tree to Python workflow format
+	
+Runner
+	Optimization by nesting serializable steps into a "single" step object 
+	Execute nested step
+		
+Transpiler
+	Expand supported scripting capabilities by assigning script function in Python workflow format
 
-
-Workflow:
-
-
-
-In general:
--   Expressions
+Runner 
+	Optimization by reusing containers
