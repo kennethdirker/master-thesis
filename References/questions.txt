@@ -2,9 +2,9 @@ LOFAR calibration:
     ? How does the pipeline work?
         ? Station specific or collectively?
             All readings are saved on disk in shared file storage.
-            After this, all computing is done on the cluster!
+            After this, all computing is done on the cluster (single node)!
             After each calculation step results are written to shared file storage!
-            Shared storage consists of harddisk drives -> so little slow! 
+            Shared storage consists of harddisk drives -> so a little slow! 
         - Green (Default PreProcessing Pipeline (DPPP):
             Predicting visibilities, manipulating the data, finding station-based solutions, applying these to the data
             ? What are visibilities?
@@ -18,6 +18,7 @@ LOFAR calibration:
             ? If combined steps become too big, is the performance penalty
               small enough for the system to be justified?
                 - Ask how many failures occur with Toil!
+                    - We don't have to support execution fail saves
     
     ? Is Long Term Archive used for intermediate results?
         - Yes, right now results are written to the shared long term archive 
@@ -47,26 +48,23 @@ CWL:
 
 DASK 
     ? How do we use containers with DASK?
-        - DASK has K8 support.
-        ? Maybe K8 is overkill?
-            - SLURM was mentioned as a good option.
-            - Use Python Docker bindings. Requires some setup (same goes for K8 I guess).
-              Worker needs to be able to create containers rootless containers, but
-              this shouldn't be a problem.
-            ? Which method is more efficient?
+        - DASK starts containers using singularity python bindings.
 
     ? What Task Scheduler to use?
         - Fully depends on the workload. Should ask for running statistics.
             * Problem for later.
 
 Containers/Pods:
+    - Use singularity to manage containers.
     ? How do we extract results from containers and write them to shared memory?
+        - Mount a volume that acts as input/output gate.
 
 Compiler:
     ? How to check input and output types?
     ? Convert JS to Python?
+        - CWL-utils provides features to do this. Doable if enough time is left.
         ? Do we convert to a quicker compiled language?
-            ? Does this require extra setup?
+            - No!
     ? How to run steps?
         - CWL step document needs to be converted to a python function, which
           can be used to build a DASK Task Graph.
@@ -75,10 +73,11 @@ Compiler:
           command on when a task is submitted to the client.
           https://distributed.dask.org/en/latest/locality.html?highlight=client.submit
           ? Do we even want to do this?
+            - Probably needed to keep track of where which resource is.
     ? How to check whether convertion was succesful?
         - Use Benten CWL visualizer and DASK build-in Task graph visualizer to
           manually compare graphs. 
-        ? If the computational result of 2 graphs is the same, are the graphs
-          then isomorphic to each other?
+        - Hard to do mathematically, skip!
     ? End solution applicable to all CWL?
+        - Not all functionality is used in the pipeline, first work on useful features! 
         - CWL 1.2 is must have, could be expanded to work on newer versions.
