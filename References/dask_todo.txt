@@ -42,24 +42,33 @@ Client
 ===============================================================================
 
 In order:
-Reader
-	Load CWL step into python object
-	Load CWL workflow into dependency tree
-
-Determine Python workflow format
-Reader
-	Read Python step format into python object
-	Read Python workflow format into dependency tree
-
-Transpiler
-	Convert dependency tree to Python workflow format
+	Runner
+1	Execute step with DASK
+1	Define input and output classes
+1	Execute chain of steps
+2	Container management with Singularity
+2	Container input and output
+3	Resource manager that keeps track of which node has what data
 	
-Runner
-	Optimization by nesting serializable steps into a "single" step object 
-	Execute nested step
-		
-Transpiler
-	Expand supported scripting capabilities by assigning script function in Python workflow format
+	
+	Reader
+3		Load CWL step into python object
+4		Load CWL workflow into dependency tree
 
-Runner 
-	Optimization by reusing containers
+4	Determine Python workflow format
+	Reader
+5		Read Python step format into python object
+6		Read Python workflow format into dependency tree
+
+	Transpiler
+6		Convert dependency tree to Python workflow format
+		
+	Runner
+7		Optimization by nesting serializable steps into a "single" step object 
+7		Execute nested step
+			
+	Transpiler
+8		Expand supported scripting capabilities by assigning script function in Python workflow format
+
+	Runner 
+8		Optimization by reusing containers
