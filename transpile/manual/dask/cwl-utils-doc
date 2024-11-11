@@ -4,7 +4,7 @@ cwl-object:
     baseCommand:
         str []
     class_:
-        str: CommandLineTool | Workflow
+        str: CommandLineTool | Workflow | ExpressionTool
     cwlVersion:
         str: v1.2
     doc
@@ -40,7 +40,7 @@ cwl-object:
     label
     loadingOptions
     outputs:
-        cwl)_utils.parser.cwl_v1_2.CommandOutputParameter []:
+        cwl_utils.parser.cwl_v1_2.CommandOutputParameter []:
             attrs
             doc
             extension_fields
