@@ -1,11 +1,15 @@
+# Standard modules
 import typing
 from pathlib import Path
 
+# External modules
 import dask
 import dask.delayed
 # from dask.distributed import LocalCluster as Cluster
 import graphviz         # Needed to visualize the graph
 
+# Local modules
+import Reader, Runner
 
 class Client:
     def __init__(self):
@@ -20,13 +24,13 @@ class Client:
 
 
     def load_cwl_step(self):
-        """ Use CWL step file instead of Process file. """
+        """ Use CWL step file instead of Python Process file. """
         # Useful for development until we use python files instead
         pass 
 
 
     def load_cwl_workflow(self):
-        """ Use CWL workflow file instead of python workflow file. """
+        """ Use CWL workflow file instead of Python Workflow file. """
         # Useful for development until we use python files instead
         pass
 
