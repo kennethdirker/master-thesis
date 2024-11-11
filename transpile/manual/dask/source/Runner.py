@@ -1,8 +1,14 @@
+# Standard modules
+import subprocess
+
+# External modules
 import dask
 import dask.delayed
 from dask.distributed import LocalCluster as Cluster
-
 import spython          # Singularity bindings
+
+# Local modules 
+import Graph
 
 
 class Runner:
@@ -16,11 +22,14 @@ class Runner:
         self.cluster = Cluster()
         self.client = self.cluster.get_client()   # Sets environment
 
-        self.task_graph = None
-    
 
-    def exec_task_graph(self, graph):
-        self.task_graph: dask.Delayed = None
+    def _step_wrapper(
+            self,
+            node: DependencyNode
+        ):
+        """
+        Function that acts as an executable node in the dask.Delayed task tree.
+        """
         # How a Process is executed by the runner:
         # Start container if needed
         # Load input
@@ -29,3 +38,34 @@ class Runner:
         # Output manipulation with _out_script()
         # Export output? NOTE: What if we use mounted volume?
         # Stop container if needed
+        
+        # TODO Start container
+        # TODO Load input to right node. NOTE: for later 
+        # TODO Chain grouped steps in single container
+        # for step in steps:
+        # https://docs.python.org/3/library/subprocess.html
+        completed_process = subprocess.run(
+            cmd, 
+            # stderr=, 
+            # stdin=, 
+            # stdout=
+        )
+        # TODO Stop container
+
+
+
+    def create_task_graph(self, graph: DependencyGraph):
+        task_graph: dask.Delayed = None
+
+        # Walk tree
+
+        return task_graph
+
+
+
+    def exec_task_graph(self, tasks: dask.Delayed):
+        tasks.
+
+
+
+
