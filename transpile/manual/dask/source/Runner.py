@@ -1,5 +1,5 @@
 # Standard modules
-import subprocess
+import subprocess, time
 
 # External modules
 import dask
@@ -22,7 +22,7 @@ class Runner:
         self.cluster = Cluster()
         self.client = self.cluster.get_client()   # Sets environment
 
-
+    @dask.delayed
     def _step_wrapper(
             self,
             node: DependencyNode
@@ -63,9 +63,18 @@ class Runner:
 
 
 
-    def exec_task_graph(self, tasks: dask.Delayed):
-        tasks.
-
+    def exec_task_graph(
+            self, 
+            tasks: dask.Delayed, 
+            verbose = False
+        ):
+        start = time.time()
+        result = tasks.compute()
+        end = time.time()
+        time_taken = end - start 
+        if verbose:
+            print(f"Task graph executed in {time_taken}.")
+        return {"result": result, "time": time_taken}
 
 
 
