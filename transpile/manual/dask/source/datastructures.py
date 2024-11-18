@@ -4,9 +4,9 @@ from typing import Dict, List
 
 class Step:
     """"""
-    step_attrs = [
-        # "id",
-        # "baseCommand",
+    ATTR_NAMES = [
+        "id",
+        "baseCommand",
         "requirements",
         "hints",
         "label",
@@ -25,7 +25,7 @@ class Step:
     def add_attrs(self, **kwargs):
         """"""
         for attr, value in kwargs.items():
-            if attr in step_attrs:
+            if attr in ATTR_NAMES:
                 setattr(self, attr, value)
             else:
                 # TODO Decide if debugging only
@@ -39,7 +39,7 @@ class Step:
             # inputs: Dict[str, dict],
             # outputs: Dict[str, dict]
         ):
-        self.id: int = id
+        self.id: str = id
         self.baseCommand: List[str] = baseCommand
         self.add_attrs(kwargs)
         # self.inputs: Dict[str, dict] = inputs
@@ -58,31 +58,31 @@ class Step:
         # self.intent
 
 
-class DependencyNode:
+class Node:
     def __init__(
             self, 
-            id: str | int,
-            parents: List[int],
+            id: str,
+            parents: List[str],
             steps: List[Step],
             is_grouped: bool = False,
-            dependencies: Dict[int, int] = {}
+            dependencies: Dict[str, str] = {}
         ):
         self.id = id
-        self.parents: List[int] = parents
+        self.parents: List[str] = parents
         self.steps: List[Step] = steps
 
         # Used for indicating nested step dependencies
         self.is_grouped: bool = is_grouped
         self.dependencies: Dict[int, int] = dependencies
 
-class DependencyGraph:
+class Graph:
     def __init__(self, grouping: bool = False):
         #TODO Which of the following 2?
-        self.roots: List[DependencyNode] = []
+        self.roots: List[Node] = []
         # self.roots: List[int] = []
 
         self.grouping: bool = grouping
-        self.nodes: Dict[int, DependencyNode] = {}
+        self.nodes: Dict[int, Node] = {}
         self.dependencies = {}  # {child_id: [parent_ids], ...}
 
 
@@ -90,8 +90,8 @@ class DependencyGraph:
 
     def add_node(
             self,
-            node: DependencyNode,
-            parents: int | List[int] = None
+            node: Node,
+            parents: str | List[str] = None
         ):
         if parents is None:
             self.nodes[node.id] = node 
@@ -100,7 +100,7 @@ class DependencyGraph:
             self.roots.append(node)         # <-node reference
             # self.roots.append(node.id)    # <-node id
         else:
-            if isinstance(parents, int):
+            if isinstance(parents, str):
                 #TODO single parent
                 if node.id in self.dependencies:
                     self.dependencies[node.id].append(parents)

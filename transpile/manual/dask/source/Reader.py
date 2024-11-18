@@ -7,7 +7,7 @@ from typing import Any, Optional, List, Dict
 from cwl_utils.parser import load_document_by_uri, cwl_version
 
 # Local modules 
-import Graph
+import datastructures as ds
 from Utils import retrieve_attr
 
 
@@ -32,7 +32,7 @@ class Reader:
         return id
 
 
-    def load_cwl_step(self, path: Path) -> DependencyNode:        
+    def load_cwl_step(self, path: Path) -> ds.Node:        
         # Load CWL step file into an object 
         if not path.is_file():
             raise Exception(f"{path} is not a file.")
@@ -40,11 +40,13 @@ class Reader:
             raise Exception(f"CWL version of file {path} is not v1.2.")
         cwl_object = load_document_by_uri(path)
 
+        # Check whether CWL file really is a CommandLineTool
         class_ = retrieve_attr(cwl_object, "class_")
         if class_ not in "CommandLineTool":
             raise Exception(f"File at path {path} not a command line tool.")
 
-        step_node = DependencyNode()
+        # 
+        step_node = ds.Node()
         id = retrieve_attr(cwl_object, "id")
         baseCommand = retrieve_attr(cwl_object, "baseCommand")
         inputs = retrieve_attr(cwl_object, "inputs")
@@ -58,7 +60,7 @@ class Reader:
         pass
 
 
-    def load_cwl(self, path: Path) -> DependencyGraph:
+    def load_cwl(self, path: Path) -> ds.Graph:
         # Load CWL step file into an object 
         if not path.is_file():
             raise Exception(f"{path} is not a file.")
@@ -66,7 +68,7 @@ class Reader:
             raise Exception(f"CWL version of file {path} is not v1.2.")
         cwl_object = load_document_by_uri(path)
 
-        graph = DependencyGraph()
+        graph = ds.Graph()
         file_class = retrieve_attr(cwl_object, "class_")
         if file_class in "CommandLineTool":
             # Add node to graph
@@ -88,68 +90,3 @@ class Reader:
 
     def load_python_workflow(self):
         pass
-
-
-
-    # def __init__(self, cwl_file: Path) -> object:
-    #     """
-    #     """
-        # # TODO Single step
-        # # TODO Flat workflow
-        # # TODO Nested workflow
-
-        # self.path = Path(workflow_path)     # Path of first file
-        # if not self.path.is_file():
-        #     raise Exception(f"Path '{workflow_path}' does not exist.")
-        
-        # if input_yaml_path:        
-        #     self.inputs = Path(input_yaml_path) # Path to yaml input
-        #     if not self.inputs.is_file():
-        #         raise Exception(f"Path '{input_yaml_path}' does not exist.")
-        
-        # # Read input workflow file, raises exception on invalid CWL files
-        # self.cwl_obj = load_document_by_uri(self.path)
-
-        # # Read input yaml
-        # if self.inputs:
-        #     self.inputs = yaml.safe_load(self.inputs.read_text())
-        #     if not self.inputs:
-        #         raise Exception(f"'{input_yaml_path}' is not valid YAML.")
-        
-
-        # # build task graph
-        # if self.cwl_obj.class_ == "CommandLineTool":
-        #     if type(self.cwl_obj.baseCommand) is str:
-        #         cmd = [self.cwl_obj.baseCommand]
-        #     elif type(self.cwl_obj.baseCommand) is list:
-        #         cmd = self.cwl_obj.baseCommand
-            
-        #     # Add input arguments to command line
-        #     if self.inputs:
-        #         for input in self.cwl_obj.inputs:
-        #             # input: cwl_utils.parser.cwl_v1_2.CommandInputParameter
-        #             begin = input.id.rfind('#') + 1
-        #             end = len(input.id)
-        #             spliced_id = input.id[begin:end]
-
-        #             # Throw exception if the *required* input argument 
-        #             # is not in input YAML
-        #             if not self.inputs[spliced_id]:
-        #                 raise Exception(f"Required input argument '{spliced_id}' (from '{input.id}') is not in input YAML.")
-
-        #             cmd.append(self.inputs.get(spliced_id))
-
-        #     # Create DASK task graph holding function call
-        #     print(cmd)
-        #     self.graph = dask.delayed(sp.call(cmd , shell=True))
-
-        # elif self.cwl_obj.class_ == "ExpressionTool":
-        #     pass
-        # elif self.cwl_obj.class_ == "Workflow":
-        #     pass
-        # else:
-        #     raise Exception("Unknown CWL class type.")
-
-        # # self.tasks = []     # Holds 
-        # # self.graph: dask.Delayed = None        
-

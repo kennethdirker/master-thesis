@@ -10,6 +10,7 @@ import graphviz         # Needed to visualize the graph
 
 # Local modules
 import Reader, Runner
+# import datastructures as ds
 
 class Client:
     def __init__(self):

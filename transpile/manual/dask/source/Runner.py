@@ -8,7 +8,7 @@ from dask.distributed import LocalCluster as Cluster
 import spython          # Singularity bindings
 
 # Local modules 
-import Graph
+import datastructures as ds
 
 
 class Runner:
@@ -25,7 +25,7 @@ class Runner:
     @dask.delayed
     def _step_wrapper(
             self,
-            node: DependencyNode
+            node: ds.Node
         ):
         """
         Function that acts as an executable node in the dask.Delayed task tree.
@@ -42,19 +42,22 @@ class Runner:
         # TODO Start container
         # TODO Load input to right node. NOTE: for later 
         # TODO Chain grouped steps in single container
-        # for step in steps:
-        # https://docs.python.org/3/library/subprocess.html
-        completed_process = subprocess.run(
-            cmd, 
-            # stderr=, 
-            # stdin=, 
-            # stdout=
-        )
+
+        for step in steps:
+            # https://docs.python.org/3/library/subprocess.html
+            completed_process = subprocess.run(
+                cmd,
+                capture_output=True,
+                # stderr=, 
+                # stdin=, 
+                # stdout=
+            )
+
         # TODO Stop container
+    ...
 
 
-
-    def create_task_graph(self, graph: DependencyGraph):
+    def create_task_graph(self, graph: ds.Graph):
         task_graph: dask.Delayed = None
 
         # Walk tree
