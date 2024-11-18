@@ -1,65 +1,239 @@
-cwl-object:
-    arguments
-    attrs
-    baseCommand:
-        str []
-    class_:
-        str: CommandLineTool | Workflow | ExpressionTool
-    cwlVersion:
-        str: v1.2
-    doc
-    extension_fields
-    fromDoc
-    hints:
-        []:
-        cwl_utils.parser.cwl_v1_2.InlineJavascriptRequirement
-        cwl_utils.parser.cwl_v1_2.ShellCommandRequirement
-        cwl_utils.parser.cwl_v1_2.InitialWorkDirRequirement
-        cwl_utils.parser.cwl_v1_2.
-    id
-    inputs:
-        []:
-            cwl_utils.parser.cwl_v1_2.CommandInputParameter:
-                attrs
-                default
-                doc
-                extension_fields
-                format
-                fromDoc
-                id
-                inputBinding
-                label
-                loadContents
-                loadListing
-                loadingOptions
-                save
-                secondaryFiles
-                streamable
-                type_
-    intent
-    label
-    loadingOptions
-    outputs:
-        cwl_utils.parser.cwl_v1_2.CommandOutputParameter []:
-            attrs
-            doc
-            extension_fields
-            format
-            fromDoc
-            id
-            label
-            loadingOptions
-            outputBinding
-            save
-            secondaryFiles
-            streamable
-            type_
+CWLType
+    null
+    boolean
+    int
+    long
+    float
+    double
+    string
+    File
+        class
+            "File"
+        location
+            Optional str
+        path
+            Optional str
+        basename
+            Optional str
+        dirname
+            Optional str
+        nameroot
+            Optional str
+        nameext
+            Optional str
+        checksum
+            Optional str
+        size
+        secondaryFiles
+        format
+            Optional str
+        contents
+            Optional str
+    Directory
+        class
+            "Directory"
+        location
+            Optional str
+        path
+            Optional str
+        basename
+            Optional str
+        listing 
+            Optional File [] | Directory []
+    # stdin  <- Only at:
+    # stdout <- Only at:
+    # stderr <- Only at:
+    # Any <- Non-null value 
 
-    permanentFailCodes
+# https://www.commonwl.org/v1.2/CommandLineTool.html
+CommandLineTool 
+    id
+        Optional str
+    label
+        Optional str
+    doc
+        Optional str | str []
+    inputs 
+        cwl_utils.parser.cwl_v1_2.CommandInputParameter []
+            type_
+                CWLType | CommandInputRecordSchema | CommandInputEnumSchema | 
+                CommandInputArraySchema | str |
+                CWLType [] | CommandInputRecordSchema [] | CommandInputEnumSchema [] | 
+                CommandInputArraySchema [] | str []
+            label
+                Optional str
+            secondaryFiles
+                Optional secondaryFileSchema | secondaryFileSchema []
+                    pattern 
+                        str | Expression 
+                    required
+                        Optional boolean | Expression
+            streamable
+                Optional boolean
+            doc
+                Optional str | str []
+            id
+                Optional str
+            format
+                Optional str | str [] | Expression
+            loadContents
+                Optional boolean
+            loadListing
+                Optional LoadListingEnum
+            default
+
+            inputBinding
+                Optional CommandLineBinding 
+                    loadContents # Depricated
+                        Optional boolean 
+                    position 
+                        Optional int | Expression
+                    position 
+                        Optional int | Expression
+                    prefix 
+                        Optional str
+                    separate 
+                        Optional boolean
+                    itemSeparator
+                        Optional str
+                    valueFrom
+                        Optional str Expression
+                    shellQuote
+                        Optional boolean 
+    outputs
+        cwl_utils.parser.cwl_v1_2.CommandOutputParameter []
+            type_
+                CWLType | stdout | stderr | CommandOutputRecordSchema | 
+                CommandOutputEnumSchema | CommandOutputArraySchema | str |
+                CWLType [] | CommandOutputRecordSchema [] | 
+                CommandOutputEnumSchema [] | CommandOutputArraySchema [] | str []
+            label
+                Optional str
+            secondaryFiles
+                Optional secondaryFileSchema | secondaryFileSchema []
+                    pattern 
+                        str | Expression 
+                    required
+                        Optional boolean | Expression
+            streamable
+                Optional boolean
+            doc
+                Optional str
+            id
+                Optional str
+            format
+                Optional str | Expression
+            outputBinding
+                Optional CommandOutputBinding
+                    loadContents 
+                        Optional boolean 
+                    loadListing 
+                        Optional LoadListingEnum
+                    glob 
+                        Optional str | Expression | str []
+                    outputEval
+                        Optional Expression
     requirements
-    save
-    stderr
+        Optional (str)Requirement []
+    hints
+        Optional (str)Requirement []
+    cwlVersion
+        "v1.2"
+    intent
+        Optional str []
+    class_
+        "CommandLineTool"
+    baseCommand
+        Optional str | str []
+    arguments
+        Optional string [] | Expression [] | CommandLineBinding []
     stdin
+        Optional str | Expression
+    stderr
+        Optional str | Expression
     stdout
+        Optional str | Expression
     successCodes
+        Optional int []
     temporaryFailCodes
+        Optional int []
+    permanentFailCodes
+        Optional int []
+
+# https://www.commonwl.org/v1.2/Workflow.html
+Workflow
+    inputs 
+        WorkflowInputParameter [] | map<id, type_ | WorkflowInputParameter>
+            type_ 
+                CWLType | InputRecordSchema | InputEnumSchema | InputArraySchema | str |
+                CWLType [] | InputRecordSchema [] | InputEnumSchema [] | [] InputArraySchema [] | str []
+            label 
+                Optional str
+            secondaryFiles
+                Optional secondaryFileSchema | secondaryFileSchema []
+                    pattern 
+                        str | Expression 
+                    required
+                        Optional boolean | Expression
+            streamable 
+                Optional boolean
+            doc 
+                Optional str
+            id
+                Optional str
+            format
+                Optional str | str [] | Expression
+            loadContents
+                Optional boolean
+            loadListing
+                Optional LoadListingEnum
+            default
+                Optional File | Directory | Any
+    outputs
+        WorkflowOutputParameter [] | map<id, type_ | WorkflowOutputParameter>
+            type
+                CWLType | OutputRecordSchema | OutputEnumSchema | OutputArraySchema | str |
+                CWLType [] | OutputRecordSchema [] | OutputEnumSchema [] | [] OutputArraySchema [] | str []
+            label
+                Optional str
+            secondaryFiles
+                Optional secondaryFileSchema | secondaryFileSchema []
+                    pattern 
+                        str | Expression 
+                    required
+                        Optional boolean | Expression
+            streamable
+                Optional boolean
+            doc
+                Optional str
+            id
+                Optional str
+            format
+                Optional str | Expression
+            outputSource
+                Optional str | str []
+            linkMerge
+                Optional "merge_nested" | "merge_flattened"
+            pickValue
+                Optional "first_non_null" | "the_only_non_null" | "all_non_null"
+    class_
+        "Workflow"
+    steps
+        WorkflowStep [] | map<id, WorkflowStep>
+    id
+        Optional str
+    label
+        Optional str
+    doc
+        Optional str | str []
+    requirements
+        Optional (str)Requirement []
+    hints
+        Optional (str)Requirement []
+    cwlVersion
+        required at root: "v1.2"
+        Otherwise Optional "v1.2"
+    intent
+        Optional str []
+
+ExpressionTool:
