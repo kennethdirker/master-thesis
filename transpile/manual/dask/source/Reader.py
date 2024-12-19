@@ -57,15 +57,16 @@ class Reader:
 
     
     def load_cwl_workflow(self):
-        pass
+        raise NotImplementedError()
 
 
     def load_cwl(self, path: Path) -> ds.Graph:
         # Load CWL step file into an object 
         if not path.is_file():
             raise Exception(f"{path} is not a file.")
-        if cwl_version(path) not in "v1.2":
-            raise Exception(f"CWL version of file {path} is not v1.2.")
+        v = cwl_version(path)
+        if v not in "v1.2":
+            raise Exception(f"Wrong CWL version: {path} is not v1.2, but {v}.")
         cwl_object = load_document_by_uri(path)
 
         graph = ds.Graph()
@@ -76,17 +77,22 @@ class Reader:
             graph.add_node(node, parents)
         elif file_class in "workflow":
             #TODO Breadth-first walk CWL steps/workflows
-            pass    #TODO
+            raise NotImplementedError()
         elif file_class in "ExpressionTool":
-            pass    #TODO
+            raise NotImplementedError()
         else:
             raise Exception(f"CWL tool type invalid.")
         return graph
 
 
     def load_python_step(self):
-        pass
+        raise NotImplementedError()
 
 
     def load_python_workflow(self):
-        pass
+        raise NotImplementedError()
+
+
+    def load_input_yaml(self):
+        # TODO can probably be done by cwl-utils?
+        raise NotImplementedError()
