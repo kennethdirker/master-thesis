@@ -1,33 +1,31 @@
-import subprocess
-import sys 
-import dask
+import subprocess           # Execute shell command line 
 import dask.delayed
-from typing import List
-
-print(sys.version)
-
+import graphviz             # To visualize the graph
+from pathlib import Path
 
 
 
-class Step:
-    def __init__(self, cmd: List[str]):
-        self.cmd = cmd
+def wrapper(id):
+    print(id)
+    return id + 1
+    
 
 
 
-@dask.delayed
-def wrapper(steps):
-    for step in steps:
-        cmd = step.cmd
-        res = subprocess.run(cmd, capture_output=True, text=True)
-        print(res.stdout)
-    return 0
+
+def main():
+    # a - b - c - d - e
+    a = dask.delayed(wrapper)(400)
+    b = dask.delayed(wrapper)(a)
+    c = dask.delayed(wrapper)(b)
+    d = dask.delayed(wrapper)(c)
+    e = dask.delayed(wrapper)(d)
+    path = "graph.svg"
+    e.visualize(filename=path)
+    res = e.compute()
+    print(res)
+    print("finished.")
 
 
-steps = []
-steps.append(Step(["echo", "Hello user! `ls -l` returns:"]))
-steps.append(Step(["ls", "-l"]))
-
-process = dask.delayed(wrapper)(steps)
-res = process.compute()
-print(res)
+if __name__ == "__main__":
+    main()
