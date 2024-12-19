@@ -1,7 +1,7 @@
 # Standard modules
 import typing
 
-def retrieve_attr(self, obj: object, attr: str) -> Any | None:
+def retrieve_attr(self, obj: object, attr: str) -> Any:
     """
     Returns the object attribute. Raises an exception if it doesn't exist.
     """
