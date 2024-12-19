@@ -1,0 +1,49 @@
+
+(Reader)
+CWL file to python object
+	cwl-utils.load_cwl_from_url()
+Python object to Graph
+	Create step queue with breadth first step search
+	For each step
+		Create node
+		Create unique id
+		If CommandLineTool
+			Create node with step
+				Create command line template
+					Prefix + positions + postfix
+						Parse inputs into positional template string
+						Parse Prefix inputs
+						Parse postfix inputs
+						??? step.arguments ???
+						step.baseCommand + prefix + template string + postfix
+				Note outputs
+				Note requirements
+				Note hints			
+		elif ExpressionTool
+			Create node with expression
+			??? Export script to python file ???
+			??? Create step-like node with python file as run target ???
+			??? ??? ??? ??? ??? ??? ??? ???? ??? ??? ??? ??? ??? ??? ???
+		Add node to Graph node list OR Add <id, node> pair to node dict
+		Put <id, inputs> pair in Graph input dependency dict
+		Put <id, outputs> pair in Graph output dependency dict
+	Loop over Graph nodes
+		If no parents
+			Add to frontier
+(Runner)
+Optimize Graph
+	Find groupable steps
+		???????????
+Create Delayed graph object from Graph
+	
+
+	
+
+Execute delayed
+	
+	??? Output to where ???
+		v1. Single node with shared directory
+		v2. Mutliple nodes with shared directory
+		v3. Mutliple nodes with local shared directories + resource manager
+???
+???
