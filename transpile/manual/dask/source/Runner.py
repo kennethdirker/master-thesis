@@ -25,10 +25,12 @@ class Runner:
     @dask.delayed
     def _step_wrapper(
             self,
-            node: ds.Node
+            node: ds.Node,
+            inputs: dict [str, Any],
         ):
         """
-        Function that acts as an executable node in the dask.Delayed task tree.
+        A wrapper around a step (or group of steps) that can be used in
+        building a DASK Delayed task graph.
         """
         # How a Process is executed by the runner:
         # Start container if needed
@@ -40,17 +42,28 @@ class Runner:
         # Stop container if needed
         
         # TODO Start container
-        # TODO Load input to right node. NOTE: for later 
-        # TODO Chain grouped steps in single container
 
+        
         for step in steps:
+            # TODO Load input to right node. NOTE: for later 
+            # TODO Chain grouped steps in single container
+            
+            # TODO Check if inputs are accessible 
+            for key, binding in step.inputs.items():
+                pass
+
+            # Create command line
+            template = step.template
+            # TODO Fill in command line template
+            cmd: list[str] = template.split(" ")
+
             # https://docs.python.org/3/library/subprocess.html
             completed_process = subprocess.run(
                 cmd,
-                capture_output=True,
-                # stderr=, 
-                # stdin=, 
-                # stdout=
+                capture_output = True,
+                stderr = stderr, 
+                stdout = stdout,
+                stdin = stdin, 
             )
 
         # TODO Stop container
@@ -68,8 +81,9 @@ class Runner:
 
     def exec_task_graph(
             self, 
-            tasks: dask.Delayed, 
-            verbose = False
+            tasks: dask.Delayed,
+            inputs: dict[str, Any], 
+            verbose = False,
         ):
         start = time.time()
         result = tasks.compute()
