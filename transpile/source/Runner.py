@@ -1,13 +1,14 @@
-# Standard modules
+# Standard imports
 import subprocess, time
+from typing import Any
 
-# External modules
+# External imports
 import dask
 import dask.delayed
 from dask.distributed import LocalCluster as Cluster
 import spython          # Singularity bindings
 
-# Local modules 
+# Local imports 
 import datastructures as ds
 
 
