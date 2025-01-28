@@ -1,12 +1,19 @@
-# Standard modules
-# import typing
+# Standard imports
 from typing import Any
 
-def retrieve_attr(obj: object, attr: str) -> Any:
+class NoneType:
+    """ 
+    Type representing missing data. 
+    Use instead of 'None' when data might contain 'None' values.
     """
-    Returns the object attribute. Raises an exception if it doesn't exist.
+    pass
+
+    
+def getattr_or_nonetype(obj: object, attr: str) -> Any:
+    """
+    Returns the object attribute or NoneType if the attribute doesn't exist.
+    Note: Use when attribute retrieval is optional, otherwise use getattr.
     """
     if hasattr(obj, attr):
-        return getattr(obj, attr)
-    else:
-        raise Exception(f"Object {obj} does not have attribute {attr}.")
+        return obj.attr
+    return NoneType
