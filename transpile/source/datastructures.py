@@ -80,12 +80,12 @@ class Step:
             baseCommand: list[str],
             inputs: list[cwl.CommandInputParameter],
             outputs: list[cwl.CommandOutputParameter],
-            **kwargs: dict[str, Any]
+            **kwargs
         ):
         # self.cwlVersion
         self.attrs: list[str] = []     # Keep track of the attributes assigned to the step
         self.id: str = tool_id
-        # NOTE: baseCommand is optional, does this happen in LINQ? 
+        # NOTE: baseCommand is optional ('arguments' is then used), does this happen in LINQ? 
         self.baseCommand: list[str] = baseCommand
         # self.baseCommand: list[str] | str = baseCommand
         self.template = ""  #NOTE: Will hold template used to substitute step inputs
@@ -105,7 +105,8 @@ class Step:
         # self.intents
         # self.label
         # self.doc
-        self.add_attrs(kwargs)
+        self.add_attrs(**kwargs)
+        self.create_template()
 
 
     def add_attrs(self, **kwargs):

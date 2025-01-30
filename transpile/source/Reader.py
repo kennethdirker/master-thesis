@@ -31,6 +31,16 @@ class Reader:
         id = self._next_id
         self._next_id += 1
         return id
+    
+
+    def _get_tool_attrs(
+            self,
+            cwl_object: object
+        ) -> dict[str, Any]:
+        attrs = {}
+
+        return attrs
+
 
 
     def load_step_node(self, path: Path) -> Node:        
@@ -51,18 +61,29 @@ class Reader:
         baseCommand = getattr(cwl_object, "baseCommand")
         inputs = getattr(cwl_object, "inputs")
         outputs = getattr(cwl_object, "outputs")
-        parents = ...
+        kwargs: dict[str, Any] = self._get_tool_attrs()
+
 
         step = Step(
             tool_id = tool_id,
             baseCommand = baseCommand,
-            # TODO wip
+            inputs = inputs,
+            outputs = outputs,
+            **kwargs
         )
+
+        # TODO: WIP (workflow node chaining)
+        parents = [None]
+
+        # TODO: WIP (step grouping)
+        dependencies = None
+        steps = [step]
 
         return Node(
             id = self._new_node_id(),
             parents = parents,
-            steps = [step]
+            steps = steps,
+            dependencies = dependencies
         )
 
     
