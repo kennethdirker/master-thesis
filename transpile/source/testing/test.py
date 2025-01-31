@@ -22,8 +22,10 @@ class Step:
             line = line.replace(key, value)
         run(line)
 
+class Wrapper:
+    pass
 
-o = 
+o = Wrapper()
 o.id = 69
 o.baseCommand = "echo '<word>'"
 o.inputs = {"<word>": "Hello world!"}
@@ -32,7 +34,7 @@ o.trash = "ABABABABA"
 # setattr(o, "baseCommand", "echo '<word>'")
 # setattr(o, "inputs", {"<word>": "Hello world!"})
 # setattr(o, Attr.blah, {"<word>": "Hello world!"})
-print(o.vars())
+print(o.__dict__)
 # step = Step(o)
 # print(step.attrs)
 # o.exec()
