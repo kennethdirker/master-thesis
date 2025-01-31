@@ -15,5 +15,5 @@ def getattr_or_nonetype(obj: object, attr: str) -> Any:
     Note: Use when attribute retrieval is optional, otherwise use getattr.
     """
     if hasattr(obj, attr):
-        return obj.attr
+        return getattr(obj, attr)
     return NoneType

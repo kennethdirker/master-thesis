@@ -1,6 +1,6 @@
 # Standard modules
 from pathlib import Path
-from typing import Any, Optional, List, Dict
+from typing import Any, Optional, List, Dict, Union
 
 # External modules
 # import ruamel.yaml
@@ -8,8 +8,8 @@ from cwl_utils.parser import load_document_by_uri, cwl_version
 
 # Local modules 
 # import datastructures as ds
-from datastructures import Step, Node, Graph
-# from Utils import getattr_or_none, NoneType
+from source.Datastructures import Step, Node, Graph
+from Utils import getattr_or_nonetype, NoneType
 
 
 class Reader:
@@ -33,57 +33,48 @@ class Reader:
         return id
     
 
-    def _get_tool_attrs(
-            self,
-            cwl_object: object
-        ) -> dict[str, Any]:
-        attrs = {}
-
-        return attrs
-
-
-
-    def load_step_node(self, path: Path) -> Node:        
-        # Load CWL step file into an object 
+    def load_step_node(self, path: Path) -> Node:
+        """
+        TODO: Test        
+        """
+        # Load CWL step file into an object with cwl-utils
         if not path.is_file():
             raise Exception(f"{path} is not a file.")
         if cwl_version(path) not in "v1.2":
             raise Exception(f"CWL version of file {path} is not v1.2.")
-        cwl_object = load_document_by_uri(path)
+        cwl_obj = load_document_by_uri(path)
 
         # Check whether CWL file really is a CommandLineTool
-        class_ = getattr(cwl_object, "class_")
+        class_ = getattr(cwl_obj, "class_")
         if "CommandLineTool" not in class_:
             # TODO: Update exception type
             raise Exception(f"File at path {path} not a command line tool.")
 
-        tool_id = getattr(cwl_object, "id")
-        baseCommand = getattr(cwl_object, "baseCommand")
-        inputs = getattr(cwl_object, "inputs")
-        outputs = getattr(cwl_object, "outputs")
-        kwargs: dict[str, Any] = self._get_tool_attrs()
+        # Get required CWL fields
+        tool_id = getattr(cwl_obj, "id")
+        baseCommand = getattr(cwl_obj, "baseCommand")
+        inputs = getattr(cwl_obj, "inputs")
+        outputs = getattr(cwl_obj, "outputs")
 
+        # Get optional CWL fields
+        kwargs = {}
+        for attr in cwl_obj.attrs:
+            # 'class' is a reserved Python keyword and doesn't play nice
+            attr = "class_" if "class" in attr else attr
+            kwargs[attr] = getattr_or_nonetype(cwl_obj, attr)
 
         step = Step(
-            tool_id = tool_id,
+            id = tool_id,
             baseCommand = baseCommand,
             inputs = inputs,
             outputs = outputs,
             **kwargs
         )
 
-        # TODO: WIP (workflow node chaining)
-        parents = [None]
-
-        # TODO: WIP (step grouping)
-        dependencies = None
-        steps = [step]
-
         return Node(
-            id = self._new_node_id(),
-            parents = parents,
-            steps = steps,
-            dependencies = dependencies
+            node_id = self._new_node_id(),
+            parents = [],
+            steps = step
         )
 
     

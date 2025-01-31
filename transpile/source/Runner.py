@@ -9,7 +9,7 @@ from dask.distributed import LocalCluster as Cluster
 import spython          # Singularity bindings
 
 # Local imports 
-import datastructures as ds
+import source.Datastructures as ds
 
 
 class Runner:
