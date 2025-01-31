@@ -69,33 +69,34 @@ class Step:
         "temporaryFailCodes",
         "save",
         "extension_fields",
-        "intents"
+        "intent",
         "label",
         "doc",
     ]
 
     def __init__(
             self,
-            id: str,
+            # id: str,
             # NOTE: baseCommand is optional and contain empty list, does this happen in LINQ? 
-            baseCommand: str | list[str] | None,
-            inputs: list[cwl.CommandInputParameter],
-            outputs: list[cwl.CommandOutputParameter],
+            # baseCommand: str | list[str] | None,
+            # inputs: list[cwl.CommandInputParameter],
+            # outputs: list[cwl.CommandOutputParameter],
             **kwargs
         ):
-        self.id: str = id
+        # self.id: str = id
         # NOTE: baseCommand is optional ('arguments' is then used), does this happen in LINQ? 
-        self.baseCommand = baseCommand
-        self.inputs = inputs
-        self.outputs = outputs
-        self.template = ""  #NOTE: Will hold template used to substitute step inputs
-        self.attrs: list[str] = [
-            "id",
-            "baseCommand",
-            "template",
-            "inputs",
-            "outputs",
-        ]     # Keep track of used CWL step fields
+        # self.baseCommand = baseCommand
+        # self.inputs = inputs
+        # self.outputs = outputs
+        # self.template = ""  #NOTE: Will hold template used to substitute step inputs
+        # self.attrs: list[str] = [
+        #     "id",
+        #     "baseCommand",
+        #     "template",
+        #     "inputs",
+        #     "outputs",
+        # ]     # Keep track of used CWL step fields
+        self.attrs: list[str] = []
         self.add_attrs(**kwargs)
         self.create_template()
 
@@ -217,7 +218,8 @@ class Graph:
         if node.id in self.nodes:
             raise Exception(f"Node ID already exists in graph. Invalid ID: {node.id}")
 
-        if parents is None or (isinstance(list) and len(parents) == 0):
+        if parents is None \
+            or (isinstance(parents, list) and len(parents) == 0):
             # Insert root node
             self.roots.append(node.id)
             self.nodes[node.id] = node
