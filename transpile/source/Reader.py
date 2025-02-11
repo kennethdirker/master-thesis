@@ -122,7 +122,11 @@ class Reader:
         """
         Load input parameters from a job YAML file.
         """
-        # TODO can probably be done by cwl-utils?
+        # TODO Can probably be done by cwl-utils/cwltool?
+        # NOTE: Validation should not be done here, maybe in:
+        #           - Reader when CWL object is known
+        #               Use cwltool --make-template function
+        #           - Runner when input can't be matched
         if isinstance(path, str):
             path = Path(path)
         if isinstance(path, Path):
