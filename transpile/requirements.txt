@@ -8,6 +8,7 @@ cwl-utils==0.36
 dask==2025.1.0
 filelock==3.17.0
 fsspec==2025.2.0
+graphviz==0.20.3
 idna==3.10
 importlib_metadata==8.6.1
 isodate==0.7.2
