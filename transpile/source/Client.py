@@ -15,26 +15,64 @@ import Reader, Runner
 class Client:
     def __init__(self):
     # def __init__(self, TODO type_of_cluster):
-        self.dependencies = None
-        self.optimized = False
+        self.dependencies = None        # TODO: needed?
+        self.optimized = False          # TODO: needed?
         self.process_clusters = None    # Grouped steps
         self.reader = Reader()
         self.runner = Runner()
 
         self.graph = None               # Will contain dependency graph
+        self.cwl_object = None
+        self.job_input = {}
+
+    # def load_cwl_step(self):
+    #     """ Use CWL step file instead of Python Process file. """
+    #     # Useful for development until we use python files instead
+    #     pass 
 
 
-    def load_cwl_step(self):
-        """ Use CWL step file instead of Python Process file. """
-        # Useful for development until we use python files instead
-        pass 
+    # def load_cwl_workflow(self):
+    #     """ Use CWL workflow file instead of Python Workflow file. """
+    #     # Useful for development until we use python files instead
+    #     pass
 
 
-    def load_cwl_workflow(self):
-        """ Use CWL workflow file instead of Python Workflow file. """
-        # Useful for development until we use python files instead
-        pass
+    def load_cwl_object(self, path: str | Path):
+        """ Load a CWL object to be executed. """
+        if isinstance(path, str):
+            path = Path(path)
+        if isinstance(path, Path):
+            if not path.is_file():
+                raise Exception(f"{path} is not a file")
+            self.cwl_object = self.reader.load_cwl(path)
+        else:
+            raise Exception("'path' argument should be 'str' or 'Path'")
 
+
+    def matching_inputs(self):
+        """ 
+        Check whether all parameters to execute the CWL object are matched
+        with an argument in the input object.
+        """
+        for param in self.cwl_object:
+            # TODO Deal with optional parameters
+            if param not in self.job_input:
+                return False
+        return True
+    
+
+    def load_job_input(self, path: str | Path):
+        """ Load CWL inputs to be bound to the command line. """
+        if isinstance(path, str):
+            path = Path(path)
+        if isinstance(path, Path):
+            if not path.is_file():
+                raise Exception(f"{path} is not a file")
+            self.job_input = self.reader.load_job_input(path)
+            if not self.matching_inputs():
+                raise Exception("Missing parameters in the input object")
+        else:
+            raise Exception("'path' argument should be 'str' or 'Path'")
 
     def load_python_workflow(self):
         pass 

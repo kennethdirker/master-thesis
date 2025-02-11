@@ -5,6 +5,7 @@ from typing import Any, Optional, List, Dict, Union
 # External modules
 # import ruamel.yaml
 from cwl_utils.parser import load_document_by_uri, cwl_version
+import yaml
 
 # Local modules 
 # import datastructures as ds
@@ -117,6 +118,17 @@ class Reader:
         raise NotImplementedError()
 
 
-    def load_input_yaml(self):
+    def load_job_input(self, path: str | Path) -> dict[str | Any]:
+        """
+        Load input parameters from a job YAML file.
+        """
         # TODO can probably be done by cwl-utils?
-        raise NotImplementedError()
+        if isinstance(path, str):
+            path = Path(path)
+        if isinstance(path, Path):
+            if not path.is_file():
+                raise Exception(f"{path} is not a file")
+            with open(path) as f:
+                return yaml.load(f, Loader=yaml.SafeLoader)
+        else:
+            raise Exception("'path' argument should be 'str' or 'Path'")
