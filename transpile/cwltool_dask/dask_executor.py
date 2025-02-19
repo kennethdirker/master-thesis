@@ -2,6 +2,12 @@
 import logging
 from typing import Optional, Union
 
+# import dask
+import dask
+# from dask.distributed import LocalCluster as Cluster
+
+
+import dask.delayed
 from schema_salad.exceptions import ValidationException
 
 from cwltool.errors import WorkflowException
@@ -26,32 +32,34 @@ class DaskExecutor(JobExecutor):
     ) -> None:        
         process_run_id: Optional[str] = None
 
-        # define provenance profile for single commandline tool
-        if not isinstance(process, Workflow) and runtime_context.research_obj is not None:
-            # 
-            print("Provenance happens")
-            # 
+        # Initialize Dask Cluster
+        # NOTE: client doesn't need to be used after this I think?
+        # cluster = Cluster()
+        # client = cluster.get_client()   # Sets environment
 
-            process.provenance_object = runtime_context.research_obj.initialize_provenance(
-                full_name=runtime_context.cwl_full_name,
-                # following are only set from main when directly command line tool
-                # when nested in a workflow, they should be disabled since they would
-                # already have been provided/initialized by the parent workflow prov-obj
-                host_provenance=runtime_context.prov_host,
-                user_provenance=runtime_context.prov_user,
-                orcid=runtime_context.orcid,
-                # single tool execution, so RO UUID = wf UUID = tool UUID
-                run_uuid=runtime_context.research_obj.ro_uuid,
-                fsaccess=runtime_context.make_fs_access(""),
-            )
-            process.parent_wf = process.provenance_object
+        # # define provenance profile for single commandline tool
+        # if not isinstance(process, Workflow) and runtime_context.research_obj is not None:
+        #     # 
+        #     print("Provenance happens")
+        #     # 
 
-        # Recursively collect all Workflow Steps
-        def traverse(
-                process: Process, 
-                dependencies: dict = {},
-                tools: list = [],
-                # groupings: list = []  #TODO steps in sub-workflows are independent from steps higher up in the workflow chain
+        #     process.provenance_object = runtime_context.research_obj.initialize_provenance(
+        #         full_name=runtime_context.cwl_full_name,
+        #         # following are only set from main when directly command line tool
+        #         # when nested in a workflow, they should be disabled since they would
+        #         # already have been provided/initialized by the parent workflow prov-obj
+        #         host_provenance=runtime_context.prov_host,
+        #         user_provenance=runtime_context.prov_user,
+        #         orcid=runtime_context.orcid,
+        #         # single tool execution, so RO UUID = wf UUID = tool UUID
+        #         run_uuid=runtime_context.research_obj.ro_uuid,
+        #         fsaccess=runtime_context.make_fs_access(""),
+        #     )
+        #     process.parent_wf = process.provenance_object
+
+        # Recursively create Dask delayed task graph from Workflow Steps
+        def create_task_graph(
+                process: Process
             ):
             if isinstance(process, Workflow):
                 # Iterate sub-workflows, add CommandLineTools/ExpressionTools
@@ -59,17 +67,15 @@ class DaskExecutor(JobExecutor):
                 # dependencies between steps.
                 for step in process.steps:  # step: WorkflowStep
                     sub_proc = ...
-                    self.traverse(sub_proc)
-
-            elif isinstance(process, Union[CommandLineJob, ExpressionJob]):
-                # Add CommandLineTools/ExpressionTools to tools
-                tools.append(...)
+                    create_task_graph(sub_proc)
                 return
-            
-            return tools
+            elif isinstance(process, Union[CommandLineJob, ExpressionJob]):
+                return dask.delayed()
+            raise Exception(f"'process' is of unsupported type '{type(process)}'")
                 
-
-        # 
+        # Build and execute Dask Delayed Task Graph
+        task_graph: dask.delayed.Delayed = create_task_graph(process)
+        task_graph.compute()
 
         # jobiter = process.job(job_order_object, self.output_callback, runtime_context)
 
