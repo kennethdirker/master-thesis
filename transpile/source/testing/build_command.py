@@ -93,6 +93,7 @@ def build_command_line(tool: CommandLineTool, input_object: Dict[str, Any]) -> L
     # Collect bindings from arguments from CommandLineTool
     # Creates a list of tuples containing the position, index, binding, and None for each binding in tool.arguments.
     # NOTE: Why is None in tuple?
+    # FIXME
     argument_bindings = [([binding.position, i], binding, None) for i, binding in enumerate(tool.arguments)]
 
     # Collects bindings from the inputs schema of the CommandLineTool using the collect_bindings function.
@@ -103,6 +104,8 @@ def build_command_line(tool: CommandLineTool, input_object: Dict[str, Any]) -> L
     # Combines the argument_bindings and input_bindings into a single list all_bindings.
     all_bindings = argument_bindings + input_bindings
     # Sorts the all_bindings list based on the sorting key.
+    # NOTE: Seems a little weird
+    # FIXME
     all_bindings.sort(key=lambda x: (x[0], x[1].__class__.__name__ if x[1] else '', x[2]))
 
     # Build command line
@@ -132,7 +135,9 @@ tool = CommandLineTool(
             "inputBinding": CommandLineBinding(position=1)
         },
         "message_list": {
-            "type": ""
+            "type": "array"
+            "items": "string"
+            
         }
     },
     arguments=[
@@ -141,9 +146,9 @@ tool = CommandLineTool(
 )
 
 input_object = {
-    "message1": "input.txt",
-    "message2": "arg1,arg2",
-    "message_list": 
+    "message1": "there, ",
+    "message2": "Hello",
+    "message_list": ["Kenneth" "Melanie", "Jerry", "Sylvia"]
 }
 
 command_line = build_command_line(tool, input_object)
