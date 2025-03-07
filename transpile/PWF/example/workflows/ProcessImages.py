@@ -1,5 +1,5 @@
 import sys
-from PWF.workflow import BaseWorkflow
+from transpile.PWF.Workflow import BaseWorkflow
 
 class ProcessImages(BaseWorkflow):
 

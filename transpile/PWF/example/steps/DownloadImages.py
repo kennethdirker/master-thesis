@@ -1,9 +1,9 @@
-import sys
-from PWF.command_line_tool import BaseCommandLineTool
+from transpile.PWF.CommandLineTool import BaseCommandLineTool
 
 class DownloadImages(BaseCommandLineTool):
 
     def metadata(self):
+        # FIXME User doesn't see self.id, ommit it from them?
         self.id = "download_images"
         self.label = "download_images"
 
@@ -12,7 +12,8 @@ class DownloadImages(BaseCommandLineTool):
         self.inputs_dict = {
             "url_list": {
                 "type": "file",
-                "prefix": "-i"
+                "prefix": "-i",
+                "position": 0
             }
         }
 
@@ -31,6 +32,5 @@ class DownloadImages(BaseCommandLineTool):
     
     
 if __name__ == "__main__":
-    tool = DownloadImages(sys.argv[1])
-    tool.execute()
+    DownloadImages(main=True)
     

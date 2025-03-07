@@ -1,35 +1,64 @@
+import dask.delayed
+import sys
 import yaml
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Union
+from typing import Any, Optional, Union
 
 class BaseProcess(ABC):
-    def __init__(self, runtime_inputs_uri: str | None = None):
-        """ TODO: class description """
-        # Assign metadata attributes
-        self.id:    Union[str, None] = None # Unique ID, used internally
-        self.label: Union[str, None] = None # Human readable short description
-        self.doc:   Union[str, None] = None # Human readable process explaination
+    def __init__(
+            self,
+            main: bool = False,
+            runtime_inputs: Optional[dict] = None
+        ):
+        """ 
+        TODO: class description 
+        BaseProcess __init__ should be run before subclass __init__.
 
-        # Assign input/output
-        # FIXME: dicts should probably use special classes like CWL does
-        self.inputs_dict:  Union[dict] = {} 
-        self.outputs_dict: Union[dict] = {}
+        Arguments:
+            runtime_inputs: Must only be used if this process is not the
+            root process.
+        """
+        # Assign metadata attributes. Override in self.metadata().
+        # FIXME User doesn't see self.id, ommit it from them?
+        self.id:    Union[str, None] = None # Unique identity of a process instance.
+        self.label: Union[str, None] = None # Human readable short description.
+        self.doc:   Union[str, None] = None # Human readable process explaination.
+        
+        # A process that is called from the command line is root. Processes
+        # that are instantiated from other another process (sub-processes)
+        # are not root.
+        self.is_root: bool = main
 
-        # Assign requirements and hints
-        # NOTE: Probably not needed for Minimal Viable Product
+
+        # Assign input/output dictionary attributes.
+        # FIXME: dicts should probably use special classes like CWL does.
+        self.inputs_dict:  Union[dict] = {} # Override in self.inputs()
+        self.outputs_dict: Union[dict] = {} # Override in self.outputs()
+
+        # Assign requirements and hints.
+        # Override in self.requirements() and self.hints().
+        # NOTE: Probably not needed for Minimal Viable Product.
         self.reqs:  Union[dict, None] = {}
         self.hints: Union[dict, None] = {}
         
-        # Load runtime input variables from a YAML into a dictionary
-        # NOTE: runtime_inputs_uri argument is only used in the root process!
-        self.runtime_inputs: dict = None
-        if runtime_inputs_uri:
-            self._load_yaml(runtime_inputs_uri)
+        # Assign a dictionary with runtime input variables to the process.
+        # Only the root process must load the input YAML from a file. Non-root
+        # processes get a reference to the dictionary loaded in the main process.
+        # NOTE: ...Might be susceptible to bugs...
+        if main:
+            # The YAML file uri comes from the first command line argument
+            self._load_yaml(sys.argv[1])
+        else:
+            if runtime_inputs is None:
+                raise Exception(f"Subprocess {type(self)}({self.id}) is not initialized as root process, but isn't given runtime inputs!")
+            self.runtime_inputs = runtime_inputs
 
         # TODO: Prepare Dask?
         # dask_client = ...
+        task_graph_ref: Union[dask.Delayed, None] = None
+
 
 
     def _load_yaml(yaml_uri: str) -> dict:
@@ -38,9 +67,14 @@ class BaseProcess(ABC):
         """
         return yaml.safe_load(Path(yaml_uri).read_text())
 
+
     @abstractmethod
-    def metadata(self):
+    def metadata(self) -> None:
+        """
+        Must be overwritten to assign process metadata attributes.
+        """
         pass
+
 
     # @abstractmethod
     def inputs(self) -> dict[str, Any] :
@@ -69,6 +103,7 @@ class BaseProcess(ABC):
         # pass
         return {}
 
+
     # @abstractmethod
     def requirements(self) -> dict:
         """
@@ -92,18 +127,31 @@ class BaseProcess(ABC):
         pass
     
 
-    def runnable(self, runtime_inputs_dict: dict) -> bool:
+    def __call__(self, runtime_dict: dict) -> bool:
+        return self.execute(runtime_dict)
+
+
+    def runnable(self) -> bool:
+    # def runnable(self, runtime_inputs_dict: dict) -> bool:
         """
         Check whether a process is ready to be executed.
 
         Returns:
             True if the process can be run, False otherwise.
+            Additionally, a list of missing inputs is returned.
         """
         # TODO: Currently only checks that all keys are matched. Additions: 
-        # - Validate type of inputs
+        # - Validate type of inputs.
         # - 
         # NOTE: Extra checks probably not needed for Minimal Viable Product.
-        for key, value in self.inputs().items():
-            if key not in runtime_inputs_dict:
-                return False 
-        return True
+        if self.task_graph_ref is None:
+            return False, []
+            
+        green_light = True
+        missing_inputs: list[str] = []
+        for key, value in self.inputs_dict.items():
+            if key not in self.runtime_inputs_dict:
+            # if key not in runtime_inputs_dict:
+                green_light = False
+                missing_inputs.append(key)
+        return green_light, missing_inputs

@@ -4,15 +4,28 @@
 
 from abc import abstractmethod
 # from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 from .process import BaseProcess
 
 class BaseWorkflow(BaseProcess):
-    def __init__(self):
+    def __init__(
+            self,
+            main: bool = False,
+            runtime_inputs: Optional[dict] = None
+        ):
         """ TODO: class description """
-        super.__init__()
+        # Must be overridden by self.steps().
         self.steps_dict: Union[dict] = {}
+
+        super().__init__(main=main, runtime_inputs=runtime_inputs)
+        self.metadata()
+        self.inputs()
+        self.outputs()
+        self.requirements()
+        self.steps()
+        if main:
+            self.execute()
 
     @abstractmethod
     def steps(self):
