@@ -17,7 +17,7 @@ class BaseCommandLineTool(BaseProcess):
             runtime_inputs: Optional[dict] = None
         ):
         """ TODO: class description """
-        super.__init__(main=main, runtime_inputs=runtime_inputs)
+        super().__init__(main=main, runtime_inputs=runtime_inputs)
         self.metadata()
         self.inputs()
         self.outputs()
@@ -52,7 +52,11 @@ class BaseCommandLineTool(BaseProcess):
         pass
 
 
-    def run_command_line(self, cmd):
+    def run_command_line(
+            self,
+            cmd_template: str,
+            keywords: str
+        ):
         """
         Wrapper for subprocess.run().
 
@@ -63,6 +67,8 @@ class BaseCommandLineTool(BaseProcess):
         #     stdout
         #     stderr
         # TODO Get runtime input variables and check if present
+        cmd = self.insert_inputs(cmd_template, keywords)
+        print(cmd)
         run(cmd)
         # TODO process outputs
         #  
@@ -73,9 +79,12 @@ class BaseCommandLineTool(BaseProcess):
             cmd: str,
             keywords: list[str]
         ) -> str:
+        """
+        TODO Description
+        """
         # TODO: Should we check if all keywords are present?
         for keyword in keywords:
-            cmd.replace(f"${keyword}$", self.runtime_inputs[keyword])
+            cmd = cmd.replace(f"${keyword}$", self.runtime_inputs[keyword])
         return cmd
 
 
@@ -83,6 +92,9 @@ class BaseCommandLineTool(BaseProcess):
             self,
             args: list[Tuple[str, dict[str, Any]]]
         ) -> list[str]:
+        """
+        TODO Description
+        """
         parsed_args: list[str] = []
         for id, arg_dict in args:
             parsed_arg: str = ""
@@ -112,15 +124,17 @@ class BaseCommandLineTool(BaseProcess):
         args = sorted(pos_args, key=lambda x: x[1]["position"])
         args += key_args
         
-        # Process arguments
+        # Parse arguments
         parsed: list[str] = self.parse_args(args)
-        cmd: str = self.base_command + " ".join(parsed)
+        cmd_template: str = " ".join([self.base_command, *parsed])
 
         # Check if all requirements to run the process are met
         runnable, missing = self.runnable()
         if runnable:
-            cmd = self.insert_inputs(cmd, keywords)
-            self.task_graph_ref = dask.delayed(self.run_command_line)(cmd)
+            self.task_graph_ref = dask.delayed(self.run_command_line)(
+                cmd_template,
+                keywords
+            )
             self.task_graph_ref.compute()
         else:
             raise RuntimeError(

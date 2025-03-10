@@ -30,7 +30,7 @@ class BaseProcess(ABC):
         # Assign metadata attributes. Override in self.metadata().
         # Unique identity of a process instance. The id looks as follows:
         #   "{path/to/process/file}:{uuid}"  
-        self._id = inspect.getfile(type(self)) + uuid.uuid4()
+        self._id = inspect.getfile(type(self)) + str(uuid.uuid4())
         self.label: Union[str, None] = None # Human readable process name.
         self.doc:   Union[str, None] = None # Human readable process explaination.
         
@@ -51,7 +51,7 @@ class BaseProcess(ABC):
         # NOTE: ...Might be susceptible to bugs...
         if main:
             # The YAML file uri comes from the first command line argument
-            self._load_yaml(sys.argv[1])
+            self.runtime_inputs = self._load_yaml(sys.argv[1])
         else:
             if runtime_inputs is None:
                 raise Exception(f"Subprocess {type(self)}({self._id}) is not initialized as root process, but isn't given runtime inputs!")
@@ -63,7 +63,7 @@ class BaseProcess(ABC):
 
 
 
-    def _load_yaml(yaml_uri: str) -> dict:
+    def _load_yaml(self, yaml_uri: str) -> dict:
         """
         Load a YAML file pointed at by 'yaml_uri' into a dictionary.
         """
@@ -145,14 +145,15 @@ class BaseProcess(ABC):
         # TODO: Currently only checks that all keys are matched. Additions: 
         # - Validate type of inputs.
         # - 
-        # NOTE: Extra checks probably not needed for Minimal Viable Product.
-        if self.task_graph_ref is None:
-            return False, []
+        # # NOTE: Extra checks probably not needed for Minimal Viable Product.
+        # FIXME: move to Workflow.runnable
+        # if self.task_graph_ref is None:
+        #     return False, []
             
         green_light = True
         missing_inputs: list[str] = []
         for key, value in self.inputs_dict.items():
-            if key not in self.runtime_inputs_dict:
+            if key not in self.runtime_inputs:
             # if key not in runtime_inputs_dict:
                 green_light = False
                 missing_inputs.append(key)
