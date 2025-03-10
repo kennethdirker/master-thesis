@@ -1,5 +1,7 @@
 import dask.delayed
+import inspect
 import sys
+import uuid
 import yaml
 
 from abc import ABC, abstractmethod
@@ -20,18 +22,18 @@ class BaseProcess(ABC):
             runtime_inputs: Must only be used if this process is not the
             root process.
         """
-        # Assign metadata attributes. Override in self.metadata().
-        # FIXME User doesn't see self.id, ommit it from them?
-        self.id:    Union[str, None] = None # Unique identity of a process instance.
-        self.label: Union[str, None] = None # Human readable short description.
-        self.doc:   Union[str, None] = None # Human readable process explaination.
-        
         # A process that is called from the command line is root. Processes
         # that are instantiated from other another process (sub-processes)
         # are not root.
         self.is_root: bool = main
 
-
+        # Assign metadata attributes. Override in self.metadata().
+        # Unique identity of a process instance. The id looks as follows:
+        #   "{path/to/process/file}:{uuid}"  
+        self._id = inspect.getfile(type(self)) + uuid.uuid4()
+        self.label: Union[str, None] = None # Human readable process name.
+        self.doc:   Union[str, None] = None # Human readable process explaination.
+        
         # Assign input/output dictionary attributes.
         # FIXME: dicts should probably use special classes like CWL does.
         self.inputs_dict:  Union[dict] = {} # Override in self.inputs()
@@ -52,7 +54,7 @@ class BaseProcess(ABC):
             self._load_yaml(sys.argv[1])
         else:
             if runtime_inputs is None:
-                raise Exception(f"Subprocess {type(self)}({self.id}) is not initialized as root process, but isn't given runtime inputs!")
+                raise Exception(f"Subprocess {type(self)}({self._id}) is not initialized as root process, but isn't given runtime inputs!")
             self.runtime_inputs = runtime_inputs
 
         # TODO: Prepare Dask?

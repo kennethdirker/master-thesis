@@ -6,7 +6,7 @@ from abc import abstractmethod
 # from pathlib import Path
 from typing import Optional, Union
 
-from .process import BaseProcess
+from .Process import BaseProcess
 
 class BaseWorkflow(BaseProcess):
     def __init__(

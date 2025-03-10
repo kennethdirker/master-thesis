@@ -1,12 +1,12 @@
 import dask.delayed
-import inspect
-import uuid
+# import inspect
+# import uuid
 
 from abc import abstractmethod
 from subprocess import run
-from typing import Optional
+from typing import Any, Optional, Tuple
 
-from .process import BaseProcess
+from .Process import BaseProcess
 
 
 class BaseCommandLineTool(BaseProcess):
@@ -31,7 +31,6 @@ class BaseCommandLineTool(BaseProcess):
         """
         Assign metadata to the process. Assigns a process identity
         consisting of '{path/to/process}:{uuid}'.
-        # FIXME User doesn't see self.id, ommit it from them?
 
         Can be overwritten by user to assign the following variables:
             - self.id: Unique identity of a process instance.
@@ -39,13 +38,13 @@ class BaseCommandLineTool(BaseProcess):
             - self.doc: Human readable process explaination.
             - TODO: Add more fields if needed!
         """
-        # FIXME User doesn't see self.id, ommit it from them?
-        self.id: str = inspect.getfile(type(self)) + uuid.uuid()
-        
+        pass        
 
     @abstractmethod
+    # FIXME: Better function name
     def command_line(self) -> None:
         """
+        TODO: Description
         """
         # Example:
         # self.base_command = "ls -l"
@@ -68,31 +67,59 @@ class BaseCommandLineTool(BaseProcess):
         # TODO process outputs
         #  
 
+
+    def insert_inputs(
+            self,
+            cmd: str,
+            keywords: list[str]
+        ) -> str:
+        # TODO: Should we check if all keywords are present?
+        for keyword in keywords:
+            cmd.replace(f"${keyword}$", self.runtime_inputs[keyword])
+        return cmd
+
+
+    def parse_args(
+            self,
+            args: list[Tuple[str, dict[str, Any]]]
+        ) -> list[str]:
+        parsed_args: list[str] = []
+        for id, arg_dict in args:
+            parsed_arg: str = ""
+            if "prefix" in arg_dict:
+                parsed_arg = arg_dict["prefix"] + " "
+            parsed_arg += f"${id}$"
+
+            parsed_args.append(parsed_arg)
+        return parsed_args
+
+
     def execute(self) -> None:
-        """ Wrapper for tool execution. Can be overwritten to alter execution behaviour. """
+        """ Executes this tool. Can be overwritten to alter execution behaviour. """
         # TODO: Get requirements
-        pos_args = []
-        key_args = []
+        pos_args: Tuple[str, dict[str, Any]] = []
+        key_args: Tuple[str, dict[str, Any]] = []
+        keywords: list[str] = []
         # Decide whether this argument is positional or not.
-        for arg_id, arg_dict in self.inputs_dict.items():
-            if hasattr(arg_dict, "position"):
-                pos_args.append((arg_id, arg_dict))
+        for input_id, input_dict in self.inputs_dict.items():
+            if hasattr(input_dict, "position"):
+                pos_args.append((input_id, input_dict))
             else:
-                key_args.append((arg_id, key_args))
+                key_args.append((input_id, input_dict))
+            keywords.append(input_id)
+
+        # Order arguments
+        args = sorted(pos_args, key=lambda x: x[1]["position"])
+        args += key_args
         
-        # Process positional arguments
-        # TODO
-
-        # Process keyword arguments
-        # TODO
-
-        cmd: str = self.base_command
-        cmd += " ".join(pos_args)
-        cmd += " ".join(key_args)
+        # Process arguments
+        parsed: list[str] = self.parse_args(args)
+        cmd: str = self.base_command + " ".join(parsed)
 
         # Check if all requirements to run the process are met
         runnable, missing = self.runnable()
         if runnable:
+            cmd = self.insert_inputs(cmd, keywords)
             self.task_graph_ref = dask.delayed(self.run_command_line)(cmd)
             self.task_graph_ref.compute()
         else:

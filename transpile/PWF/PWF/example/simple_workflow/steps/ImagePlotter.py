@@ -1,10 +1,10 @@
-from transpile.PWF.CommandLineTool import BaseCommandLineTool
+from ...CommandLineTool import BaseCommandLineTool
 
 class imagePlotter(BaseCommandLineTool):
 
     def metadata(self):
         # FIXME User doesn't see self.id, ommit it from them?
-        self.id = "imageplotter"
+        # self.id = "imageplotter"
         self.label = "imageplotter"
 
     
@@ -35,6 +35,7 @@ class imagePlotter(BaseCommandLineTool):
         }
 
 
+    # FIXME: Better function name
     def command_line(self):
         self.base_command = "python imageplotter.py"
     

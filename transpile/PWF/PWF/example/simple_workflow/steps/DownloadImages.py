@@ -1,10 +1,7 @@
-from transpile.PWF.CommandLineTool import BaseCommandLineTool
-
+from PWF.src.CommandLineTool import BaseCommandLineTool
 class DownloadImages(BaseCommandLineTool):
 
     def metadata(self):
-        # FIXME User doesn't see self.id, ommit it from them?
-        self.id = "download_images"
         self.label = "download_images"
 
     
@@ -27,8 +24,9 @@ class DownloadImages(BaseCommandLineTool):
         }
 
 
-    def base_command(self):
-        return "wget"
+    # FIXME: Better function name
+    def command_line(self):
+        self.base_command: str = "wget"
     
     
 if __name__ == "__main__":
