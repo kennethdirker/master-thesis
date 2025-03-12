@@ -88,6 +88,7 @@ class BaseCommandLineTool(BaseProcess):
             return ""
         
     def load_runtime_arg(self, arg_id):
+        return str(self.runtime_inputs[arg_id])
 
     def _compose_command_old(
             self,
@@ -301,7 +302,13 @@ class BaseCommandLineTool(BaseProcess):
         #     stderr
         # TODO Get runtime input variables and check if present
         cmd: list[str] = self.compose_command(args)
+        if hasattr(self, "base_command"):
+            if isinstance(self.base_command, list):
+                cmd = [*self.base_command] + cmd
+            else:
+                cmd = [self.base_command] + cmd
         print(cmd)
+        print(" ".join(cmd))
         run(cmd)
         # TODO process outputs
         #  
