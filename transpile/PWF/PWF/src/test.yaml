@@ -1,0 +1,10 @@
+arg1: 0
+arg2: 0.0
+arg3: true
+arg4: True
+arg5: 'true'
+arg6: 'True'
+arg7:
+  - a
+  - b
+  - c

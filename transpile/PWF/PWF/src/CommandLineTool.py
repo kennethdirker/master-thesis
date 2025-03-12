@@ -63,25 +63,33 @@ class BaseCommandLineTool(BaseProcess):
     #             cmd = arg_dict["prefix"] + " " + cmd
     #         return cmd
 
-    def get_arg(self, arg_id, arg_dict) -> str:
+    def _get_arg_string_old(
+        self, 
+        arg_id: str, 
+        arg_dict: dict[str, Any], 
+        is_array: bool) -> str:
         arg_type: str = arg_dict["type"]
         # TODO what to do with arrays?
         if "string" in arg_type:
-            return self.runtime_inputs[arg_id]
+            return str(self.runtime_inputs[arg_id])
         if "int" in arg_type:
-            return int(self.runtime_inputs[arg_id])
+            return str(self.runtime_inputs[arg_id])
         if "float" in arg_type:
-            return int(self.runtime_inputs[arg_id])
+            return str(self.runtime_inputs[arg_id])
         if "bool" in arg_type:
-            return arg_dict["prefix"] if self.runtime_inputs[arg_id] else ""
+            if "prefix" in arg_dict and self.runtime_inputs[arg_id]:
+                return arg_dict["prefix"]
+            return ""
         if "file" in arg_type:
-            return self.runtime_inputs[arg_id]
+            return str(self.runtime_inputs[arg_id])
         if "directory" in arg_type:
-            return self.runtime_inputs[arg_id]
+            return str(self.runtime_inputs[arg_id])
         if "null" in arg_type:
             return ""
+        
+    def load_runtime_arg(self, arg_id):
 
-    def compose_commandline(
+    def _compose_command_old(
             self,
             args: list[Tuple[str, dict[str, Any]]]
         ) -> list[str]:
@@ -133,9 +141,152 @@ class BaseCommandLineTool(BaseProcess):
                 else:           # -i=A
                     cmds.append(prefix + self.runtime_inputs[arg_id])
         return cmds
+    
+
+    def load_runtime_arg_array(
+            self,
+            arg_id: str,
+            arg_type: str
+        ) -> list[str]:
+        """
+        TODO desc
+        """
+        args: list[str] = []
+
+        if "null" in arg_type:
+            return []
+        if "bool" in arg_type:
+            # NOTE: At the moment not sure how this should be implemented.
+            # FIXME yaml safe_load converts yaml strings to likely Python types.
+            # This is a problem here, as 'True' and 'true' both convert to the
+            # Python bool type with value True.
+            raise NotImplementedError()
+        else:
+            args = [str(item) for item in self.runtime_inputs[arg_id]]
+        return args
 
 
-    def run_command_line(
+    def compose_array_arg(
+            self,
+            arg_id: str,
+            arg_dict: dict[str, Any]
+        ) -> list[str]:
+        """
+        Compose a single command line array argument.
+
+        TODO Support for optional arguments 
+        TODO Support for bool type
+        """
+        args: list[str] = []
+        arg_type: str = arg_dict["type"]
+        prefix: str = ""
+        separate: bool = True
+        itemSeparator: str = None
+
+        # Load properties
+        arg_type = "".join(c for c in arg_type if c not in "[]?")
+        if "prefix" in arg_dict:
+            prefix = arg_dict["prefix"]
+        if "itemSeparator" in arg_dict:
+            itemSeparator = arg_dict["itemSeparator"]
+        if "separate" in arg_dict:
+            separate = arg_dict["separate"]
+        
+        # Convert array items to strings
+        items: list[str] = []
+        items = self.load_runtime_arg_array(arg_id, arg_type)
+
+        if "null" in arg_type:
+            return []
+        elif "bool" in arg_type:
+            # NOTE: At the moment not sure how this should be implemented.
+            # FIXME yaml safe_load converts yaml strings to likely Python types.
+            # This is a problem here, as 'True' and 'true' both convert to the
+            # Python bool type with value True.
+            raise NotImplementedError()
+        else:
+            if itemSeparator:
+                items = itemSeparator.join(items)
+                if prefix and separate:         # -i= A,B,C
+                    args.append(prefix)
+                    args.append(items)
+                elif prefix and not separate:   # -i=A,B,C
+                    args.append(prefix + items)
+                else:                           # A,B,C
+                    args.append(items)
+            else:
+                if prefix and separate:         # -i= A B C
+                    args.append(prefix)
+                    args.extend(items)
+                if prefix and not separate:     # -i=A -i=B -i=C
+                    for item in items:
+                        args.append(prefix + item)
+                else:                           # A B C
+                    args = items
+        return args
+
+
+
+    def compose_arg(
+            self,
+            arg_id: str,
+            arg_dict: dict[str, Any]
+        ) -> list[str]:
+        """
+        Compose a single command line argument.
+        
+        TODO Support for optional arguments 
+        TODO Support for bool type
+        """
+        args: list[str] = []
+        prefix: str = ""
+        separate: bool = True
+        arg_type: str = arg_dict["type"]
+
+        if "prefix" in arg_dict:
+            prefix = arg_dict["prefix"]
+        if "separate" in arg_dict:
+            separate = arg_dict["separate"]
+
+        if "null" in arg_type:
+            return []
+        elif "bool" in arg_type:
+            # FIXME yaml safe_load converts yaml strings to likely Python types.
+            # This is a problem here, as 'True' and 'true' both convert to the
+            # Python bool type with value True.
+            
+            # if prefix and self.runtime_inputs[arg_id]:
+            #     args.append(prefix)
+            # else:
+            #     args.append(str(self.runtime_inputs))
+            raise NotImplementedError()
+        else:
+            if separate:
+                if prefix:
+                    args.append(prefix)
+                args.append(self.load_runtime_arg(arg_id))
+            else:
+                args.append(prefix + self.load_runtime_arg(arg_id))
+
+
+        return args
+
+
+    def compose_command(
+            self,
+            args: list[Tuple[str, dict[str, Any]]]
+        ) -> list[str]:
+        cmds: list[str] = []
+        for arg_id, arg_dict  in args:
+            if "[]" in arg_dict["type"]:
+                # Compose array argument
+                cmds.extend(self.compose_array_arg(arg_id, arg_dict))
+            else:
+                # Compose single argument
+                cmds.extend(self.compose_arg(arg_id, arg_dict))
+        return cmds
+
+    def run_command(
             self,
             args: list[Tuple[str, dict[str, Any]]]
         ):
@@ -149,7 +300,7 @@ class BaseCommandLineTool(BaseProcess):
         #     stdout
         #     stderr
         # TODO Get runtime input variables and check if present
-        cmd: list[str] = self.compose_commandline(args)
+        cmd: list[str] = self.compose_command(args)
         print(cmd)
         run(cmd)
         # TODO process outputs
@@ -182,7 +333,10 @@ class BaseCommandLineTool(BaseProcess):
 
 
     def execute(self) -> None:
-        """ Executes this tool. Can be overwritten to alter execution behaviour. """
+        """
+        NOTE: Only execute with Dask if main?
+        Executes this tool. Can be overwritten to alter execution behaviour. 
+        """
         # TODO: Get requirements
         pos_args: Tuple[str, dict[str, Any]] = []
         key_args: Tuple[str, dict[str, Any]] = []
@@ -206,10 +360,8 @@ class BaseCommandLineTool(BaseProcess):
         # Check if all requirements to run the process are met
         runnable, missing = self.runnable()
         if runnable:
-            self.task_graph_ref = dask.delayed(self.run_command_line)(
-                args,
-                keywords
-            )
+            # NOTE: Only execute with Dask if main?
+            self.task_graph_ref = dask.delayed(self.run_command)(args)
             self.task_graph_ref.compute()
         else:
             raise RuntimeError(
