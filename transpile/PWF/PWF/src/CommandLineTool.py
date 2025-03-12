@@ -52,21 +52,38 @@ class BaseCommandLineTool(BaseProcess):
         pass
 
 
-    def compose_argument(
-            self,
-            arg_dict
-            ) -> str:
-            cmd = ""
+    # def compose_argument(
+    #         self,
+    #         arg_dict
+    #         ) -> str:
+    #         cmd = ""
 
-            # Apply prefix to argument
-            if "prefix" in arg_dict:
-                cmd = arg_dict["prefix"] + " " + cmd
-            return cmd
+    #         # Apply prefix to argument
+    #         if "prefix" in arg_dict:
+    #             cmd = arg_dict["prefix"] + " " + cmd
+    #         return cmd
+
+    def get_arg(self, arg_id, arg_dict) -> str:
+        arg_type: str = arg_dict["type"]
+        # TODO what to do with arrays?
+        if "string" in arg_type:
+            return self.runtime_inputs[arg_id]
+        if "int" in arg_type:
+            return int(self.runtime_inputs[arg_id])
+        if "float" in arg_type:
+            return int(self.runtime_inputs[arg_id])
+        if "bool" in arg_type:
+            return arg_dict["prefix"] if self.runtime_inputs[arg_id] else ""
+        if "file" in arg_type:
+            return self.runtime_inputs[arg_id]
+        if "directory" in arg_type:
+            return self.runtime_inputs[arg_id]
+        if "null" in arg_type:
+            return ""
 
     def compose_commandline(
             self,
             args: list[Tuple[str, dict[str, Any]]]
-            # keywords: list[str]
         ) -> list[str]:
         """
         Insert.
@@ -75,53 +92,52 @@ class BaseCommandLineTool(BaseProcess):
         # TODO Support optional arguments (type: '*?')
         cmds: list[str] = []
         for arg_id, arg_dict in args:
+            prefix: str = ""
+            separate: bool = True   #default
+                
+            if "prefix" in arg_dict:
+                prefix = arg_dict["prefix"]
+
+            if "separate" in arg_dict["separate"]:
+                separate = arg_dict["separate"]
+            
+            # NOTE: Do we need to cast every array item from self.runtime_inputs to string?
             if "[]" in arg_dict["type"]:
-                # Handle array type
-                # # Cannot combine 'separate=False' and 'itemSeparator' properties 
-                # if ("separate" in arg_dict and 
-                #     "separate" is False and
-                #     "itemSeparator" in arg_dict):
-                #     raise Exception(f"'{arg_id}: 'separate: False' and 'itemSeparator' are exclusive")
-                    
-                arg_type: str =  arg_dict["type"][:-2]
-                separate: bool = True   #default
-                delim = None
-                if "separate" in arg_dict["separate"]:
-                    separate = arg_dict["separate"]
+                # Handle array type                    
+                itemSeparator: str = None
 
                 if "itemSeparator" in arg_dict["itemSeparator"]:
-                    delim = arg_dict["itemSeparator"]
+                    itemSeparator = arg_dict["itemSeparator"]
 
-                if delim:
-                    for item in self.runtime_inputs[arg_id]:
-                        cmds
+                if separate:
+                    if prefix:
+                        cmds.append(prefix)
+
+                    if itemSeparator:   # -i= A,B,C
+                        cmds.append(itemSeparator.join(self.runtime_inputs[arg_id]))
+                    else:               # -i= A B C
+                        for item in self.runtime_inputs[arg_id]:
+                            cmds.append(item)
                 else:
-
-
-
-
-                # if "itemSeparator" in arg_dict["type"]: # -iA,B,C
-
-                # elif "separate" in arg_dict["type"] and not arg_dict["separate"]:   # -iA -iB -iC
-                #     for value in self.runtime_inputs[arg_id]:
-                #         cmd += self.
-                # elif "separate" in arg_dict["type"] and arg_dict
-                # else:   # -i A B C
-                #     cmd = arg_dict["itemSeparator"] + " ".join(self.runtime_inputs[arg_id])
+                    if itemSeparator:   # -i=A,B,C
+                        cmds.append(prefix + itemSeparator.join(self.runtime_inputs[arg_id]))
+                    else:               # -iA -iB -iC
+                        for item in self.runtime_inputs[arg_id]:
+                            cmds.append(prefix + item)
             else:
                 # Handle non-array type
-                to_insert = self.runtime_inputs[arg_id]
-                cmd = self.compose_argument(to_insert, arg_dict)
-
-
-            cmds.append(cmd)
+                if separate:    # -i= A
+                    if prefix:
+                        cmds.append(prefix)
+                    cmds.append
+                else:           # -i=A
+                    cmds.append(prefix + self.runtime_inputs[arg_id])
         return cmds
 
 
     def run_command_line(
             self,
-            args: list[Tuple[str, dict[str, Any]]],
-            keywords: str
+            args: list[Tuple[str, dict[str, Any]]]
         ):
         """
         Wrapper for subprocess.run().
@@ -133,7 +149,7 @@ class BaseCommandLineTool(BaseProcess):
         #     stdout
         #     stderr
         # TODO Get runtime input variables and check if present
-        cmd: list[str] = self.compose_commandline(args, keywords)
+        cmd: list[str] = self.compose_commandline(args)
         print(cmd)
         run(cmd)
         # TODO process outputs
