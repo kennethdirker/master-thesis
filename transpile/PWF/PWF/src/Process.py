@@ -7,6 +7,7 @@ import yaml
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Optional, Union
+from yaml import BaseLoader
 
 class BaseProcess(ABC):
     def __init__(
@@ -59,7 +60,7 @@ class BaseProcess(ABC):
 
         # TODO: Prepare Dask?
         # dask_client = ...
-        task_graph_ref: Union[dask.Delayed, None] = None
+        self.task_graph_ref: Union[dask.Delayed, None] = None
 
 
 
@@ -67,7 +68,11 @@ class BaseProcess(ABC):
         """
         Load a YAML file pointed at by 'yaml_uri' into a dictionary.
         """
-        return yaml.safe_load(Path(yaml_uri).read_text())
+        # NOTE: BaseLoader is used to force the YAML reader to only create
+        # string objects, instead of interpreting and converting objects to
+        # Python objects. This is needed for cases like booleans, where
+        # X:true is converted to X:bool(True), which are not identical. 
+        return yaml.load(Path(yaml_uri).read_text(), Loader=BaseLoader)
 
 
     @abstractmethod
@@ -120,14 +125,22 @@ class BaseProcess(ABC):
 
 
     @abstractmethod
-    def execute(self) -> None:
-        """ This function must be overridden to implement execution behaviour. """
+    def create_graph(self) -> None:
+        """ 
+        This function must be overridden to implement building the Dask Task
+        Tree. The function must assign the final tree node to 
+        'self.task_tree_ref', which is executed by 'self.execute()'.
+        """
         # Example:
         # 
         # 
         # 
         pass
     
+
+    def execute(self):
+        self.task_graph_ref.compute()
+
 
     def __call__(self, runtime_dict: dict) -> bool:
         return self.execute(runtime_dict)
