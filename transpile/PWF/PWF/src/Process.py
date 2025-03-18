@@ -67,7 +67,9 @@ class BaseProcess(ABC):
         """
         Load a YAML file pointed at by 'yaml_uri' into a dictionary.
         """
-        return yaml.safe_load(Path(yaml_uri).read_text())
+        with open(yaml_uri) as f:
+            return yaml.safe_load(f)
+        # return yaml.safe_load(Path(yaml_uri).read_text())
 
 
     @abstractmethod

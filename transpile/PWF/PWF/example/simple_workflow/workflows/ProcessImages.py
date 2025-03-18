@@ -1,38 +1,66 @@
-import sys
-from transpile.PWF.Workflow import BaseWorkflow
+from PWF.src.Workflow import BaseWorkflow
 
 class ProcessImages(BaseWorkflow):
 
     def metadata(self):
-        self.id = "process_images"
         self.label = "process_images"
 
     
     def inputs(self):
+        # FIXME make input ids globally unique to ensure sub-processes from
+        # overwriting each other. Use process id?
         self.inputs_dict = {
             "url_list": {
-                "type": "file",
+                "type": "file"
             }
         }
 
 
     def outputs(self):
+        # FIXME make output ids globally unique to ensure sub-processes from
+        # overwriting each other. Use process id?
         self.outputs_dict = {
-            "output": {
-                "type": "file[]",
-                "glob": "*.fits"
+            "before_noise_remover": {
+                "type": "file",
+            # TODO Does the following work???
+            # NOTE: Prob not at workflow level, as input ids are not unique yet
+                "glob": self.runtime_inputs["output_image"]
             }
         }
 
 
     def steps(self):
-        self.steps_dict = {
-            
+        # TODO Complete steps
+        self.steps = {
+            "download_iamges": {
+                "in": {
+                    "url_list": {
+                        "source": "url_list"
+                    }
+                },
+                "out": "output",
+                # NOTE how do we call the file???
+                "run": "../steps/DownloadImages.py",
+                "label": "download_images"
+            },
+            "imageplotter": {
+                "in": {
+                    "input_fits": {
+                        # NOTE: indicates dir 
+                        "source": "download_images/output"
+                    },
+                    "output_image": {
+                        "default": "before_noise_remover.png"
+                    }
+
+                },
+                "out": "output",
+                "run": "../steps/ImagePlotter.py",
+                "label": "imageplotter"
+            }
         }
-        
+    
     
 if __name__ == "__main__":
-    input_yaml_uri = sys.argv[1]
-    tool = ProcessImages(input_yaml_uri)
-    tool.execute()
+    ProcessImages(main=True)
     

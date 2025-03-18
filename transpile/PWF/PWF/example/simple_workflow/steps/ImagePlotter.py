@@ -1,10 +1,8 @@
-from ...CommandLineTool import BaseCommandLineTool
+from PWF.src.CommandLineTool import BaseCommandLineTool
 
 class imagePlotter(BaseCommandLineTool):
 
     def metadata(self):
-        # FIXME User doesn't see self.id, ommit it from them?
-        # self.id = "imageplotter"
         self.label = "imageplotter"
 
     
@@ -30,6 +28,7 @@ class imagePlotter(BaseCommandLineTool):
             "output": {
                 "type": "file",
             # TODO Does the following work???
+            # NOTE: Prob not at workflow level, as input ids are not unique yet
                 "glob": self.runtime_inputs["output_image"]
             }
         }
@@ -37,7 +36,7 @@ class imagePlotter(BaseCommandLineTool):
 
     # FIXME: Better function name
     def command_line(self):
-        self.base_command = "python imageplotter.py"
+        self.base_command = ["python", "ImagePlotter.py"]
     
     
 if __name__ == "__main__":
