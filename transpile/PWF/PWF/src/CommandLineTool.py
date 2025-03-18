@@ -23,9 +23,9 @@ class BaseCommandLineTool(BaseProcess):
         self.outputs()
         self.requirements()
         self.command_line()
+        self.create_graph()
         if main:
             self.execute()
-
 
     def metadata(self):
         """
@@ -88,6 +88,7 @@ class BaseCommandLineTool(BaseProcess):
             return ""
         
     def load_runtime_arg(self, arg_id):
+        # FIXME: Shouldn't be needed if YAML is loaded as string
         return str(self.runtime_inputs[arg_id])
 
     def _compose_command_old(
@@ -339,7 +340,7 @@ class BaseCommandLineTool(BaseProcess):
     #     return parsed_args
 
 
-    def execute(self) -> None:
+    def create_graph(self) -> None:
         """
         NOTE: Only execute with Dask if main?
         Executes this tool. Can be overwritten to alter execution behaviour. 
@@ -369,7 +370,7 @@ class BaseCommandLineTool(BaseProcess):
         if runnable:
             # NOTE: Only execute with Dask if main?
             self.task_graph_ref = dask.delayed(self.run_command)(args)
-            self.task_graph_ref.compute()
+            # self.task_graph_ref.compute()
         else:
             raise RuntimeError(
                 f"{self.id} is missing inputs {missing} and cannot run")
