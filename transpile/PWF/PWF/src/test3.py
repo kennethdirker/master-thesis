@@ -1,11 +1,6 @@
-from test2 import CommandLineTool
 
-class Step(CommandLineTool):
+class BaseProcess:
     def __init__(self):
-        super().__init__()
-
+        self.id = "base_process"
     # def metadata(self):
         # self.id = "EWAJA WE MOETEN DOOOOOOR"
-
-s = Step()
-print(s.id)

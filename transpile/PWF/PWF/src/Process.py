@@ -72,7 +72,8 @@ class BaseProcess(ABC):
         # string objects, instead of interpreting and converting objects to
         # Python objects. This is needed for cases like booleans, where
         # X:true is converted to X:bool(True), which are not identical. 
-        return yaml.load(Path(yaml_uri).read_text(), Loader=BaseLoader)
+        with open(Path(yaml_uri), "r") as f:
+            return yaml.load(f, Loader=BaseLoader)
 
 
     @abstractmethod
@@ -167,7 +168,7 @@ class BaseProcess(ABC):
         missing_inputs: list[str] = []
         for key, value in self.inputs_dict.items():
             if key not in self.runtime_inputs:
-            # if key not in runtime_inputs_dict:
+                # if key not in runtime_inputs_dict:
                 green_light = False
                 missing_inputs.append(key)
         return green_light, missing_inputs
