@@ -36,7 +36,9 @@ class imagePlotter(BaseCommandLineTool):
 
     # FIXME: Better function name
     def command_line(self):
-        self.base_command = ["python", "ImagePlotter.py"]
+        self.base_command = ["python", "../scripts/imageplotter.py"]
+        # NOTE TO SELF: Point to the actual script... so not like this... 
+        # self.base_command = ["python", "ImagePlotter.py"]
     
     
 if __name__ == "__main__":
