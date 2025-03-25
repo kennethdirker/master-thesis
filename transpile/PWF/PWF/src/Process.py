@@ -1,3 +1,4 @@
+import copy
 import dask.delayed
 import inspect
 import sys
@@ -7,7 +8,6 @@ import yaml
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Optional, Union
-from yaml import BaseLoader
 
 class BaseProcess(ABC):
     def __init__(
@@ -57,6 +57,11 @@ class BaseProcess(ABC):
             if runtime_inputs is None:
                 raise Exception(f"Subprocess {type(self)}({self._id}) is not initialized as root process, but isn't given runtime inputs!")
             self.runtime_inputs = runtime_inputs
+            
+        print("Inputs loaded into self.runtime_inputs:")
+        for k, v in self.runtime_inputs.items():
+            print("\t- ", k, ":", v)
+        print()
 
         # TODO: Prepare Dask?
         # dask_client = ...
@@ -73,8 +78,10 @@ class BaseProcess(ABC):
         # Python objects. This is needed for cases like booleans, where
         # X:true is converted to X:bool(True), which are not identical. 
         with open(Path(yaml_uri), "r") as f:
-            return yaml.load(f, Loader=BaseLoader)
-
+            y = yaml.load(f, Loader=yaml.BaseLoader)
+            if not isinstance(y, dict):
+                raise Exception(f"Loaded YAML should be a dict, but has type {type(y)}")
+            return y
 
     @abstractmethod
     def metadata(self) -> None:

@@ -1,6 +1,7 @@
 import dask.delayed
 # import inspect
 # import uuid
+import os
 
 from abc import abstractmethod
 from subprocess import run
@@ -158,7 +159,7 @@ class BaseCommandLineTool(BaseProcess):
         if "null" in arg_type:
             return []
         if "bool" in arg_type:
-            # NOTE: At the moment not sure how this should be implemented.
+            # NOTE: At the moment not sure how this should look like/ be implemented.
             # FIXME yaml safe_load converts yaml strings to likely Python types.
             # This is a problem here, as 'True' and 'true' both convert to the
             # Python bool type with value True.
@@ -308,8 +309,10 @@ class BaseCommandLineTool(BaseProcess):
                 cmd = [*self.base_command] + cmd
             else:
                 cmd = [self.base_command] + cmd
-        print(cmd)
-        print(" ".join(cmd))
+        print("Current working directory:", os.getcwd())
+        # print(cmd)
+        print("Executing:", " ".join(cmd))
+        print()
         run(cmd)
         # TODO process outputs
         #  
