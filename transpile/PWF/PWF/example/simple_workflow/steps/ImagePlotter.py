@@ -29,7 +29,7 @@ class imagePlotter(BaseCommandLineTool):
                 "type": "file",
             # TODO Does the following work???
             # NOTE: Prob not at workflow level, as input ids are not unique yet
-                "glob": self.runtime_inputs["output_image"]
+                "glob": "inputs/output_image"
             }
         }
 
@@ -38,7 +38,7 @@ class imagePlotter(BaseCommandLineTool):
     def command_line(self):
         self.base_command = ["python", "../scripts/imageplotter.py"]
         # NOTE TO SELF: Point to the actual script... so not like this... 
-        # self.base_command = ["python", "ImagePlotter.py"]
+        # !!!self.base_command = ["python", "ImagePlotter.py"]!!!
     
     
 if __name__ == "__main__":

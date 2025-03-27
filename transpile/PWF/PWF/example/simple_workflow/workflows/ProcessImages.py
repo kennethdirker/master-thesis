@@ -22,31 +22,32 @@ class ProcessImages(BaseWorkflow):
         self.outputs_dict = {
             "before_noise_remover": {
                 "type": "file",
+                # "outputSource": inputs/{input_arg_id}
+                # "outputSource": {step_id}/{step_output_id}
+                "outputSource": "imageplotter/output"
             # TODO Does the following work???
             # NOTE: Prob not at workflow level, as input ids are not unique yet
-                "glob": self.runtime_inputs["output_image"]
+                # "glob": self.runtime_inputs["output_image"]
             }
         }
 
 
     def steps(self):
         # TODO Complete steps
-        self.steps = {
-            "download_iamges": {
+        self.steps_dict = {
+            "download_images": {
                 "in": {
                     "url_list": {
                         "source": "url_list"
                     }
                 },
                 "out": "output",
-                # NOTE how do we call the file???
                 "run": "../steps/DownloadImages.py",
                 "label": "download_images"
             },
             "imageplotter": {
                 "in": {
                     "input_fits": {
-                        # NOTE: indicates dir 
                         "source": "download_images/output"
                     },
                     "output_image": {
