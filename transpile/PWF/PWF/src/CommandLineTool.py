@@ -21,6 +21,7 @@ class BaseCommandLineTool(BaseProcess):
         super().__init__(main=main, runtime_inputs=runtime_inputs)
         self.metadata()
         self.inputs()
+        self._process_inputs()
         self.outputs()
         self.requirements()
         self.command_line()
@@ -52,99 +53,11 @@ class BaseCommandLineTool(BaseProcess):
         # self.base_command = f"{self.inputs_dict['dynamic_program']}"
         pass
 
-
-    # def compose_argument(
-    #         self,
-    #         arg_dict
-    #         ) -> str:
-    #         cmd = ""
-
-    #         # Apply prefix to argument
-    #         if "prefix" in arg_dict:
-    #             cmd = arg_dict["prefix"] + " " + cmd
-    #         return cmd
-
-    def _get_arg_string_old(
-        self, 
-        arg_id: str, 
-        arg_dict: dict[str, Any], 
-        is_array: bool) -> str:
-        arg_type: str = arg_dict["type"]
-        # TODO what to do with arrays?
-        if "string" in arg_type:
-            return str(self.runtime_inputs[arg_id])
-        if "int" in arg_type:
-            return str(self.runtime_inputs[arg_id])
-        if "float" in arg_type:
-            return str(self.runtime_inputs[arg_id])
-        if "bool" in arg_type:
-            if "prefix" in arg_dict and self.runtime_inputs[arg_id]:
-                return arg_dict["prefix"]
-            return ""
-        if "file" in arg_type:
-            return str(self.runtime_inputs[arg_id])
-        if "directory" in arg_type:
-            return str(self.runtime_inputs[arg_id])
-        if "null" in arg_type:
-            return ""
         
     def load_runtime_arg(self, arg_id):
         # FIXME: Shouldn't be needed if YAML is loaded as string
         return str(self.runtime_inputs[arg_id])
 
-    def _compose_command_old(
-            self,
-            args: list[Tuple[str, dict[str, Any]]]
-        ) -> list[str]:
-        """
-        Insert.
-        TODO Description
-        """
-        # TODO Support optional arguments (type: '*?')
-        cmds: list[str] = []
-        for arg_id, arg_dict in args:
-            prefix: str = ""
-            separate: bool = True   #default
-                
-            if "prefix" in arg_dict:
-                prefix = arg_dict["prefix"]
-
-            if "separate" in arg_dict["separate"]:
-                separate = arg_dict["separate"]
-            
-            # NOTE: Do we need to cast every array item from self.runtime_inputs to string?
-            if "[]" in arg_dict["type"]:
-                # Handle array type                    
-                itemSeparator: str = None
-
-                if "itemSeparator" in arg_dict["itemSeparator"]:
-                    itemSeparator = arg_dict["itemSeparator"]
-
-                if separate:
-                    if prefix:
-                        cmds.append(prefix)
-
-                    if itemSeparator:   # -i= A,B,C
-                        cmds.append(itemSeparator.join(self.runtime_inputs[arg_id]))
-                    else:               # -i= A B C
-                        for item in self.runtime_inputs[arg_id]:
-                            cmds.append(item)
-                else:
-                    if itemSeparator:   # -i=A,B,C
-                        cmds.append(prefix + itemSeparator.join(self.runtime_inputs[arg_id]))
-                    else:               # -iA -iB -iC
-                        for item in self.runtime_inputs[arg_id]:
-                            cmds.append(prefix + item)
-            else:
-                # Handle non-array type
-                if separate:    # -i= A
-                    if prefix:
-                        cmds.append(prefix)
-                    cmds.append
-                else:           # -i=A
-                    cmds.append(prefix + self.runtime_inputs[arg_id])
-        return cmds
-    
 
     def load_runtime_arg_array(
             self,
@@ -289,7 +202,7 @@ class BaseCommandLineTool(BaseProcess):
                 cmds.extend(self.compose_arg(arg_id, arg_dict))
         return cmds
 
-    def run_command(
+    def cmd_wrapper(
             self,
             args: list[Tuple[str, dict[str, Any]]]
         ):
@@ -318,35 +231,9 @@ class BaseCommandLineTool(BaseProcess):
         #  
 
 
-    # def parse_args(
-    #         self,
-    #         args: list[Tuple[str, dict[str, Any]]]
-    #     ) -> list[Tuple[str, str, dict[str, Any]]]:
-    #     """
-    #     NOTE Because arrays introduce multiple ways of parsing, parsing
-    #     be done at runtime!
-    #     TODO Description
-    #     Returns:
-    #         [(arg_id, arg_cmd, arg_dict), ...]
-    #     """
-    #     parsed_args: list[Tuple[str, str, dict[str, Any]]] = []
-    #     for id, arg_dict in args:
-    #         parsed_arg: str = ""
-    #         # Check argument if needed
-    #         # if "prefix" in arg_dict:
-    #             # parsed_arg = arg_dict["prefix"] + " "
-
-    #         # Add argument replacement token
-    #         parsed_arg += f"${id}$"
-
-    #         parsed_args.append((id, parsed_arg, arg_dict))
-    #     return parsed_args
-
-
     def create_graph(self) -> None:
         """
-        NOTE: Only execute with Dask if main?
-        Executes this tool. Can be overwritten to alter execution behaviour. 
+        Build a Dask Delayed object to execute the wrapped tool with.
         """
         # TODO: Get requirements
         pos_args: Tuple[str, dict[str, Any]] = []
@@ -369,11 +256,9 @@ class BaseCommandLineTool(BaseProcess):
         # cmd_template: str = " ".join([self.base_command, *parsed])
 
         # Check if all requirements to run the process are met
-        runnable, missing = self.runnable()
-        if runnable:
-            # NOTE: Only execute with Dask if main?
-            self.task_graph_ref = dask.delayed(self.run_command)(args)
-            # self.task_graph_ref.compute()
-        else:
-            raise RuntimeError(
-                f"{self.id} is missing inputs {missing} and cannot run")
+        # runnable, missing = self.runnable()
+        # if runnable:
+        self.task_graph_ref = dask.delayed(self.cmd_wrapper)(args)
+        # else:
+            # raise RuntimeError(
+                # f"{self.id} is missing inputs {missing} and cannot run")
