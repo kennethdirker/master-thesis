@@ -9,6 +9,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from .utils import Absent
+
 class BaseProcess(ABC):
     def __init__(
             self,
@@ -28,17 +30,21 @@ class BaseProcess(ABC):
         # are not root.
         self.is_root: bool = main
 
-        # Assign metadata attributes. Override in self.metadata().
         # Unique identity of a process instance. The id looks as follows:
-        #   "{path/to/process/file}:{uuid}"  
-        self._id = inspect.getfile(type(self)) + str(uuid.uuid4())
+        #   "{path/to/process/script/file}:{uuid}"  
+        self._id = inspect.getfile(type(self)) + ":" + str(uuid.uuid4())
+        # print(f"Created process with id '{self._id}'")
+        
+        # Assign metadata attributes. Override in self.metadata().
         self.label: Union[str, None] = None # Human readable process name.
         self.doc:   Union[str, None] = None # Human readable process explaination.
         
         # Assign input/output dictionary attributes.
-        # FIXME: dicts should probably use special classes like CWL does.
+        # FIXME: dicts should probably use special classes like CWLTool does.
         self.inputs_dict:  Union[dict] = {} # Override in self.inputs()
         self.outputs_dict: Union[dict] = {} # Override in self.outputs()
+        # TODO What to do with self.parents???
+        self.parents: list[Any] = []
 
         # Assign requirements and hints.
         # Override in self.requirements() and self.hints().
@@ -53,15 +59,15 @@ class BaseProcess(ABC):
         if main:
             # The YAML file uri comes from the first command line argument
             self.runtime_inputs = self._load_yaml(sys.argv[1])
+            print("Inputs loaded into self.runtime_inputs:")
+            for k, v in self.runtime_inputs.items():
+                print("\t- ", k, ":", v)
+            print()
         else:
             if runtime_inputs is None:
                 raise Exception(f"Subprocess {type(self)}({self._id}) is not initialized as root process, but isn't given runtime inputs!")
             self.runtime_inputs = runtime_inputs
-            
-        print("Inputs loaded into self.runtime_inputs:")
-        for k, v in self.runtime_inputs.items():
-            print("\t- ", k, ":", v)
-        print()
+
 
         # TODO: Prepare Dask?
         # dask_client = ...
@@ -76,7 +82,7 @@ class BaseProcess(ABC):
         # NOTE: BaseLoader is used to force the YAML reader to only create
         # string objects, instead of interpreting and converting objects to
         # Python objects. This is needed for cases like booleans, where
-        # X:true is converted to X:bool(True), which are not identical. 
+        # true and True are treated identically, while they are not. 
         with open(Path(yaml_uri), "r") as f:
             y = yaml.load(f, Loader=yaml.BaseLoader)
             if not isinstance(y, dict):
@@ -105,6 +111,11 @@ class BaseProcess(ABC):
         # pass
         return {}
     
+    def _process_inputs(self) -> None:
+        for input_id in self.inputs_dict:
+        # for arg_id, input_obj in self.inputs_dict.items():
+            if input_id not in self.runtime_inputs:
+                self.runtime_inputs[input_id] = Absent()
     
     # @abstractmethod
     def outputs(self) -> dict[str, Any]:
@@ -147,7 +158,12 @@ class BaseProcess(ABC):
     
 
     def execute(self):
-        self.task_graph_ref.compute()
+        runnable, missing = self.runnable()
+        if runnable:
+            self.task_graph_ref.compute()
+        else:
+            raise RuntimeError(
+                f"{self.id} is missing inputs {missing} and cannot run")
 
 
     def __call__(self, runtime_dict: dict) -> bool:
@@ -167,15 +183,12 @@ class BaseProcess(ABC):
         # - Validate type of inputs.
         # - 
         # # NOTE: Extra checks probably not needed for Minimal Viable Product.
-        # FIXME: move to Workflow.runnable
-        # if self.task_graph_ref is None:
-        #     return False, []
             
         green_light = True
         missing_inputs: list[str] = []
         for key, value in self.inputs_dict.items():
-            if key not in self.runtime_inputs:
-                # if key not in runtime_inputs_dict:
+            if key not in self.runtime_inputs or \
+               isinstance(value, Absent):
                 green_light = False
                 missing_inputs.append(key)
         return green_light, missing_inputs
