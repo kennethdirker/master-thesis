@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional, Tuple, Union
 
 from .Process import BaseProcess
+from .utils import Graph
 
 class BaseWorkflow(BaseProcess):
     def __init__(
@@ -14,10 +15,15 @@ class BaseWorkflow(BaseProcess):
             main: bool = False,
             runtime_inputs: Optional[dict] = None
         ):
-        """ TODO: class description """
+        """
+        TODO: class description 
+        """
+        self._dep_graph = Graph()
+
         # Must be overridden by self.steps().
         self.steps_dict: dict[str, dict[str, str]] = {}
 
+        # Digest workflow file
         super().__init__(main=main, runtime_inputs=runtime_inputs)
         self.metadata()
         self.inputs()
@@ -32,14 +38,40 @@ class BaseWorkflow(BaseProcess):
 
     @abstractmethod
     def steps(self):
-        """ Defines the sub-processes of this workflow"""
+        """
+        Defines the sub-processes of this workflow. Overwriting this function
+        is mandatory for workflows 
+        """
         # Example:
-        # 
-        # 
-        # 
+        # self.steps_dict = {
+        #     "download_images": {
+        #         "in": {
+        #             "url_list": {
+        #                 "source": "url_list"
+        #             }
+        #         },
+        #         "out": "output",
+        #         "run": "../steps/DownloadImages.py",
+        #         "label": "download_images"
+        #     },
+        #     "imageplotter": {
+        #         "in": {
+        #             "input_fits": {
+        #                 "source": "download_images/output"
+        #             },
+        #             "output_image": {
+        #                 "default": "before_noise_remover.png"
+        #             }
+
+        #         },
+        #         "out": "output",
+        #         "run": "../steps/ImagePlotter.py",
+        #         "label": "imageplotter"
+        #     }
+        # }
         pass
 
-
+    
     def create_graph(self) -> None:
         """ 
         Create a Dask task graph with the sub-processes of this workflow. 
@@ -47,33 +79,44 @@ class BaseWorkflow(BaseProcess):
         """
         step_register: dict[str, Tuple[dict, BaseProcess]] = {}
 
-        # Create processes for each step
+        # Create a Process for each step and cache in step register
         print("Loading steps...")
-        for step_id, step_obj in self.steps_dict.items():
-            # print(step_id, step_obj)
-            step_process = self._load_single_class_from_uri(step_obj["run"])
-            step_register[step_id] = (step_obj, step_process)
+        for step_id, step_dict in self.steps_dict.items():
+            # print(step_id, step_dict)
+            step_process = self._load_single_class_from_uri(step_dict["run"])
+            step_register[step_id] = (step_dict, step_process)
 
         # Get process dependencies
-        for step_id, [step_obj, process] in step_register.items():
-            print("\n", step_id, step_obj, process._id, "\n")
+        for step_id, [step_dict, step_process] in step_register.items():
+            print("\n", step_id, step_dict, step_process._id, "\n")
+
             # Check inputs
-            for input_id, input_dict in step_obj["in"].items():
-                if "source" in input_dict and "/" in input_dict["source"]:
-                    # The step depends on the output of another step
-                    o = step_register[input_dict["source"].split("/")[0]]
+            for step_in_id, step_in_dict in step_dict["in"].items():
+                if "source" in step_in_dict and "/" in step_in_dict["source"]:
+                    # This step depends on the output of another step
+                    parent_step_id, parent_output_id = step_in_dict["source"].split("/")
+                    o = step_register[parent_step_id]
                     print(o)
                     self.parents.append(o[1]._id)
-        print(self.parents)
+        print("\n", self.parents, "\n")
 
-        raise NotImplementedError
+        # Construct dependency graph
+        # TODO
+
+        # Optimize dependency graph
+        # TODO
+
+        # Construct task_graph
+        # TODO
+
         # self.task_graph_ref
+        raise NotImplementedError
     
 
     def _load_single_class_from_uri(self, uri: str) -> BaseProcess:
         """
         Dynamic Process loading from file. Raises an exception if no valid 
-        process class can be found in the file.
+        BaseProcess sub-class can be found in the file.
         NOTE: Loading a class from a file that contains multiple subclasses of
         BaseProcess causes undefined behaviour.
 
