@@ -16,7 +16,7 @@ class BaseProcess(ABC):
             self,
             main: bool = False,
             runtime_inputs: Optional[dict] = None
-        ):
+        ) -> None:
         """ 
         TODO: class description 
         BaseProcess __init__ should be run before subclass __init__.
@@ -43,8 +43,10 @@ class BaseProcess(ABC):
         # FIXME: dicts should probably use special classes like CWLTool does.
         self.inputs_dict:  Union[dict] = {} # Override in self.inputs()
         self.outputs_dict: Union[dict] = {} # Override in self.outputs()
-        # TODO What to do with self.parents???
+        
+        # TODO What to do with self.parents / self.children???
         self.parents: list[Any] = []
+        self.children: list[Any] = []
 
         # Assign requirements and hints.
         # Override in self.requirements() and self.hints().
@@ -105,29 +107,36 @@ class BaseProcess(ABC):
         tool is ready to be executed.
         """
         # Example:
-        # 
-        # 
-        # 
-        # pass
+        # self.inputs_dict = {
+        #     "url_list": {
+        #         "type": "file"
+        #     }
+        # }
         return {}
     
+    
     def _process_inputs(self) -> None:
+        # Create an entry in the runtime_inputs dict for each input argument.
         for input_id in self.inputs_dict:
-        # for arg_id, input_obj in self.inputs_dict.items():
             if input_id not in self.runtime_inputs:
                 self.runtime_inputs[input_id] = Absent()
     
+
     # @abstractmethod
     def outputs(self) -> dict[str, Any]:
         """
         This function can be overridden to define Process outputs.
         """
         # Example:
-        # 
-        # 
-        # 
-        # pass
-        return {}
+        # self.outputs_dict = {
+        #     "before_noise_remover": {
+        #         "type": "file",
+        #         # "outputSource": inputs/{input_arg_id}
+        #         # "outputSource": {step_id}/{step_output_id}
+        #         "outputSource": "imageplotter/output"
+        #     }
+        # }
+        # return {}
 
 
     # @abstractmethod
