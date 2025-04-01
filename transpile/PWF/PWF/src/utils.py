@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Any, Optional, Tuple
 from .Process import BaseProcess
 # from pathlib import Path
@@ -33,6 +34,8 @@ class Node:
         
         self.id = id
 
+        # self.merged = False
+
         if parents is None:
             parents = []
         self.parents = parents
@@ -43,17 +46,26 @@ class Node:
 
         if processes is None:
             processes = []
-        self.procs = processes
+        self.processes = processes
 
         if internal_dependencies is None:
             internal_dependencies = {}
-        self.internal_deps = internal_dependencies
+        self.internal_dependencies = internal_dependencies
+
+
+    def __deepcopy__(self) -> 'Node':
+        node = Node(self.id)
+        node.parents = deepcopy(self.parents)
+        node.children = deepcopy(self.children)
+        node.processes = [p for p in self.processes] # << Not a deepcopy!
+        node.internal_dependencies = deepcopy(self.internal_dependencies)
 
 
     def merge(
             self,
             nodes: 'Node' | list['Node']
         ) -> 'Node':
+        # self.merged = True
         NotImplementedError()
 
     
@@ -78,6 +90,15 @@ class Graph:
         self.in_deps: dict[str, list[str]] = {}  # {node_id: [parent_ids]}
         self.out_deps: dict[str, list[str]] = {}  # {node_id: [child_ids]}
         # self.grouping: bool = grouping
+
+    
+    def __deepcopy__(self) -> 'Graph':
+        graph = Graph()
+        graph.roots = deepcopy(self.roots)
+        graph.leaves = deepcopy(self.leaves)
+        graph.nodes = deepcopy(self.nodes) # << processes in nodes are refs to originals!
+        graph.in_deps = deepcopy(self.in_deps)
+        graph.out_deps = deepcopy(self.out_deps)
 
 
     def add_node(
@@ -119,6 +140,14 @@ class Graph:
                 # Check if this node replaces its child as root
                 if self.nodes[child_id].is_root():
                     self.roots.remove(child_id)
+
+
+    def tie_leaves(self) -> None:
+        """
+        Connect all leaf nodes to a final 'knot' node.
+        """
+        self.add_node(Node(id = "knot", parents=self.leaves))
+
 
     
     def remove_node(

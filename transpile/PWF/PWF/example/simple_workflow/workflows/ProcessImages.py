@@ -22,7 +22,7 @@ class ProcessImages(BaseWorkflow):
         self.outputs_dict = {
             "before_noise_remover": {
                 "type": "file",
-                # "outputSource": inputs/{input_arg_id}
+                # ????"outputSource": inputs/{input_arg_id} or ${input_arg_id}????
                 # "outputSource": {step_id}/{step_output_id}
                 "outputSource": "imageplotter/output"
             # TODO Does the following work???

@@ -8,6 +8,7 @@ from subprocess import run
 from typing import Any, Optional, Tuple
 
 from .Process import BaseProcess
+from .utils import Graph, Node
 
 
 class BaseCommandLineTool(BaseProcess):
@@ -15,19 +16,34 @@ class BaseCommandLineTool(BaseProcess):
     def __init__(
             self,
             main: bool = False,
-            runtime_inputs: Optional[dict] = None
+            runtime_context: Optional[dict] = None,
+            loading_context: Optional[dict[str, str]] = None,
+            parent_id: Optional[str] = None,
+            step_id: Optional[str] = None
         ):
         """ TODO: class description """
-        super().__init__(main=main, runtime_inputs=runtime_inputs)
+        super().__init__(
+            main = main,
+            runtime_context = runtime_context,
+            loading_context = loading_context,
+            parent_id = parent_id,
+            step_id = step_id
+        )
+
+        # Digest CommandlineTool file
         self.metadata()
         self.inputs()
         self._process_inputs()
         self.outputs()
         self.requirements()
         self.command_line()
-        self.create_graph()
+
         if main:
+            self.create_task_graph()
             self.execute()
+        else:
+            self.create_dependency_graph()
+
 
     def metadata(self):
         """
@@ -56,7 +72,7 @@ class BaseCommandLineTool(BaseProcess):
         
     def load_runtime_arg(self, arg_id):
         # FIXME: Shouldn't be needed if YAML is loaded as string
-        return str(self.runtime_inputs[arg_id])
+        return str(self.runtime_context[arg_id])
 
 
     def load_runtime_arg_array(
@@ -78,7 +94,7 @@ class BaseCommandLineTool(BaseProcess):
             # Python bool type with value True.
             raise NotImplementedError()
         else:
-            args = [str(item) for item in self.runtime_inputs[arg_id]]
+            args = [str(item) for item in self.runtime_context[arg_id]]
         return args
 
 
@@ -171,10 +187,10 @@ class BaseCommandLineTool(BaseProcess):
             # This is a problem here, as 'True' and 'true' both convert to the
             # Python bool type with value True.
             
-            # if prefix and self.runtime_inputs[arg_id]:
+            # if prefix and self.runtime_context[arg_id]:
             #     args.append(prefix)
             # else:
-            #     args.append(str(self.runtime_inputs))
+            #     args.append(str(self.runtime_context))
             raise NotImplementedError()
         else:
             if separate:
@@ -231,14 +247,14 @@ class BaseCommandLineTool(BaseProcess):
         #  
 
 
-    def create_graph(self) -> None:
+    def create_task_graph(self) -> None:
         """
         Build a Dask Delayed object to execute the wrapped tool with.
         """
-        # TODO: Get requirements
         pos_args: Tuple[str, dict[str, Any]] = []
         key_args: Tuple[str, dict[str, Any]] = []
         keywords: list[str] = []
+
         # Decide whether this argument is positional or not.
         for input_id, input_dict in self.inputs_dict.items():
             if hasattr(input_dict, "position"):
@@ -250,15 +266,20 @@ class BaseCommandLineTool(BaseProcess):
         # Order arguments
         args: Tuple[str, dict] = sorted(pos_args, key=lambda x: x[1]["position"])
         args += key_args
-        
-        # Parse arguments
-        # parsed: list[str] = self.parse_args(args)
-        # cmd_template: str = " ".join([self.base_command, *parsed])
 
-        # Check if all requirements to run the process are met
-        # runnable, missing = self.runnable()
-        # if runnable:
         self.task_graph_ref = dask.delayed(self.cmd_wrapper)(args)
-        # else:
-            # raise RuntimeError(
-                # f"{self.id} is missing inputs {missing} and cannot run")
+
+
+    # def create_graph(self) -> None:
+    #     """
+    #     TODO description
+    #     """
+    #     # Get global dependency graph handle
+    #     graph: Graph = self.loading_context["graph"]
+    #     n = Node(
+    #         id=self._id,
+    #     )
+    #     graph.add_node(n)
+    #     raise NotImplementedError()
+        
+
