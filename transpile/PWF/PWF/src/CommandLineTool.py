@@ -7,8 +7,9 @@ from abc import abstractmethod
 from subprocess import run
 from typing import Any, Optional, Tuple
 
-from .Process import BaseProcess
-from .utils import Graph, Node
+from .Process import BaseProcess, Graph, Node
+from .Workflow import BaseWorkflow
+# from .utils import Graph, Node
 
 
 class BaseCommandLineTool(BaseProcess):
@@ -269,17 +270,68 @@ class BaseCommandLineTool(BaseProcess):
 
         self.task_graph_ref = dask.delayed(self.cmd_wrapper)(args)
 
-
-    # def create_graph(self) -> None:
-    #     """
-    #     TODO description
-    #     """
-    #     # Get global dependency graph handle
-    #     graph: Graph = self.loading_context["graph"]
-    #     n = Node(
-    #         id=self._id,
-    #     )
-    #     graph.add_node(n)
-    #     raise NotImplementedError()
+    def get_process_parents(self) -> list[str]:
+        """
+        TODO Description
+        """
+        if self.is_root:
+            return []
         
+        # print(self._id)
+        
+        processes: dict[str, BaseProcess] = self.loading_context["processes"]        
+
+        parents = []
+        for input_id in self.inputs_dict:
+            # NOTE Make sure this still works when not working with BaseWorkflow
+            # Start in the parent
+            process: BaseWorkflow = processes[self.parent_id] 
+            step_id = self.step_id
+            step_dict = process.steps_dict[step_id]
+            # FIXME support other sources, like default
+            if "source" in step_dict["in"][input_id]:
+                source = step_dict["in"][input_id]["source"]
+            elif "default" in step_dict["in"][input_id]:
+                break
+            else:
+                raise NotImplementedError()
+            
+            # Go up the process tree, until a tool or the input object
+            # is encountered
+            while True:
+                if "/" in source:
+                    # A step of this process is the input source
+                    parent_step_id, _ = source.split("/")
+                    process = process.step_to_process[parent_step_id]
+                    parents.append(process._id)
+                    break
+                else:
+                    # Parent of this process is the input source
+                    if process.is_root:
+                        # Input comes from input object
+                        break
+                    else:
+                        # Input comes from another source upstream
+                        process = processes[process.parent_id]
+                        step_id = process.step_id
+                        step_dict = process.steps_dict[step_id]
+                        # FIXME support other sources, like default
+                        source = step_dict["in"][input_id]["source"]
+        return parents
+    
+
+    def create_dependency_graph(self) -> None:
+        """
+        TODO description
+        """
+        # Get global dependency graph handle
+        graph: Graph = self.loading_context["graph"]
+        n = Node(
+            id = self._id,
+            parents = self.get_process_parents(),
+            processes = self
+        )
+        graph.add_node(n)
+    #     raise NotImplementedError()
+
 

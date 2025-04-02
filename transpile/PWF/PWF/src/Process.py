@@ -6,11 +6,12 @@ import uuid
 import yaml
 
 from abc import ABC, abstractmethod
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from .utils import Absent, Graph
-from .Workflow import BaseWorkflow
+from .utils import Absent
+# from .Workflow import BaseWorkflow
 
 class BaseProcess(ABC):
     def __init__(
@@ -94,6 +95,9 @@ class BaseProcess(ABC):
             self.runtime_context = runtime_context
             self.loading_context = loading_context
 
+        # Register this process in the global cache
+        self.loading_context["processes"][self._id] = self
+
 
         # TODO: Prepare Dask?
         # dask_client = ...
@@ -156,7 +160,8 @@ class BaseProcess(ABC):
         for input_id, input_dict in self.inputs_dict.items():
             if input_id not in self.runtime_context:
                 self.runtime_context[self.global_id(input_id)] = Absent()
-            self.loading_context[self.global_id(input_id)]
+            # global_inputs = self.loading_context["inputs"]
+            # global_inputs[self.global_id(input_id)]
     
 
     @abstractmethod
@@ -260,53 +265,162 @@ class BaseProcess(ABC):
         Concatenate the process ID and another string, split by a colon.
         """
         return self._id  + ":" + s
-    
-
-    def get_tool_parents(self) -> list[str]:
-        """
-        TODO Needed?
-        """
-        if self.is_root:
-            return []
-        
-        processes: dict[str, 'BaseProcess'] = self.loading_context["processes"]        
-        parents = []
-
-        for input_id in self.inputs:
-            # NOTE Make sure this still works when not working with BaseWorkflow
-            process: BaseWorkflow = processes[self.parent_id]
-            step_id = self.step_id
-            step_dict = process.steps_dict[step_id]
-            # FIXME support other sources, like default
-            source = step_dict["in"][input_id]["source"]
-            
-            # Go up the process tree until a tool is encountered
-            while True:
-                if "/" in source:
-                    # Other step of this process is the input source
-                    process = process.step_to_process[step_id]
-                    parents.append(process._id)
-                    break
-                else:
-                    # Parent of this process is the input source
-                    if process.is_root():
-                        # Input comes from input object
-                        break
-                    else:
-                        # Input comes from another source
-                        step_id = process.step_id
-                        process = processes[process.parent_id]
-                        step_dict = process.steps_dict[step_id]
-                        # FIXME support other sources, like default
-                        source = step_dict["in"][input_id]["source"]
-
-
-
-
-        raise NotImplementedError()
-        return parents
 
 
     def get_tool_children(self) -> list[str]:
         # TODO Needed?
         pass
+
+
+
+class Node:
+    def __init__(
+            self,
+            id: str,
+            parents: Optional[list[str]] = None,    #list[parent_ids]
+            children: Optional[list[str]] = None,   #list[child_ids]
+            processes: Optional[list[BaseProcess]] = None,
+            internal_dependencies: Optional[dict[str, str]] = None  #{node_id: node_id}
+        ) -> None:
+        """
+        TODO class description
+        """
+        
+        self.id = id
+
+        # self.merged = False
+
+        if parents is None:
+            parents = []
+        self.parents = parents
+
+        if children is None:
+            children = []
+        self.children = children
+
+        if processes is None:
+            processes = []
+        self.processes = processes
+
+        if internal_dependencies is None:
+            internal_dependencies = {}
+        self.internal_dependencies = internal_dependencies
+
+
+    def __deepcopy__(self) -> 'Node':
+        node = Node(self.id)
+        node.parents = deepcopy(self.parents)
+        node.children = deepcopy(self.children)
+        node.processes = [p for p in self.processes] # << Not a deepcopy!
+        node.internal_dependencies = deepcopy(self.internal_dependencies)
+
+
+    def merge(
+            self,
+            nodes: Union['Node', list['Node']]
+        ) -> 'Node':
+        # self.merged = True
+        NotImplementedError()
+
+    
+    def is_leaf(self):
+        return len(self.children) == 0
+    
+    def is_root(self):
+        return len(self.parents) == 0
+
+
+class Graph:
+    def __init__(
+            self, 
+            # grouping: bool = False
+        ) -> None:
+        """
+        TODO class description 
+        """
+        self.roots: list[str] = []  # [node_ids]
+        self.leaves: list[str] = [] # [node_ids]
+        self.nodes: dict[str, Node] = {}    # {node_id, Node}
+        self.in_deps: dict[str, list[str]] = {}  # {node_id: [parent_ids]}
+        self.out_deps: dict[str, list[str]] = {}  # {node_id: [child_ids]}
+        # self.grouping: bool = grouping
+
+    
+    def __deepcopy__(self) -> 'Graph':
+        graph = Graph()
+        graph.roots = deepcopy(self.roots)
+        graph.leaves = deepcopy(self.leaves)
+        graph.nodes = deepcopy(self.nodes) # << processes in nodes are refs to originals!
+        graph.in_deps = deepcopy(self.in_deps)
+        graph.out_deps = deepcopy(self.out_deps)
+
+
+    def add_node(
+            self,
+            node: Node
+        ):
+        """
+        TODO Description
+        """
+        if node.id in self.nodes:
+            raise Exception(f"Node ID already exists in graph. Invalid ID: {node.id}")
+
+        # Add node to graph
+        self.nodes[node.id] = node
+
+        # Add the new node to its parents and children
+        # Update parent nodes
+        if node.is_root():
+            self.roots.append(node.id)
+        else:
+            for parent_id in node.parents:
+                # Register in-dependencies
+                self.nodes[parent_id].children.append(node.id)
+                self.in_deps[node.id] = parent_id
+
+                # Check if this node replaces its parent as leaf
+                if self.nodes[parent_id].is_leaf():
+                    self.leaves.remove(parent_id)
+
+        # Update child nodes
+        if node.is_leaf():
+            self.leaves.append(node.id)
+        else:
+            for child_id in node.children:
+                # Register out-dependencies
+                self.nodes[child_id].parents.append(node.id)
+                self.out_deps[node.id] = child_id
+
+                # Check if this node replaces its child as root
+                if self.nodes[child_id].is_root():
+                    self.roots.remove(child_id)
+
+
+    def tie_leaves(self) -> None:
+        """
+        Connect all leaf nodes to a final 'knot' node.
+        """
+        self.add_node(Node(id = "knot", parents=self.leaves))
+
+
+    
+    def remove_node(
+            self,
+            node_id: str
+        ) -> None:
+        """
+        
+        """
+        raise NotImplementedError()
+
+
+    def merge(
+            self,
+            node_ids: str | list[str]
+        ):
+        """
+        TODO Description
+        Merge nodes 
+        """
+        raise NotImplementedError()
+            

@@ -6,9 +6,9 @@ from abc import abstractmethod
 from pathlib import Path
 from typing import Optional, Tuple, Union
 
-from .CommandLineTool import BaseCommandLineTool
-from .Process import BaseProcess
-from .utils import Graph, Node
+# from .CommandLineTool import BaseCommandLineTool
+from .Process import BaseProcess, Graph, Node
+# from .utils import Graph, Node
 
 class BaseWorkflow(BaseProcess):
     def __init__(
@@ -37,6 +37,7 @@ class BaseWorkflow(BaseProcess):
         # FIXME
         # Mapping of step ins to their sources 
         self.in_to_source: dict[str, str] = {}
+        self.step_to_process: dict[str, str] = {}
 
         # Must be overridden by self.steps().
         self.steps_dict: dict[str, dict[str, str]] = {}
@@ -92,7 +93,7 @@ class BaseWorkflow(BaseProcess):
         # }
         pass
 
-    @abstractmethod
+    
     def groups(self) -> None:
         """
         Override to declare which steps should be grouped and executed
@@ -100,6 +101,48 @@ class BaseWorkflow(BaseProcess):
         NOTE: Not sure if this is the way to do this...
         """
         pass
+    
+
+    # def get_process_parents(self) -> list[str]:
+    #     """
+    #       NOTE: Relocated in CommandLineTool 
+    #     TODO Description
+    #     """
+    #     if self.is_root:
+    #         return []
+        
+    #     processes: dict[str, BaseProcess] = self.loading_context["processes"]        
+    #     parents = []
+
+    #     for input_id in self.inputs:
+    #         # NOTE Make sure this still works when not working with BaseWorkflow
+    #         process = processes[self.parent_id] # BaseWorkflow
+    #         step_id = self.step_id
+    #         step_dict = process.steps_dict[step_id]
+    #         # FIXME support other sources, like default
+    #         source = step_dict["in"][input_id]["source"]
+            
+    #         # Go up the process tree until a tool is encountered
+    #         while True:
+    #             if "/" in source:
+    #                 # Other step of this process is the input source
+    #                 process = process.step_to_process[step_id]
+    #                 parents.append(process._id)
+    #                 break
+    #             else:
+    #                 # Parent of this process is the input source
+    #                 if process.is_root():
+    #                     # Input comes from input object
+    #                     break
+    #                 else:
+    #                     # Input comes from another source
+    #                     step_id = process.step_id
+    #                     process = processes[process.parent_id]
+    #                     step_dict = process.steps_dict[step_id]
+    #                     # FIXME support other sources, like default
+    #                     source = step_dict["in"][input_id]["source"]
+    #     print(parents)
+    #     return parents
 
     
     def create_dependency_graph(self) -> None:
@@ -111,34 +154,35 @@ class BaseWorkflow(BaseProcess):
         """
         processes = self.loading_context["processes"]
         graph: Graph = self.loading_context["graph"]
-        inputs = self.loading_context["inputs"]
+        # inputs = self.loading_context["inputs"]
 
         # TODO Load and map all processes
         for step_id, step_dict in self.steps_dict.items():
-            step_process = self._load_single_class_from_uri(step_dict["run"])
+            step_process = self._load_single_class_from_uri(step_dict["run"], step_id)
             processes[step_process._id] = step_process
-        
+            self.step_to_process[step_id] = step_process
+        print(graph.leaves)        
         # TODO Map inputs and outputs
         
         
         # TODO Map step in/out to inputs/outputs
 
-
-        # TODO For each Tool
-            # TODO Get input dependencies
-            # TODO Create Node
-            # TODO Add Node to Graph
-        for proc_id, step_process in processes.items():
-            if issubclass(step_process, BaseWorkflow):
-                continue
+        # NOTE Tool should add the node itself
+        # # TODO For each Tool
+        #     # TODO Get input dependencies
+        #     # TODO Create Node
+        #     # TODO Add Node to Graph
+        # for proc_id, process in processes.items():
+        #     if issubclass(type(process), BaseWorkflow):
+        #         continue
     
-            node = Node(
-                id = self.step_process,
-                parents = self.get_tool_parents(),
-                # children = self.get_tool_children(),
-                processes = [step_process]
-            )
-            graph.add_node(node)
+        #     node = Node(
+        #         id = proc_id,
+        #         parents = self.get_process_parents(),
+        #         # children = self.get_tool_children(),
+        #         processes = [process]
+        #     )
+        #     graph.add_node(node)
 
 
         # The step register uses the step id combined with the
@@ -177,10 +221,10 @@ class BaseWorkflow(BaseProcess):
         #     step_process = self._load_single_class_from_uri(step_dict["run"])
 
 
-        #     if issubclass(step_process, BaseWorkflow):
+        #     if issubclass(type(step_process), BaseWorkflow):
         #         # Register inputs and outputs
         #         pass
-        #     elif issubclass(step_process, BaseCommandLineTool):
+        #     elif issubclass(type(step_process), BaseCommandLineTool):
         #         # Add tool nodes to graph
         #         process_register[self.global_id(step_id)] = step_process
         #         node = Node(
@@ -214,7 +258,8 @@ class BaseWorkflow(BaseProcess):
 
     def _load_single_class_from_uri(
             self, 
-            uri: str
+            uri: str,
+            step_id: str
         ) -> BaseProcess:
         """
         Dynamic Process loading from file. Raises an exception if no valid 
@@ -258,7 +303,8 @@ class BaseWorkflow(BaseProcess):
                 main = False,
                 runtime_context = self.runtime_context,
                 loading_context = self.loading_context,
-                parent_id = self._id
+                parent_id = self._id,
+                step_id = step_id
             )
         raise Exception(f"{uri} does not contain a BaseProcess subclass")
 
