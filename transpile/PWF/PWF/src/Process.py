@@ -374,26 +374,32 @@ class Graph:
             self.roots.append(node.id)
         else:
             for parent_id in node.parents:
-                # Register in-dependencies
-                self.nodes[parent_id].children.append(node.id)
-                self.in_deps[node.id] = parent_id
-
                 # Check if this node replaces its parent as leaf
                 if self.nodes[parent_id].is_leaf():
                     self.leaves.remove(parent_id)
+
+                # Register in-dependencies
+                self.nodes[parent_id].children.append(node.id)
+                if node.id in self.in_deps:
+                    self.in_deps[node.id].append(parent_id)
+                else:
+                    self.in_deps[node.id] = [parent_id]
 
         # Update child nodes
         if node.is_leaf():
             self.leaves.append(node.id)
         else:
             for child_id in node.children:
-                # Register out-dependencies
-                self.nodes[child_id].parents.append(node.id)
-                self.out_deps[node.id] = child_id
-
                 # Check if this node replaces its child as root
                 if self.nodes[child_id].is_root():
                     self.roots.remove(child_id)
+
+                # Register out-dependencies
+                self.nodes[child_id].parents.append(node.id)
+                if node.id in self.out_deps:
+                    self.out_deps[node.id].append(child_id)
+                else:
+                    self.out_deps[node.id] = [child_id]
 
 
     def tie_leaves(self) -> None:
