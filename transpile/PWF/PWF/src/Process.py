@@ -263,31 +263,43 @@ class BaseProcess(ABC):
     
 
     def get_tool_parents(self) -> list[str]:
-        # TODO Needed?
+        """
+        TODO Needed?
+        """
         if self.is_root:
             return []
         
         processes: dict[str, 'BaseProcess'] = self.loading_context["processes"]        
         parents = []
 
-        def satisfied(
-                source: str
-            ) -> bool:
-            if "/" in source:
-                # Reference to other step
-            else:
-                # Look at inputs dict
-
-
         for input_id in self.inputs:
             # NOTE Make sure this still works when not working with BaseWorkflow
             process: BaseWorkflow = processes[self.parent_id]
             step_id = self.step_id
-            step_dict = process.steps_dict[process.global_id(step_id)]
-            t = step_dict["in"][input_id]
-            while not satisfied(t):
-                pass                
-            parents.append(process._id)
+            step_dict = process.steps_dict[step_id]
+            # FIXME support other sources, like default
+            source = step_dict["in"][input_id]["source"]
+            
+            # Go up the process tree until a tool is encountered
+            while True:
+                if "/" in source:
+                    # Other step of this process is the input source
+                    process = process.step_to_process[step_id]
+                    parents.append(process._id)
+                    break
+                else:
+                    # Parent of this process is the input source
+                    if process.is_root():
+                        # Input comes from input object
+                        break
+                    else:
+                        # Input comes from another source
+                        step_id = process.step_id
+                        process = processes[process.parent_id]
+                        step_dict = process.steps_dict[step_id]
+                        # FIXME support other sources, like default
+                        source = step_dict["in"][input_id]["source"]
+
 
 
 
