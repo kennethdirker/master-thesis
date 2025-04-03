@@ -111,30 +111,27 @@ class BaseWorkflow(BaseProcess):
         """
         processes: dict[str, BaseProcess] = self.loading_context["processes"]
         graph: Graph = self.loading_context["graph"]
-        # inputs = self.loading_context["inputs"]
 
         # Recursively load all processes
         for step_id, step_dict in self.steps_dict.items():
-            print('step id: ', step_id)
             step_process = self._load_process_from_uri(step_dict["run"], step_id)
             processes[step_process._id] = step_process
             self.step_to_process[step_id] = step_process
+            node = Node(id = step_process._id, processes = [step_process])
+            graph.register_node(node)
 
         # Add tool nodes to the dependency graph
         for tool in processes.values():
             if issubclass(type(tool), BaseCommandLineTool):
-                # tool.create_dependency_graph()
-                node = Node(
-                    id = tool._id,
+                graph.connect_node(
+                    node_id = tool._id,
                     parents = get_process_parents(tool),
-                    processes = [tool]
+                    # children = 
                 )
-                graph.add_node(node)
+
+        # TODO remove
         print(graph)
 
-            
-        raise NotImplementedError
-    
 
     def optimize_dependency_graph(self) -> None:
         """
@@ -147,10 +144,18 @@ class BaseWorkflow(BaseProcess):
         """
         TODO Description
         """
-        # graph: Graph = self.loading_context["graph"]
+        graph: Graph = self.loading_context["graph"]
         # graph.tie_leaves()
-        # self.task_graph_ref = ...
+
+        queue = graph.roots 
         raise NotImplementedError
+
+        while len(queue) != 0:
+            ...
+
+        
+
+        # self.task_graph_ref = ...
     
 
     def _load_process_from_uri(
@@ -205,39 +210,44 @@ class BaseWorkflow(BaseProcess):
             )
         raise Exception(f"{uri} does not contain a BaseProcess subclass")
 
+
 def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
     """
     TODO Description
+    NOTE: How to implement optional args?
     """
     if tool.is_root:
         return []
     
-    processes: dict[str, BaseProcess] = tool.loading_context["processes"]
+    def get_source(
+            step_dict,
+            input_id    
+        )-> Tuple[bool, Optional[str]]:
+        """
+        NOTE: How to implement optional args?        
+        """
+        if "source" in step_dict["in"][input_id]:
+            return False, step_dict["in"][input_id]["source"]
+        elif "default" in step_dict["in"][input_id]:
+            return True, None
+        raise NotImplementedError()
+    
     parents = []
+    processes: dict[str, BaseProcess] = tool.loading_context["processes"]
+
     for input_id in tool.inputs_dict:
         # Start in the parent of tool
         # NOTE Make sure this still works when not working with BaseWorkflow
         process: BaseWorkflow = processes[tool.parent_id] 
         step_id = tool.step_id
         step_dict = process.steps_dict[step_id]
-
-        # FIXME support other sources, like default
-        if "source" in step_dict["in"][input_id]:
-            source = step_dict["in"][input_id]["source"]
-        elif "default" in step_dict["in"][input_id]:
+        cont, source = get_source(step_dict, input_id)
+        if cont:
             continue
-        else:
-            raise NotImplementedError()
-        
         
         # Go up the process tree, until a tool or the input object
         # is encountered
         while True:
-            print()
-            print(process._id)
-            print(step_id)
-            print(source)
-            print()
             if "/" in source:
                 # A step of this process is the input source
                 parent_step_id, _ = source.split("/")
@@ -254,12 +264,7 @@ def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
                     process = processes[process.parent_id]
                     step_id = process.step_id
                     step_dict = process.steps_dict[step_id]
-                    # FIXME support other sources, like default
-                    source = step_dict["in"][input_id]["source"]
-                    if "source" in step_dict["in"][input_id]:
-                        source = step_dict["in"][input_id]["source"]
-                    elif "default" in step_dict["in"][input_id]:
+                    cont, source = get_source(step_dict, input_id)
+                    if cont:
                         break
-                    else:
-                        raise NotImplementedError()
     return parents

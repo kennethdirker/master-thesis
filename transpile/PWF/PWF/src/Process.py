@@ -53,23 +53,23 @@ class BaseProcess(ABC):
         # print(f"Created process with id '{self._id}'")
         
         # Assign metadata attributes. Override in self.metadata().
-        self.label: Union[str, None] = None # Human readable process name.
-        self.doc:   Union[str, None] = None # Human readable process explaination.
+        self.label: str = "" # Human readable process name.
+        self.doc:   str = "" # Human readable process explaination.
         
         # Assign input/output dictionary attributes.
         # FIXME: dicts could use classes like CWLTool does, instead of dicts.
-        self.inputs_dict:  Union[dict] = {} # Override in self.inputs()
-        self.outputs_dict: Union[dict] = {} # Override in self.outputs()
+        self.inputs_dict:  dict = {} # Override in self.inputs()
+        self.outputs_dict: dict = {} # Override in self.outputs()
         
         # TODO What to do with self.parents / self.children???
-        self.parents: list[Any] = []
-        self.children: list[Any] = []
+        # self.parents: list[Any] = []
+        # self.children: list[Any] = []
 
         # Assign requirements and hints.
         # Override in self.requirements() and self.hints().
         # NOTE: Probably not needed for Minimal Viable Product.
-        self.reqs:  Union[dict, None] = {}
-        self.hints: Union[dict, None] = {}
+        self.reqs:  list = []
+        self.hints: list = []
         
         # Assign a dictionary with runtime input variables and a dictionary to
         # map process and step IDs. Only the root process must load the input
@@ -212,9 +212,9 @@ class BaseProcess(ABC):
     #     pass
 
 
-    # @abstractmethod
-    # def create_task_graph(self) -> None:
-        # pass
+    @abstractmethod
+    def create_task_graph(self) -> None:
+        pass
     
 
     def execute(self):
@@ -367,81 +367,166 @@ class Graph:
         s += "\nedges: \n"
         for node, children in self.out_deps.items():
             for child in children:
-                s += f"{mapping[node]} -> {mapping[child]}\n"
+                s += f"\t{mapping[node]} -> {mapping[child]}\n"
         s += "leaves: " 
         for leaf in self.leaves:
             s += f"{mapping[leaf]} "
         return s
+    
 
-    def add_node(
+    def register_node(
             self,
             node: Node
+        ) -> None:
+        if node.id in self.nodes:
+            raise Exception(f"Node ID already exists in graph. Invalid ID: {node.id}")
+        
+        # Add node to graph
+        self.nodes[node.id] = node
+
+
+    def connect_node(
+            self,
+            node_id: str,
+            parents: Optional[list[str]] = None,
+            children: Optional[list[str]] = None
         ):
         """
         TODO Description
         """
-        if node.id in self.nodes:
-            raise Exception(f"Node ID already exists in graph. Invalid ID: {node.id}")
+        if node_id not in self.nodes:
+            raise Exception(f"Graph does not contain node with ID {node_id}")
 
-        # Add node to graph
-        self.nodes[node.id] = node
+        node = self.nodes[node_id]
 
-        # Add the new node to its parents and children
-        # Update parent nodes
-        if node.is_root():
-            self.roots.append(node.id)
-        else:
-            for parent_id in node.parents:
-                # Check if this node replaces its parent as leaf
-                if self.nodes[parent_id].is_leaf():
-                    self.leaves.remove(parent_id)
+        if parents is None:
+            parents = []
+        node.parents.extend(parents)
+        node.parents = list(set(node.parents))   # Remove duplicates
 
-                # Add node as child to parent
-                self.nodes[parent_id].children.append(node.id)
+        if children is None:
+            children = []
+        node.children.extend(children)
+        node.children = list(set(node.children)) # Remove duplicates
 
-                # Register in-dependencies
-                if node.id in self.in_deps:
-                    self.in_deps[node.id].append(parent_id)
-                else:
-                    self.in_deps[node.id] = [parent_id]
+        for parent_id in node.parents:
+            # Add node as child to parent
+            self.nodes[parent_id].children.append(node.id)
+            
+            # Register in-dependencies
+            if node.id in self.in_deps:
+                self.in_deps[node.id].append(parent_id)
+            else:
+                self.in_deps[node.id] = [parent_id]
+            
+            # Register out-dependencies for parent
+            if parent_id in self.out_deps:
+                self.out_deps[parent_id].append(node.id)
+            else:
+                self.out_deps[parent_id] = [node.id]
 
-                # Register out-dependencies for parent
-                if parent_id in self.out_deps:
-                    self.out_deps[parent_id].append(node.id)
-                else:
-                    self.out_deps[parent_id] = [node.id]
+            # Parent cannot be a leaf
+            if parent_id in self.leaves:
+                self.leaves.remove(parent_id)
 
-
-        # Update child nodes
-        if node.is_leaf():
-            self.leaves.append(node.id)
-        else:
-            for child_id in node.children:
-                # Check if this node replaces its child as root
-                if self.nodes[child_id].is_root():
-                    self.roots.remove(child_id)
-
-                # Add node as parent to child
-                self.nodes[child_id].parents.append(node.id)
-
-                # Register out-dependencies
-                if node.id in self.out_deps:
+        for child_id in node.children:
+            # Add node as parent to child
+            self.nodes[child_id].parents.append(node.id)
+            
+            # Register in-dependencies for child
+            if child_id in self.in_deps:
+                if not node.id in self.in_deps[child_id]:
+                    self.in_deps[child_id].append(node.id)
+            else:
+                self.in_deps[child_id] = [node.id]
+            
+            # Register out-dependencies
+            if node.id in self.out_deps:
+                if not child_id in self.out_deps[node.id]:
                     self.out_deps[node.id].append(child_id)
-                else:
-                    self.out_deps[node.id] = [child_id]
+            else:
+                self.out_deps[node.id] = [child_id]
 
-                # Register in-dependency for child
-                if child_id in self.out_deps:
-                    self.out_deps[child_id].append(node.id)
-                else:
-                    self.out_deps[child_id] = [node.id]
+            # child cannot be a root
+            if child_id in self.roots:
+                self.roots.remove(child_id)
+
+        # Update root dict
+        if node.is_root():
+            if node.id not in self.roots:
+                self.roots.append(node.id)
+        elif node.id in self.roots:
+                self.roots.remove(node.id)
+
+        # Update leaf dict
+        if node.is_leaf():
+            if node.id not in self.leaves:
+                self.leaves.append(node.id)
+        elif node.id in self.leaves:
+            self.leaves.remove(node.id)
 
 
-    def tie_leaves(self) -> None:
-        """
-        Connect all leaf nodes to a final 'knot' node.
-        """
-        self.add_node(Node(id = "knot", parents=self.leaves))
+        # # Add the new node to its parents and children
+        # # Update parent nodes
+        # if node.is_root():
+        #     self.roots.append(node.id)
+        # else:
+        #     for parent_id in node.parents:
+        #         # Check if this node replaces its parent as leaf
+        #         if self.nodes[parent_id].is_leaf() and parent_id in self.leaves:
+        #             self.leaves.remove(parent_id)
+
+        #         # Add node as child to parent
+        #         self.nodes[parent_id].children.append(node.id)
+
+        #         # Register in-dependencies
+        #         if node.id in self.in_deps:
+        #             self.in_deps[node.id].append(parent_id)
+        #         else:
+        #             self.in_deps[node.id] = [parent_id]
+
+        #         # Register out-dependencies for parent
+        #         if parent_id in self.out_deps:
+        #             self.out_deps[parent_id].append(node.id)
+        #         else:
+        #             self.out_deps[parent_id] = [node.id]
+
+
+        # # Update child nodes
+        # if node.is_leaf():
+        #     self.leaves.append(node.id)
+        # else:
+        #     for child_id in node.children:
+        #         # Check if this node replaces its child as root
+        #         if self.nodes[child_id].is_root() and child_id in self.roots:
+        #             self.roots.remove(child_id)
+
+        #         # Add node as parent to child
+        #         self.nodes[child_id].parents.append(node.id)
+
+        #         # Register out-dependencies
+        #         if node.id in self.out_deps:
+        #             self.out_deps[node.id].append(child_id)
+        #         else:
+        #             self.out_deps[node.id] = [child_id]
+
+        #         # Register in-dependency for child
+        #         if child_id in self.out_deps:
+        #             self.out_deps[child_id].append(node.id)
+        #         else:
+        #             self.out_deps[child_id] = [node.id]
+        
+        # if not node.is_root() and node.id in self.roots:
+        #     self.roots.remove(node.id)
+        # if not node.is_leaf() and node.id in self.leaves:
+        #     self.leaves.remove(node.id)
+
+
+    # def tie_leaves(self) -> None:
+    #     """
+    #     Connect all leaf nodes to a final 'knot' node.
+    #     """
+    #     self.add_node(Node(id = "knot", parents=self.leaves))
 
 
     

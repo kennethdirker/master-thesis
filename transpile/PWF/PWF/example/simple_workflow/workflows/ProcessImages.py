@@ -35,16 +35,6 @@ class ProcessImages(BaseWorkflow):
     def steps(self):
         # TODO Complete steps
         self.steps_dict = {
-            "download_images": {
-                "in": {
-                    "url_list": {
-                        "source": "url_list"
-                    }
-                },
-                "out": "output",
-                "run": "../steps/DownloadImages.py",
-                "label": "download_images"
-            },
             "imageplotter": {
                 "in": {
                     "input_fits": {
@@ -58,7 +48,18 @@ class ProcessImages(BaseWorkflow):
                 "out": "output",
                 "run": "../steps/ImagePlotter.py",
                 "label": "imageplotter"
-            }
+            },
+            "download_images": {
+                "in": {
+                    "url_list": {
+                        "source": "url_list"
+                    }
+                },
+                "out": "output",
+                "run": "../steps/DownloadImages.py",
+                "label": "download_images"
+            },
+
         }
     
     
