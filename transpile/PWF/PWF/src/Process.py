@@ -196,25 +196,25 @@ class BaseProcess(ABC):
         return {}
 
 
-    @abstractmethod
-    def create_dependency_graph(self) -> None:
-        """ 
-        TODO Better description
-        FIXME This is not accurate anymore, rewrite!
-        This function must be overridden to implement building the Dask Task
-        Graph. The function must assign the final graph node to 
-        'self.task_graph_ref', which is executed by 'self.execute()'.
-        """
-        # Example:
-        # 
-        # 
-        # 
-        pass
+    # @abstractmethod
+    # def create_dependency_graph(self) -> None:
+    #     """ 
+    #     TODO Better description
+    #     FIXME This is not accurate anymore, rewrite!
+    #     This function must be overridden to implement building the Dask Task
+    #     Graph. The function must assign the final graph node to 
+    #     'self.task_graph_ref', which is executed by 'self.execute()'.
+    #     """
+    #     # Example:
+    #     # 
+    #     # 
+    #     # 
+    #     pass
 
 
-    @abstractmethod
-    def create_task_graph(self) -> None:
-        pass
+    # @abstractmethod
+    # def create_task_graph(self) -> None:
+        # pass
     
 
     def execute(self):
@@ -354,6 +354,24 @@ class Graph:
         graph.in_deps = deepcopy(self.in_deps)
         graph.out_deps = deepcopy(self.out_deps)
 
+    
+    def __repr__(self):
+        # Create placeholder IDs for nodes to improve readability
+        mapping = {}
+        for i, key in enumerate(self.nodes.keys()):
+            mapping[key] = i
+
+        s = "roots: " 
+        for root in self.roots:
+            s += f"{mapping[root]} "
+        s += "\nedges: \n"
+        for node, children in self.out_deps.items():
+            for child in children:
+                s += f"{mapping[node]} -> {mapping[child]}\n"
+        s += "leaves: " 
+        for leaf in self.leaves:
+            s += f"{mapping[leaf]} "
+        return s
 
     def add_node(
             self,
@@ -378,12 +396,21 @@ class Graph:
                 if self.nodes[parent_id].is_leaf():
                     self.leaves.remove(parent_id)
 
-                # Register in-dependencies
+                # Add node as child to parent
                 self.nodes[parent_id].children.append(node.id)
+
+                # Register in-dependencies
                 if node.id in self.in_deps:
                     self.in_deps[node.id].append(parent_id)
                 else:
                     self.in_deps[node.id] = [parent_id]
+
+                # Register out-dependencies for parent
+                if parent_id in self.out_deps:
+                    self.out_deps[parent_id].append(node.id)
+                else:
+                    self.out_deps[parent_id] = [node.id]
+
 
         # Update child nodes
         if node.is_leaf():
@@ -394,12 +421,20 @@ class Graph:
                 if self.nodes[child_id].is_root():
                     self.roots.remove(child_id)
 
-                # Register out-dependencies
+                # Add node as parent to child
                 self.nodes[child_id].parents.append(node.id)
+
+                # Register out-dependencies
                 if node.id in self.out_deps:
                     self.out_deps[node.id].append(child_id)
                 else:
                     self.out_deps[node.id] = [child_id]
+
+                # Register in-dependency for child
+                if child_id in self.out_deps:
+                    self.out_deps[child_id].append(node.id)
+                else:
+                    self.out_deps[child_id] = [node.id]
 
 
     def tie_leaves(self) -> None:
