@@ -6,9 +6,8 @@ from abc import abstractmethod
 from pathlib import Path
 from typing import Optional, Tuple, Union
 
-# from .CommandLineTool import BaseCommandLineTool
+from .CommandLineTool import BaseCommandLineTool
 from .Process import BaseProcess, Graph, Node
-# from .utils import Graph, Node
 
 class BaseWorkflow(BaseProcess):
     def __init__(
@@ -49,10 +48,10 @@ class BaseWorkflow(BaseProcess):
         self.outputs()
         self.requirements()
         self.steps()
-        self.create_dependency_graph()
 
         # Only the main process executes the workflow.
         if main:
+            self.create_dependency_graph()
             self.optimize_dependency_graph()
             self.create_task_graph()
             self.execute()
@@ -101,48 +100,6 @@ class BaseWorkflow(BaseProcess):
         NOTE: Not sure if this is the way to do this...
         """
         pass
-    
-
-    # def get_process_parents(self) -> list[str]:
-    #     """
-    #       NOTE: Relocated in CommandLineTool 
-    #     TODO Description
-    #     """
-    #     if self.is_root:
-    #         return []
-        
-    #     processes: dict[str, BaseProcess] = self.loading_context["processes"]        
-    #     parents = []
-
-    #     for input_id in self.inputs:
-    #         # NOTE Make sure this still works when not working with BaseWorkflow
-    #         process = processes[self.parent_id] # BaseWorkflow
-    #         step_id = self.step_id
-    #         step_dict = process.steps_dict[step_id]
-    #         # FIXME support other sources, like default
-    #         source = step_dict["in"][input_id]["source"]
-            
-    #         # Go up the process tree until a tool is encountered
-    #         while True:
-    #             if "/" in source:
-    #                 # Other step of this process is the input source
-    #                 process = process.step_to_process[step_id]
-    #                 parents.append(process._id)
-    #                 break
-    #             else:
-    #                 # Parent of this process is the input source
-    #                 if process.is_root():
-    #                     # Input comes from input object
-    #                     break
-    #                 else:
-    #                     # Input comes from another source
-    #                     step_id = process.step_id
-    #                     process = processes[process.parent_id]
-    #                     step_dict = process.steps_dict[step_id]
-    #                     # FIXME support other sources, like default
-    #                     source = step_dict["in"][input_id]["source"]
-    #     print(parents)
-    #     return parents
 
     
     def create_dependency_graph(self) -> None:
@@ -152,90 +109,30 @@ class BaseWorkflow(BaseProcess):
         Create a Dask task graph with the sub-processes of this workflow. 
         Can be overwritten to alter execution behaviour. 
         """
-        processes = self.loading_context["processes"]
+        processes: dict[str, BaseProcess] = self.loading_context["processes"]
         graph: Graph = self.loading_context["graph"]
         # inputs = self.loading_context["inputs"]
 
-        # TODO Load and map all processes
+        # Recursively load all processes
         for step_id, step_dict in self.steps_dict.items():
-            step_process = self._load_single_class_from_uri(step_dict["run"], step_id)
+            print('step id: ', step_id)
+            step_process = self._load_process_from_uri(step_dict["run"], step_id)
             processes[step_process._id] = step_process
             self.step_to_process[step_id] = step_process
-        print(graph.leaves)        
-        # TODO Map inputs and outputs
-        
-        
-        # TODO Map step in/out to inputs/outputs
 
-        # NOTE Tool should add the node itself
-        # # TODO For each Tool
-        #     # TODO Get input dependencies
-        #     # TODO Create Node
-        #     # TODO Add Node to Graph
-        # for proc_id, process in processes.items():
-        #     if issubclass(type(process), BaseWorkflow):
-        #         continue
-    
-        #     node = Node(
-        #         id = proc_id,
-        #         parents = self.get_process_parents(),
-        #         # children = self.get_tool_children(),
-        #         processes = [process]
-        #     )
-        #     graph.add_node(node)
-
-
-        # The step register uses the step id combined with the
-        # ID of the current workflow process layer to allow duplicate
-        # step IDs across sub-workflows.
-        # step_register: dict[str, Tuple[dict, BaseProcess]] = {} # {step_id: (step_dict, Process)}
-        # self.loading_context["step_register"]
-        # Create a Process for each step and cache in step register
-        # print("Loading steps...")
-        # for step_id, step_dict in self.steps_dict.items():
-            # step_process = self._load_single_class_from_uri(step_dict["run"])
-            # TODO: Is this how we want global ids to work?
-            # self.step_register[self._id + ":" + step_id] = (step_dict, step_process)
-
-        # Get process dependencies
-        # for step_id, [step_dict, step_process] in step_register.items():
-        #     print("\n", step_id, step_dict, step_process._id, "\n")
-
-        #     # Check inputs
-        #     for step_in_id, step_in_dict in step_dict["in"].items():
-        #         if "source" in step_in_dict and "/" in step_in_dict["source"]:
-        #             # This step depends on the output of another step
-        #             parent_step_id, parent_output_id = step_in_dict["source"].split("/")
-        #             o = step_register[parent_step_id]
-        #             print(o)
-        #             self.parents.append(o[1]._id)
-        # print("\n", self.parents, "\n")
-
-        # # Get handles from global loading context
-        # graph: Graph = self.loading_context["graph"]
-        # process_register = self.loading_context["process_register"]
-
-        # # Construct dependency graph
-        # for step_id, step_dict in self.steps_dict.items():
-        #     # Each Process recursively adds nodes to the global dependency graph.
-        #     step_process = self._load_single_class_from_uri(step_dict["run"])
-
-
-        #     if issubclass(type(step_process), BaseWorkflow):
-        #         # Register inputs and outputs
-        #         pass
-        #     elif issubclass(type(step_process), BaseCommandLineTool):
-        #         # Add tool nodes to graph
-        #         process_register[self.global_id(step_id)] = step_process
-        #         node = Node(
-        #             id = step_process._id,
-        #             parents = self.get_,
-        #             processes = [step_process]
-        #         )
-        #         graph.add_node(node)
+        # Add tool nodes to the dependency graph
+        for tool in processes.values():
+            if issubclass(type(tool), BaseCommandLineTool):
+                # tool.create_dependency_graph()
+                node = Node(
+                    id = tool._id,
+                    parents = get_process_parents(tool),
+                    processes = [tool]
+                )
+                graph.add_node(node)
+        print(graph)
 
             
-        # TODO
         raise NotImplementedError
     
 
@@ -256,7 +153,7 @@ class BaseWorkflow(BaseProcess):
         raise NotImplementedError
     
 
-    def _load_single_class_from_uri(
+    def _load_process_from_uri(
             self, 
             uri: str,
             step_id: str
@@ -308,3 +205,61 @@ class BaseWorkflow(BaseProcess):
             )
         raise Exception(f"{uri} does not contain a BaseProcess subclass")
 
+def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
+    """
+    TODO Description
+    """
+    if tool.is_root:
+        return []
+    
+    processes: dict[str, BaseProcess] = tool.loading_context["processes"]
+    parents = []
+    for input_id in tool.inputs_dict:
+        # Start in the parent of tool
+        # NOTE Make sure this still works when not working with BaseWorkflow
+        process: BaseWorkflow = processes[tool.parent_id] 
+        step_id = tool.step_id
+        step_dict = process.steps_dict[step_id]
+
+        # FIXME support other sources, like default
+        if "source" in step_dict["in"][input_id]:
+            source = step_dict["in"][input_id]["source"]
+        elif "default" in step_dict["in"][input_id]:
+            continue
+        else:
+            raise NotImplementedError()
+        
+        
+        # Go up the process tree, until a tool or the input object
+        # is encountered
+        while True:
+            print()
+            print(process._id)
+            print(step_id)
+            print(source)
+            print()
+            if "/" in source:
+                # A step of this process is the input source
+                parent_step_id, _ = source.split("/")
+                process = process.step_to_process[parent_step_id]
+                parents.append(process._id)
+                break
+            else:
+                # Parent of this process is the input source
+                if process.is_root:
+                    # Input comes from input object
+                    break
+                else:
+                    # Input comes from another source upstream
+                    process = processes[process.parent_id]
+                    step_id = process.step_id
+                    step_dict = process.steps_dict[step_id]
+                    # FIXME support other sources, like default
+                    source = step_dict["in"][input_id]["source"]
+                    if "source" in step_dict["in"][input_id]:
+                        source = step_dict["in"][input_id]["source"]
+                    elif "default" in step_dict["in"][input_id]:
+                        break
+                    else:
+                        raise NotImplementedError()
+    return parents
