@@ -343,6 +343,7 @@ class Graph:
         self.nodes: dict[str, Node] = {}    # {node_id, Node}
         self.in_deps: dict[str, list[str]] = {}  # {node_id: [parent_ids]}
         self.out_deps: dict[str, list[str]] = {}  # {node_id: [child_ids]}
+        self.size: int = 0
         # self.grouping: bool = grouping
 
     
@@ -383,6 +384,7 @@ class Graph:
         
         # Add node to graph
         self.nodes[node.id] = node
+        self.size += 1
 
 
     def connect_node(
@@ -464,62 +466,6 @@ class Graph:
                 self.leaves.append(node.id)
         elif node.id in self.leaves:
             self.leaves.remove(node.id)
-
-
-        # # Add the new node to its parents and children
-        # # Update parent nodes
-        # if node.is_root():
-        #     self.roots.append(node.id)
-        # else:
-        #     for parent_id in node.parents:
-        #         # Check if this node replaces its parent as leaf
-        #         if self.nodes[parent_id].is_leaf() and parent_id in self.leaves:
-        #             self.leaves.remove(parent_id)
-
-        #         # Add node as child to parent
-        #         self.nodes[parent_id].children.append(node.id)
-
-        #         # Register in-dependencies
-        #         if node.id in self.in_deps:
-        #             self.in_deps[node.id].append(parent_id)
-        #         else:
-        #             self.in_deps[node.id] = [parent_id]
-
-        #         # Register out-dependencies for parent
-        #         if parent_id in self.out_deps:
-        #             self.out_deps[parent_id].append(node.id)
-        #         else:
-        #             self.out_deps[parent_id] = [node.id]
-
-
-        # # Update child nodes
-        # if node.is_leaf():
-        #     self.leaves.append(node.id)
-        # else:
-        #     for child_id in node.children:
-        #         # Check if this node replaces its child as root
-        #         if self.nodes[child_id].is_root() and child_id in self.roots:
-        #             self.roots.remove(child_id)
-
-        #         # Add node as parent to child
-        #         self.nodes[child_id].parents.append(node.id)
-
-        #         # Register out-dependencies
-        #         if node.id in self.out_deps:
-        #             self.out_deps[node.id].append(child_id)
-        #         else:
-        #             self.out_deps[node.id] = [child_id]
-
-        #         # Register in-dependency for child
-        #         if child_id in self.out_deps:
-        #             self.out_deps[child_id].append(node.id)
-        #         else:
-        #             self.out_deps[child_id] = [node.id]
-        
-        # if not node.is_root() and node.id in self.roots:
-        #     self.roots.remove(node.id)
-        # if not node.is_leaf() and node.id in self.leaves:
-        #     self.leaves.remove(node.id)
 
 
     # def tie_leaves(self) -> None:

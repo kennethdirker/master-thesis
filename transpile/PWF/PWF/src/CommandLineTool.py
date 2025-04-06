@@ -33,12 +33,12 @@ class BaseCommandLineTool(BaseProcess):
         self.outputs()
         self.requirements()
         self.command_line()
+        
+        # self.create_task_graph()
 
         if main:
             self.create_task_graph()
             self.execute()
-        # else:
-            # self.create_dependency_graph()
 
 
     def metadata(self):
@@ -216,7 +216,8 @@ class BaseCommandLineTool(BaseProcess):
 
     def cmd_wrapper(
             self,
-            args: list[Tuple[str, dict[str, Any]]]
+            args: list[Tuple[str, dict[str, Any]]],
+            *parents
         ):
         """
         Wrapper for subprocess.run().
@@ -243,7 +244,7 @@ class BaseCommandLineTool(BaseProcess):
         #  
 
 
-    def create_task_graph(self) -> None:
+    def create_task_graph(self, *parents) -> None:
         """
         Build a Dask Delayed object to execute the wrapped tool with.
         """
@@ -263,7 +264,7 @@ class BaseCommandLineTool(BaseProcess):
         args: Tuple[str, dict] = sorted(pos_args, key=lambda x: x[1]["position"])
         args += key_args
 
-        self.task_graph_ref = dask.delayed(self.cmd_wrapper)(args)
+        self.task_graph_ref = dask.delayed(self.cmd_wrapper)(args, *parents)
     
 
     # def create_dependency_graph(self, node: Node) -> None:
