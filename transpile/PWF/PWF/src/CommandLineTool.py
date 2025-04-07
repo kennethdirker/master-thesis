@@ -22,17 +22,17 @@ class BaseCommandLineTool(BaseProcess):
             main = main,
             runtime_context = runtime_context,
             loading_context = loading_context,
-            parent_id = parent_id,
+            parent_process_id = parent_id,
             step_id = step_id
         )
 
         # Digest CommandlineTool file
-        self.metadata()
-        self.inputs()
+        self.set_metadata()
+        self.set_inputs()
         self._process_inputs()
-        self.outputs()
-        self.requirements()
-        self.command_line()
+        self.set_outputs()
+        self.set_requirements()
+        self.set_command_line()
         
         # self.create_task_graph()
 
@@ -41,13 +41,12 @@ class BaseCommandLineTool(BaseProcess):
             self.execute()
 
 
-    def metadata(self):
+    def set_metadata(self):
         """
         Assign metadata to the process. Assigns a process identity
         consisting of '{path/to/process}:{uuid}'.
 
         Can be overwritten by user to assign the following variables:
-            - self.id: Unique identity of a process instance.
             - self.label: Human readable short description.
             - self.doc: Human readable process explaination.
             - TODO: Add more fields if needed!
@@ -56,7 +55,7 @@ class BaseCommandLineTool(BaseProcess):
 
     @abstractmethod
     # FIXME: Better function name
-    def command_line(self) -> None:
+    def set_command_line(self) -> None:
         """
         TODO: Description
         """
@@ -102,6 +101,7 @@ class BaseCommandLineTool(BaseProcess):
         """
         Compose a single command line array argument.
 
+        TODO desc
         TODO Support for optional arguments 
         TODO Support for bool type
         """
@@ -163,6 +163,7 @@ class BaseCommandLineTool(BaseProcess):
         """
         Compose a single command line argument.
         
+        TODO desc
         TODO Support for optional arguments 
         TODO Support for bool type
         """
@@ -204,6 +205,10 @@ class BaseCommandLineTool(BaseProcess):
             self,
             args: list[Tuple[str, dict[str, Any]]]
         ) -> list[str]:
+        """
+        TODO desc
+        
+        """
         cmds: list[str] = []
         for arg_id, arg_dict  in args:
             if "[]" in arg_dict["type"]:
@@ -220,6 +225,7 @@ class BaseCommandLineTool(BaseProcess):
             *parents
         ):
         """
+        TODO desc
         Wrapper for subprocess.run().
 
         The wrapper is lazily executed in a dask.delayed task graph.
@@ -247,13 +253,14 @@ class BaseCommandLineTool(BaseProcess):
     def create_task_graph(self, *parents) -> None:
         """
         Build a Dask Delayed object to execute the wrapped tool with.
+        TODO desc
         """
         pos_args: Tuple[str, dict[str, Any]] = []
         key_args: Tuple[str, dict[str, Any]] = []
         keywords: list[str] = []
 
         # Decide whether this argument is positional or not.
-        for input_id, input_dict in self.inputs_dict.items():
+        for input_id, input_dict in self.inputs.items():
             if hasattr(input_dict, "position"):
                 pos_args.append((input_id, input_dict))
             else:
@@ -264,27 +271,5 @@ class BaseCommandLineTool(BaseProcess):
         args: Tuple[str, dict] = sorted(pos_args, key=lambda x: x[1]["position"])
         args += key_args
 
+        # Parents parameter chains steps together
         self.task_graph_ref = dask.delayed(self.cmd_wrapper)(args, *parents)
-    
-
-    # def create_dependency_graph(self, node: Node) -> None:
-    #     """
-    #     FIXME get_process_parents crashes when step dependencies are out of
-    #     order in the steps_dict of a workflow, because processes are loaded
-    #     in the order they are defined in the dict. This results in 
-    #     uninstantiated processes. 
-
-    #     TODO description
-    #     """
-    #     # Get global dependency graph handle
-    #     graph: Graph = self.loading_context["graph"]
-    #     print("parents:", self.get_process_parents())
-    #     n = Node(
-    #         id = self._id,
-    #         parents = self.get_process_parents(),
-    #         processes = self
-    #     )
-    #     graph.add_node(n)
-    #     raise NotImplementedError()
-
-

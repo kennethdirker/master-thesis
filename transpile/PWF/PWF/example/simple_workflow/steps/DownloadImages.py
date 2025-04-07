@@ -2,12 +2,12 @@ from PWF.src.CommandLineTool import BaseCommandLineTool
 
 class DownloadImages(BaseCommandLineTool):
 
-    def metadata(self):
+    def set_metadata(self):
         self.label = "download_images"
 
     
-    def inputs(self):
-        self.inputs_dict = {
+    def set_inputs(self):
+        self.inputs = {
             "url_list": {
                 "type": "file",
                 "prefix": "-i",
@@ -16,8 +16,8 @@ class DownloadImages(BaseCommandLineTool):
         }
 
 
-    def outputs(self):
-        self.outputs_dict = {
+    def set_outputs(self):
+        self.outputs = {
             "output": {
                 "type": "file[]",
                 "glob": "*.fits"
@@ -26,7 +26,7 @@ class DownloadImages(BaseCommandLineTool):
 
 
     # FIXME: Better function name
-    def command_line(self):
+    def set_command_line(self):
         self.base_command: str | list[str] = "wget"
     
     

@@ -20,7 +20,7 @@ class BaseWorkflow(BaseProcess):
             main: bool = False,
             runtime_context: Optional[dict] = None,
             loading_context: Optional[dict[str, str]] = None,
-            parent_id: Optional[str] = None,
+            parent_process_id: Optional[str] = None,
             step_id: Optional[str] = None
         ):
         """
@@ -31,7 +31,7 @@ class BaseWorkflow(BaseProcess):
             main = main,
             runtime_context = runtime_context,
             loading_context = loading_context,
-            parent_id = parent_id,
+            parent_process_id = parent_process_id,
             step_id = step_id
         )
 
@@ -40,19 +40,19 @@ class BaseWorkflow(BaseProcess):
 
         # FIXME
         # Mapping of step ins to their sources 
-        self.in_to_source: dict[str, str] = {}
-        self.step_to_process: dict[str, str] = {}
+        self.step_in_to_source: dict[str, str] = {}
+        self.step_id_to_process: dict[str, str] = {}
 
         # Must be overridden by self.steps().
-        self.steps_dict: dict[str, dict[str, str]] = {}
+        self.steps: dict[str, dict[str, str]] = {}
 
         # Digest workflow file
-        self.metadata()
-        self.inputs()
+        self.set_metadata()
+        self.set_inputs()
         self._process_inputs()
-        self.outputs()
-        self.requirements()
-        self.steps()
+        self.set_outputs()
+        self.set_requirements()
+        self.set_steps()
 
         # Only the main process executes the workflow.
         if main:
@@ -63,7 +63,7 @@ class BaseWorkflow(BaseProcess):
 
 
     @abstractmethod
-    def steps(self):
+    def set_steps(self):
         """
         Defines the sub-processes of this workflow. Overwriting this function
         is mandatory for workflows 
@@ -98,7 +98,7 @@ class BaseWorkflow(BaseProcess):
         pass
 
     
-    def groups(self) -> None:
+    def set_groups(self) -> None:
         """
         Override to declare which steps should be grouped and executed
         together on a machine.
@@ -118,18 +118,18 @@ class BaseWorkflow(BaseProcess):
         graph: Graph = self.loading_context["graph"]
 
         # Recursively load all processes
-        for step_id, step_dict in self.steps_dict.items():
+        for step_id, step_dict in self.steps.items():
             step_process = self._load_process_from_uri(step_dict["run"], step_id)
-            processes[step_process._id] = step_process
-            self.step_to_process[step_id] = step_process
-            node = Node(id = step_process._id, processes = [step_process])
+            processes[step_process.id] = step_process
+            self.step_id_to_process[step_id] = step_process
+            node = Node(id = step_process.id, processes = [step_process])
             graph.register_node(node)
 
         # Add tool nodes to the dependency graph
         for tool in processes.values():
             if issubclass(type(tool), BaseCommandLineTool):
                 graph.connect_node(
-                    node_id = tool._id,
+                    node_id = tool.id,
                     parents = get_process_parents(tool),
                     # children = 
                 )
@@ -248,7 +248,7 @@ class BaseWorkflow(BaseProcess):
                 main = False,
                 runtime_context = self.runtime_context,
                 loading_context = self.loading_context,
-                parent_id = self._id,
+                parent_id = self.id,
                 step_id = step_id
             )
         raise Exception(f"{uri} does not contain a BaseProcess subclass")
@@ -257,7 +257,7 @@ class BaseWorkflow(BaseProcess):
 def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
     """
     TODO Description
-    NOTE: How to implement optional args?
+    NOTE: How to implement optional args? Handle at runtime!
     """
     if tool.is_root:
         return []
@@ -278,12 +278,12 @@ def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
     parents = []
     processes: dict[str, BaseProcess] = tool.loading_context["processes"]
 
-    for input_id in tool.inputs_dict:
+    for input_id in tool.inputs:
         # Start in the parent of tool
         # NOTE Make sure this still works when not working with BaseWorkflow
-        process: BaseWorkflow = processes[tool.parent_id] 
+        process: BaseWorkflow = processes[tool.parent_process_id] 
         step_id = tool.step_id
-        step_dict = process.steps_dict[step_id]
+        step_dict = process.steps[step_id]
         cont, source = get_source(step_dict, input_id)
         if cont:
             continue
@@ -294,8 +294,8 @@ def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
             if "/" in source:
                 # A step of this process is the input source
                 parent_step_id, _ = source.split("/")
-                process = process.step_to_process[parent_step_id]
-                parents.append(process._id)
+                process = process.step_id_to_process[parent_step_id]
+                parents.append(process.id)
                 break
             else:
                 # Parent of this process is the input source
@@ -304,9 +304,9 @@ def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
                     break
                 else:
                     # Input comes from another source upstream
-                    process = processes[process.parent_id]
+                    process = processes[process.parent_process_id]
                     step_id = process.step_id
-                    step_dict = process.steps_dict[step_id]
+                    step_dict = process.steps[step_id]
                     cont, source = get_source(step_dict, input_id)
                     if cont:
                         break

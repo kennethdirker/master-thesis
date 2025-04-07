@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from .utils import Absent
-# from .Workflow import BaseWorkflow
+
 
 class BaseProcess(ABC):
     def __init__(
@@ -19,7 +19,7 @@ class BaseProcess(ABC):
             main: bool = False,
             runtime_context: Optional[dict[str, Any]] = None,
             loading_context: Optional[dict[str, Any]] = None,
-            parent_id: Optional[str] = None,
+            parent_process_id: Optional[str] = None,
             step_id: Optional[str] = None
         ) -> None:
         """ 
@@ -40,14 +40,14 @@ class BaseProcess(ABC):
 
         # Unique identity of a process instance. The id looks as follows:
         #   "{path/to/process/script/file}:{uuid}"  
-        self._id = inspect.getfile(type(self)) + ":" + str(uuid.uuid4())
+        self.id = inspect.getfile(type(self)) + ":" + str(uuid.uuid4())
 
         # ID of the step and process from which this process is called.
         # Both are None if this process is the root process.
         if main:
             step_id = None
-            parent_id = None
-        self.parent_id = parent_id
+            parent_process_id = None
+        self.parent_process_id = parent_process_id
         self.step_id = step_id
 
         # print(f"Created process with id '{self._id}'")
@@ -58,8 +58,8 @@ class BaseProcess(ABC):
         
         # Assign input/output dictionary attributes.
         # FIXME: dicts could use classes like CWLTool does, instead of dicts.
-        self.inputs_dict:  dict = {} # Override in self.inputs()
-        self.outputs_dict: dict = {} # Override in self.outputs()
+        self.inputs:  dict = {} # Override in self.inputs()
+        self.outputs: dict = {} # Override in self.outputs()
         
         # TODO What to do with self.parents / self.children???
         # self.parents: list[Any] = []
@@ -68,7 +68,7 @@ class BaseProcess(ABC):
         # Assign requirements and hints.
         # Override in self.requirements() and self.hints().
         # NOTE: Probably not needed for Minimal Viable Product.
-        self.reqs:  list = []
+        self.requirements:  list = []
         self.hints: list = []
         
         # Assign a dictionary with runtime input variables and a dictionary to
@@ -89,18 +89,19 @@ class BaseProcess(ABC):
             self.loading_context["inputs"] = {}     # {, }
         else:
             if runtime_context is None:
-                raise Exception(f"Subprocess {type(self)}({self._id}) is not initialized as root process, but lacks runtime context")
+                raise Exception(f"Subprocess {type(self)}({self.id}) is not initialized as root process, but lacks runtime context")
             if loading_context is None:
-                raise Exception(f"Subprocess {type(self)}({self._id}) is not initialized as root process, but lacks loading context")
+                raise Exception(f"Subprocess {type(self)}({self.id}) is not initialized as root process, but lacks loading context")
             self.runtime_context = runtime_context
             self.loading_context = loading_context
 
         # Register this process in the global cache
-        self.loading_context["processes"][self._id] = self
+        self.loading_context["processes"][self.id] = self
 
 
         # TODO: Prepare Dask?
-        # dask_client = ...
+        # self.dask_client = ...
+
         # Used in self.create_task_graph()
         self.task_graph_ref: Union[dask.Delayed, None] = None
 
@@ -123,7 +124,7 @@ class BaseProcess(ABC):
 
 
     @abstractmethod
-    def metadata(self) -> None:
+    def set_metadata(self) -> None:
         """
         TODO Better description
         Must be overridden to assign process metadata attributes.
@@ -132,7 +133,7 @@ class BaseProcess(ABC):
 
 
     # @abstractmethod
-    def inputs(self) -> None:
+    def set_inputs(self) -> None:
         """ 
         TODO Better description
         This function must be overridden to define input job order field 
@@ -157,7 +158,7 @@ class BaseProcess(ABC):
         # Create an entry in the runtime_context dict for each input argument.
         # The process ID is prepended to the input ID to ensure global
         # uniqueness of input IDs.
-        for input_id, input_dict in self.inputs_dict.items():
+        for input_id, input_dict in self.inputs.items():
             if input_id not in self.runtime_context:
                 self.runtime_context[self.global_id(input_id)] = Absent()
             # global_inputs = self.loading_context["inputs"]
@@ -165,7 +166,7 @@ class BaseProcess(ABC):
     
 
     @abstractmethod
-    def outputs(self) -> None:
+    def set_outputs(self) -> None:
         """
         TODO Better description
         This function must be overridden to define Process outputs.
@@ -183,7 +184,7 @@ class BaseProcess(ABC):
 
 
     # @abstractmethod
-    def requirements(self) -> None:
+    def set_requirements(self) -> None:
         """
         TODO Better description
         This function can be overridden to indicate execution requirements.
@@ -249,7 +250,7 @@ class BaseProcess(ABC):
             
         green_light = True
         missing_inputs: list[str] = []
-        for key, value in self.inputs_dict.items():
+        for key, value in self.inputs.items():
             if key not in self.runtime_context or \
                isinstance(value, Absent):
                 green_light = False
@@ -264,7 +265,7 @@ class BaseProcess(ABC):
         """
         Concatenate the process ID and another string, split by a colon.
         """
-        return self._id  + ":" + s
+        return self.id  + ":" + s
 
 
     def get_tool_children(self) -> list[str]:

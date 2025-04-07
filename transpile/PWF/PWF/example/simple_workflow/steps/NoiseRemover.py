@@ -2,14 +2,14 @@ from PWF.src.CommandLineTool import BaseCommandLineTool
 
 class NoiseRemover(BaseCommandLineTool):
 
-    def metadata(self):
+    def set_metadata(self):
         self.label = "noiseremover"
 
     
-    def inputs(self):
+    def set_inputs(self):
         # FIXME make input ids globally unique to ensure sub-processes from
         # overwriting each other. Use process id?
-        self.inputs_dict = {
+        self.inputs = {
             "input": {
                 "type": "file",
                 "position": 0
@@ -21,10 +21,10 @@ class NoiseRemover(BaseCommandLineTool):
         }
 
 
-    def outputs(self):
+    def set_outputs(self):
         # FIXME make output ids globally unique to ensure sub-processes from
         # overwriting each other. Use process id?
-        self.outputs_dict = {
+        self.outputs = {
             "output": {
                 "type": "file",
             # TODO Does the following work???
@@ -35,7 +35,7 @@ class NoiseRemover(BaseCommandLineTool):
 
 
     # FIXME: Better function name
-    def command_line(self):
+    def set_command_line(self):
         self.base_command = "python noiseremover.py"
     
     
