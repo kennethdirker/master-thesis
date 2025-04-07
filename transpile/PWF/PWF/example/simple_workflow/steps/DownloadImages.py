@@ -26,7 +26,7 @@ class DownloadImages(BaseCommandLineTool):
 
 
     # FIXME: Better function name
-    def set_command_line(self):
+    def set_base_command(self):
         self.base_command: str | list[str] = "wget"
     
     

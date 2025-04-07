@@ -35,7 +35,7 @@ class BaseWorkflow(BaseProcess):
             step_id = step_id
         )
 
-        # TODO Decide if this is the way, see self.groups()
+        # TODO Decide if this is the way, see set_groups()
         # self.groupings = ...
 
         # FIXME
@@ -43,7 +43,7 @@ class BaseWorkflow(BaseProcess):
         self.step_in_to_source: dict[str, str] = {}
         self.step_id_to_process: dict[str, str] = {}
 
-        # Must be overridden by self.steps().
+        # Must be overridden in set_steps().
         self.steps: dict[str, dict[str, str]] = {}
 
         # Digest workflow file
@@ -69,7 +69,7 @@ class BaseWorkflow(BaseProcess):
         is mandatory for workflows 
         """
         # Example:
-        # self.steps_dict = {
+        # self.steps = {
         #     "download_images": {
         #         "in": {
         #             "url_list": {
@@ -118,6 +118,7 @@ class BaseWorkflow(BaseProcess):
         graph: Graph = self.loading_context["graph"]
 
         # Recursively load all processes
+        print("Loading process files:")
         for step_id, step_dict in self.steps.items():
             step_process = self._load_process_from_uri(step_dict["run"], step_id)
             processes[step_process.id] = step_process
@@ -135,7 +136,7 @@ class BaseWorkflow(BaseProcess):
                 )
 
         # TODO remove
-        print(graph)
+        graph.print()
 
 
     def optimize_dependency_graph(self) -> None:

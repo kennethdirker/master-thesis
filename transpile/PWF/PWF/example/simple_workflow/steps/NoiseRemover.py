@@ -35,7 +35,7 @@ class NoiseRemover(BaseCommandLineTool):
 
 
     # FIXME: Better function name
-    def set_command_line(self):
+    def set_base_command(self):
         self.base_command = "python noiseremover.py"
     
     
