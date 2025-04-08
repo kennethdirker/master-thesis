@@ -5,7 +5,7 @@ from abc import abstractmethod
 from subprocess import run
 from typing import Any, Optional, Tuple
 
-from .Process import BaseProcess, Graph, Node
+from .Process import BaseProcess
 
 class BaseCommandLineTool(BaseProcess):
 
@@ -22,32 +22,28 @@ class BaseCommandLineTool(BaseProcess):
             main = main,
             runtime_context = runtime_context,
             loading_context = loading_context,
-            parent_id = parent_id,
+            parent_process_id = parent_id,
             step_id = step_id
         )
 
         # Digest CommandlineTool file
-        self.metadata()
-        self.inputs()
+        self.set_metadata()
+        self.set_inputs()
         self._process_inputs()
-        self.outputs()
-        self.requirements()
-        self.command_line()
+        self.set_outputs()
+        self.set_requirements()
+        self.set_base_command()
         
-        # self.create_task_graph()
-
         if main:
             self.create_task_graph()
             self.execute()
 
 
-    def metadata(self):
+    def set_metadata(self):
         """
-        Assign metadata to the process. Assigns a process identity
-        consisting of '{path/to/process}:{uuid}'.
+        Assign metadata to the process.
 
         Can be overwritten by user to assign the following variables:
-            - self.id: Unique identity of a process instance.
             - self.label: Human readable short description.
             - self.doc: Human readable process explaination.
             - TODO: Add more fields if needed!
@@ -56,77 +52,81 @@ class BaseCommandLineTool(BaseProcess):
 
     @abstractmethod
     # FIXME: Better function name
-    def command_line(self) -> None:
+    def set_base_command(self) -> None:
         """
         TODO: Description
         """
         # Example:
         # self.base_command = "ls -l"
-        # self.base_command = f"{self.inputs_dict['dynamic_program']}"
+        # self.base_command = ["ls", "-l"]
         pass
 
         
-    def load_runtime_arg(self, arg_id):
+    def load_runtime_arg(self, input_id):
+        # TODO
         # FIXME: Shouldn't be needed if YAML is loaded as string
-        return str(self.runtime_context[arg_id])
+        return str(self.runtime_context[self.global_id(input_id)])
 
 
     def load_runtime_arg_array(
             self,
-            arg_id: str,
-            arg_type: str
+            input_id: str,
+            input_type: str
         ) -> list[str]:
         """
         TODO desc
         """
         args: list[str] = []
 
-        if "null" in arg_type:
+        if "null" in input_type:
             return []
-        if "bool" in arg_type:
+        if "bool" in input_type:
             # NOTE: At the moment not sure how this should look like/ be implemented.
             # FIXME yaml safe_load converts yaml strings to likely Python types.
             # This is a problem here, as 'True' and 'true' both convert to the
             # Python bool type with value True.
             raise NotImplementedError()
         else:
-            args = [str(item) for item in self.runtime_context[arg_id]]
+            args = [str(item) for item in self.runtime_context[self.global_id(input_id)]]
         return args
 
 
     def compose_array_arg(
             self,
-            arg_id: str,
-            arg_dict: dict[str, Any]
+            input_id: str,
+            input_dict: dict[str, Any]
         ) -> list[str]:
         """
-        Compose a single command line array argument.
+        Compose a single command-line array argument.
 
+        TODO desc
         TODO Support for optional arguments 
         TODO Support for bool type
         """
-        args: list[str] = []
-        arg_type: str = arg_dict["type"]
+        array_arg: list[str] = []
+        input_type: str = input_dict["type"]
+
+        # Set default properties
         prefix: str = ""
         separate: bool = True
         itemSeparator: str = None
 
         # Load properties
-        arg_type = "".join(c for c in arg_type if c not in "[]?")
-        if "prefix" in arg_dict:
-            prefix = arg_dict["prefix"]
-        if "itemSeparator" in arg_dict:
-            itemSeparator = arg_dict["itemSeparator"]
-        if "separate" in arg_dict:
-            separate = arg_dict["separate"]
-        
+        input_type = "".join(c for c in input_type if c not in "[]?")
+        if "prefix" in input_dict:
+            prefix = input_dict["prefix"]
+        if "itemSeparator" in input_dict:
+            itemSeparator = input_dict["itemSeparator"]
+        if "separate" in input_dict:
+            separate = input_dict["separate"]
+
         # Convert array items to strings
         items: list[str] = []
-        items = self.load_runtime_arg_array(arg_id, arg_type)
+        items = self.load_runtime_arg_array(input_id, input_type)
 
-        if "null" in arg_type:
+        if "null" in input_type:
             return []
-        elif "bool" in arg_type:
+        elif "bool" in input_type:
             # NOTE: At the moment not sure how this should be implemented.
             # FIXME yaml safe_load converts yaml strings to likely Python types.
             # This is a problem here, as 'True' and 'true' both convert to the
@@ -136,45 +136,46 @@ class BaseCommandLineTool(BaseProcess):
             if itemSeparator:
                 items = itemSeparator.join(items)
                 if prefix and separate:         # -i= A,B,C
-                    args.append(prefix)
-                    args.append(items)
+                    array_arg.append(prefix)
+                    array_arg.append(items)
                 elif prefix and not separate:   # -i=A,B,C
-                    args.append(prefix + items)
+                    array_arg.append(prefix + items)
                 else:                           # A,B,C
-                    args.append(items)
+                    array_arg.append(items)
             else:
                 if prefix and separate:         # -i= A B C
-                    args.append(prefix)
-                    args.extend(items)
+                    array_arg.append(prefix)
+                    array_arg.extend(items)
                 if prefix and not separate:     # -i=A -i=B -i=C
                     for item in items:
-                        args.append(prefix + item)
+                        array_arg.append(prefix + item)
                 else:                           # A B C
-                    args = items
-        return args
+                    array_arg = items
+        return array_arg
 
 
 
     def compose_arg(
             self,
-            arg_id: str,
-            arg_dict: dict[str, Any]
+            input_id: str,
+            input_dict: dict[str, Any]
         ) -> list[str]:
         """
-        Compose a single command line argument.
+        Compose a single command-line argument.
         
+        TODO desc
         TODO Support for optional arguments 
         TODO Support for bool type
         """
         args: list[str] = []
         prefix: str = ""
         separate: bool = True
-        arg_type: str = arg_dict["type"]
+        arg_type: str = input_dict["type"]
 
-        if "prefix" in arg_dict:
-            prefix = arg_dict["prefix"]
-        if "separate" in arg_dict:
-            separate = arg_dict["separate"]
+        if "prefix" in input_dict:
+            prefix = input_dict["prefix"]
+        if "separate" in input_dict:
+            separate = input_dict["separate"]
 
         if "null" in arg_type:
             return []
@@ -192,9 +193,9 @@ class BaseCommandLineTool(BaseProcess):
             if separate:
                 if prefix:
                     args.append(prefix)
-                args.append(self.load_runtime_arg(arg_id))
+                args.append(self.load_runtime_arg(input_id))
             else:
-                args.append(prefix + self.load_runtime_arg(arg_id))
+                args.append(prefix + self.load_runtime_arg(input_id))
 
 
         return args
@@ -202,24 +203,29 @@ class BaseCommandLineTool(BaseProcess):
 
     def compose_command(
             self,
-            args: list[Tuple[str, dict[str, Any]]]
+            inputs: list[Tuple[str, dict[str, Any]]]
         ) -> list[str]:
+        """
+        TODO desc
+        
+        """
         cmds: list[str] = []
-        for arg_id, arg_dict  in args:
-            if "[]" in arg_dict["type"]:
+        for input_id, input_dict  in inputs:
+            if "[]" in input_dict["type"]:
                 # Compose array argument
-                cmds.extend(self.compose_array_arg(arg_id, arg_dict))
+                cmds.extend(self.compose_array_arg(input_id, input_dict))
             else:
                 # Compose single argument
-                cmds.extend(self.compose_arg(arg_id, arg_dict))
+                cmds.extend(self.compose_arg(input_id, input_dict))
         return cmds
 
     def cmd_wrapper(
             self,
-            args: list[Tuple[str, dict[str, Any]]],
+            inputs: list[Tuple[str, dict[str, Any]]],
             *parents
         ):
         """
+        TODO desc
         Wrapper for subprocess.run().
 
         The wrapper is lazily executed in a dask.delayed task graph.
@@ -228,15 +234,18 @@ class BaseCommandLineTool(BaseProcess):
         #     stdin
         #     stdout
         #     stderr
-        # TODO Get runtime input variables and check if present
-        cmd: list[str] = self.compose_command(args)
+        
+        # Turn inputs into arguments
+        cmd: list[str] = self.compose_command(inputs)
+
+        # Combine the base command with the arguments
         if hasattr(self, "base_command"):
             if isinstance(self.base_command, list):
                 cmd = [*self.base_command] + cmd
             else:
                 cmd = [self.base_command] + cmd
+
         print("Current working directory:", os.getcwd())
-        # print(cmd)
         print("Executing:", " ".join(cmd))
         print()
         run(cmd)
@@ -247,44 +256,21 @@ class BaseCommandLineTool(BaseProcess):
     def create_task_graph(self, *parents) -> None:
         """
         Build a Dask Delayed object to execute the wrapped tool with.
+        TODO desc
         """
-        pos_args: Tuple[str, dict[str, Any]] = []
-        key_args: Tuple[str, dict[str, Any]] = []
-        keywords: list[str] = []
+        pos_inputs: list[Tuple[str, dict[str, Any]]] = []
+        key_inputs: list[Tuple[str, dict[str, Any]]] = []
 
-        # Decide whether this argument is positional or not.
-        for input_id, input_dict in self.inputs_dict.items():
+        # Decide whether this input argument is positional or not
+        for input_id, input_dict in self.inputs.items():
             if hasattr(input_dict, "position"):
-                pos_args.append((input_id, input_dict))
+                pos_inputs.append((input_id, input_dict))
             else:
-                key_args.append((input_id, input_dict))
-            keywords.append(input_id)
+                key_inputs.append((input_id, input_dict))
 
-        # Order arguments
-        args: Tuple[str, dict] = sorted(pos_args, key=lambda x: x[1]["position"])
-        args += key_args
+        # Order input arguments
+        inputs: list[Tuple[str, dict]] = sorted(pos_inputs, key=lambda x: x[1]["position"])
+        inputs += key_inputs
 
-        self.task_graph_ref = dask.delayed(self.cmd_wrapper)(args, *parents)
-    
-
-    # def create_dependency_graph(self, node: Node) -> None:
-    #     """
-    #     FIXME get_process_parents crashes when step dependencies are out of
-    #     order in the steps_dict of a workflow, because processes are loaded
-    #     in the order they are defined in the dict. This results in 
-    #     uninstantiated processes. 
-
-    #     TODO description
-    #     """
-    #     # Get global dependency graph handle
-    #     graph: Graph = self.loading_context["graph"]
-    #     print("parents:", self.get_process_parents())
-    #     n = Node(
-    #         id = self._id,
-    #         parents = self.get_process_parents(),
-    #         processes = self
-    #     )
-    #     graph.add_node(n)
-    #     raise NotImplementedError()
-
-
+        # "parents" parameter chains steps together
+        self.task_graph_ref = dask.delayed(self.cmd_wrapper)(inputs, *parents)

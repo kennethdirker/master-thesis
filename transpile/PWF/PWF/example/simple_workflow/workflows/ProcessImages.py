@@ -2,24 +2,24 @@ from PWF.src.Workflow import BaseWorkflow
 
 class ProcessImages(BaseWorkflow):
 
-    def metadata(self):
+    def set_metadata(self):
         self.label = "process_images"
 
     
-    def inputs(self):
+    def set_inputs(self):
         # FIXME make input ids globally unique to ensure sub-processes from
         # overwriting each other. Use process id?
-        self.inputs_dict = {
+        self.inputs = {
             "url_list": {
                 "type": "file"
             }
         }
 
 
-    def outputs(self):
+    def set_outputs(self):
         # FIXME make output ids globally unique to ensure sub-processes from
         # overwriting each other. Use process id?
-        self.outputs_dict = {
+        self.outputs = {
             "before_noise_remover": {
                 "type": "file",
                 # ????"outputSource": inputs/{input_arg_id} or ${input_arg_id}????
@@ -32,9 +32,9 @@ class ProcessImages(BaseWorkflow):
         }
 
 
-    def steps(self):
+    def set_steps(self):
         # TODO Complete steps
-        self.steps_dict = {
+        self.steps = {
             "imageplotter": {
                 "in": {
                     "input_fits": {
