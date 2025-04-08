@@ -75,20 +75,14 @@ class BaseProcess(ABC):
         self.requirements:  list = []
         self.hints: list = []
         
+        # TODO Update description
         # Assign a dictionary with runtime input variables and a dictionary to
-        # map process and step IDs. Only the root process must load the input
+        # map processes and step IDs. Only the root process must load the input
         # YAML from a file. Non-root processes get a reference to the
         # dictionary loaded in the main process.
         if main:
-            # The YAML file uri comes from the first command-line argument
-            self.runtime_context = {}
-            yaml_dict = self._load_yaml(sys.argv[1])
-            print("Inputs loaded into runtime context:")
-            for k, v in yaml_dict.items():
-                # Input is indexed by {Process.id}:{{step_id}'/'}{input_id}
-                self.runtime_context[self.global_id(k)] = v
-                print("\t-", k, ":", v)
-            print()
+            # The YAML file uri comes from the first command-line argument.
+            self.runtime_context = self._load_input_object(sys.argv[1])
 
             self.loading_context = {}
             self.loading_context["graph"] = Graph() # Used in create_dependency_graph()
@@ -129,7 +123,30 @@ class BaseProcess(ABC):
             if not isinstance(y, dict):
                 raise Exception(f"Loaded YAML should be a dict, but has type {type(y)}")
             return y
+        
+    
+    def extract_argument_from_input_dict(self, input_dict: dict) -> str:
+        """
+        TODO Desc
+        """
+        arg_type = input_dict["class"]
+        if "file" in arg_type:
+            value = input_dict["path"]
+        
+        return value
 
+    
+    def _load_input_object(self, yaml_uri: str) -> dict:
+        runtime_context = {}
+        yaml_dict = self._load_yaml(yaml_uri)
+        print("Inputs loaded into runtime context:")
+        for input_id, input_dict in yaml_dict.items():
+            # Input from object is indexed by {Process.id}:{input_id}
+            input_value = self.extract_argument_from_input_dict(input_dict)
+            runtime_context[self.global_id(input_id)] = input_value
+            print("\t-", input_id, ":", input_value)
+        print()
+        return runtime_context
 
     @abstractmethod
     def set_metadata(self) -> None:
@@ -167,7 +184,7 @@ class BaseProcess(ABC):
         # The process ID is prepended to the input ID to ensure global
         # uniqueness of input IDs.
         for input_id, input_dict in self.inputs.items():
-            if input_id not in self.runtime_context:
+            if self.global_id(input_id) not in self.runtime_context:
                 value = Absent()
                 if "default" in input_dict:
                     value = input_dict["default"]
@@ -294,6 +311,8 @@ class BaseProcess(ABC):
 """ ######################################
 
 """ ######################################
+
+
 class Node:
     def __init__(
             self,
@@ -354,6 +373,8 @@ class Node:
 """ ######################################
 
 """ ######################################
+
+
 class Graph:
     def __init__(
             self, 
@@ -369,6 +390,10 @@ class Graph:
         self.out_deps: dict[str, list[str]] = {}  # {node_id: [child_ids]}
         self.size: int = 0
         # self.grouping: bool = grouping
+        
+        # Create placeholder IDs for nodes to improve readability
+        self._next_id: int = 0
+        self.id_mapping: dict[str, int] = {}
 
     
     def __deepcopy__(self) -> 'Graph':
@@ -378,30 +403,37 @@ class Graph:
         graph.nodes = deepcopy(self.nodes) # << processes in nodes are refs to originals!
         graph.in_deps = deepcopy(self.in_deps)
         graph.out_deps = deepcopy(self.out_deps)
+        graph._next_id = self._next_id
+        graph.id_mapping = deepcopy(self.id_mapping)    # {node_id: simple_id}
 
     
     def __repr__(self):
-        # Create placeholder IDs for nodes to improve readability
-        mapping = {}
-        for i, key in enumerate(self.nodes.keys()):
-            mapping[key] = i
+        # mapping = {}
+        # for i, key in enumerate(self.nodes.keys()):
+        #     mapping[key] = i
 
         s = "roots: " 
         for root in self.roots:
-            s += f"{mapping[root]} "
+            s += f"{self.id_mapping[root]} "
         s += "\nedges: \n"
         for node, children in self.out_deps.items():
             for child in children:
-                s += f"\t{mapping[node]} -> {mapping[child]}\n"
+                s += f"\t{self.id_mapping[node]} -> {self.id_mapping[child]}\n"
         s += "leaves: " 
         for leaf in self.leaves:
-            s += f"{mapping[leaf]} "
+            s += f"{self.id_mapping[leaf]} "
         return s
+
     
     def print(self) -> None:
         print()
         print(self)
         print()
+
+    
+    def next_id(self) -> int:
+        self._next_id += 1
+        return self._next_id - 1
     
 
     def register_node(
@@ -414,6 +446,7 @@ class Graph:
         # Add node to graph, but don't connect it to other nodes yet!
         # Connecting the node happens in connect_node()
         self.nodes[node.id] = node
+        self.id_mapping[node.id] = self.next_id()
         self.size += 1
 
 

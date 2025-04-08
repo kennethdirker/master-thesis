@@ -235,11 +235,6 @@ class BaseWorkflow(BaseProcess):
                 step_id: str,
                 in_id: str
             ) -> Tuple[bool, str]:
-            print(process.id)
-            print(step_id)
-            print(in_id)
-            # print(process.steps)
-            print()
             step_in_dict = process.steps[step_id]["in"][in_id]
             if "source" in step_in_dict:
                 return False, step_in_dict["source"]
@@ -249,8 +244,6 @@ class BaseWorkflow(BaseProcess):
 
         # Link tool inputs of each tool to their global source
         for process in self.loading_context["processes"].values():
-            print()
-            print("Hello from process", process.id)
             if not issubclass(type(process), BaseCommandLineTool):
                 continue
 
