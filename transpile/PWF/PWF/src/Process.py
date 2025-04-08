@@ -7,6 +7,7 @@ import yaml
 
 from abc import ABC, abstractmethod
 from copy import deepcopy
+from dask.delayed import Delayed
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -102,7 +103,7 @@ class BaseProcess(ABC):
         # TODO: Prepare Dask?
         # dask_client = ...
         # Used in self.create_task_graph()
-        self.task_graph_ref: Union[dask.Delayed, None] = None
+        self.task_graph_ref: Union[Delayed, None] = None
 
 
 

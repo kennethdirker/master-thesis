@@ -5,11 +5,9 @@ import sys
 
 from abc import abstractmethod
 from copy import deepcopy
+from dask.delayed import Delayed
 from pathlib import Path
 from typing import Optional, Tuple, Union
-
-import dask.delayed
-import dask.delayed
 
 from .CommandLineTool import BaseCommandLineTool
 from .Process import BaseProcess, Graph, Node
@@ -152,7 +150,7 @@ class BaseWorkflow(BaseProcess):
         graph: Graph = self.loading_context["graph"]
         frontier: list[str] = deepcopy(graph.roots)
         visited: list[str] = []
-        id_to_delayed: dict[str, dask.Delayed] = {}
+        id_to_delayed: dict[str, Delayed] = {}
         
 
         while len(frontier) != 0:
@@ -171,7 +169,7 @@ class BaseWorkflow(BaseProcess):
             if not good: 
                 continue
 
-            parents: list[dask.Delayed] = []
+            parents: list[Delayed] = []
             for parent_node_id in node.parents:
                 parents.append(id_to_delayed[parent_node_id])
 
@@ -189,15 +187,16 @@ class BaseWorkflow(BaseProcess):
         if len(visited) != graph.size:
             raise Exception("Dangling nodes: Not all nodes have been visited")
 
-        def wrapper(*parents):
+        def knot(*parents):
+            """ Tie together all leaves to ensure they are executed """
             print("Finished executing task tree")
 
-        leaves: list[dask.Delayed] = []
+        leaves: list[Delayed] = []
         for node_id in graph.leaves:
             # FIXME This works only for nodes with a single process
             leaves.append(graph.nodes[node_id].processes[0].task_graph_ref)
 
-        self.task_graph_ref = dask.delayed(wrapper)(leaves)
+        self.task_graph_ref = dask.delayed(knot)(leaves)
         self.task_graph_ref.visualize(filename="graph.svg")
     
 
