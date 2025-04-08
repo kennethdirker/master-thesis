@@ -1,6 +1,7 @@
 import copy
 import dask.delayed
 import inspect
+import os
 import sys
 import uuid
 import yaml
@@ -41,8 +42,9 @@ class BaseProcess(ABC):
 
         # Unique identity of a process instance. The id looks as follows:
         #   "{path/to/process/script/file}:{uuid}"  
-        # IDs could be made of {uuid} only, but the path adds clarity.
-        self.id = inspect.getfile(type(self)) + ":" + str(uuid.uuid4())
+        # FIXME: IDs could be made of {uuid} only, but the path adds debugging clarity.
+        self.short_id: str = str(uuid.uuid4())
+        self.id = inspect.getfile(type(self)) + ":" + self.short_id
 
         # ID of the step and process from which this process is called.
         # Both are None if this process is the root process.
@@ -51,7 +53,6 @@ class BaseProcess(ABC):
             parent_process_id = None
         self.parent_process_id: str = parent_process_id
         self.step_id: str = step_id
-        
 
         # Assign metadata attributes. Override in self.set_metadata().
         self.label: str = "" # Human readable process name.
@@ -87,7 +88,6 @@ class BaseProcess(ABC):
             self.loading_context = {}
             self.loading_context["graph"] = Graph() # Used in create_dependency_graph()
             self.loading_context["processes"] = {}  # {proc_id, process}
-            # self.loading_context["inputs"] = {}     # {, }
         else:
             if runtime_context is None:
                 raise Exception(f"Subprocess {type(self)}({self.id}) is not initialized as root process, but lacks runtime context")
@@ -95,11 +95,13 @@ class BaseProcess(ABC):
                 raise Exception(f"Subprocess {type(self)}({self.id}) is not initialized as root process, but lacks loading context")
             self.runtime_context = runtime_context
             self.loading_context = loading_context
-            
 
         # Register this process in the global cache
         self.loading_context["processes"][self.id] = self
 
+        # Register path of main
+        if main:
+            self.main_path = os.getcwd()
 
         # TODO: Prepare Dask?
         # dask_client = ...
@@ -303,9 +305,22 @@ class BaseProcess(ABC):
         return self.id  + ":" + s
 
 
-    def get_tool_children(self) -> list[str]:
-        # TODO Needed?
-        pass
+    def eval(self, s: str):
+        if s.startswith("$") and s.endswith("$"):
+            source = s[1:-1]
+            if "/" in source:
+                # From local step
+                raise NotImplementedError()
+            else:
+                # From local input
+                global_input_id = self.input_to_source[self.global_id(source)]
+                value = self.runtime_context[global_input_id]
+                if isinstance(value, Absent):
+                    raise Exception("Missing paramter ", global_input_id)
+                else:
+                    return value
+        else:
+            return s
 
 
 """ ######################################

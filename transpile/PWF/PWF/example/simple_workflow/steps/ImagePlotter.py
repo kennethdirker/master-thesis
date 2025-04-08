@@ -22,14 +22,12 @@ class imagePlotter(BaseCommandLineTool):
 
 
     def set_outputs(self):
-        # FIXME make output ids globally unique to ensure sub-processes from
-        # overwriting each other. Use process id?
         self.outputs = {
             "output": {
                 "type": "file",
             # TODO Does the following work???
             # NOTE: Prob not at workflow level, as input ids are not unique yet
-                "glob": "inputs/output_image"
+                "glob": "$output_image$"
             }
         }
 

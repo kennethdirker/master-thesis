@@ -20,7 +20,7 @@ class DownloadImages(BaseCommandLineTool):
         self.outputs = {
             "output": {
                 "type": "file[]",
-                "glob": "*.fits"
+                "glob": "*.fits*"
             }
         }
 

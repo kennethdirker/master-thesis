@@ -220,10 +220,8 @@ class BaseWorkflow(BaseProcess):
     def register_input_sources(self) -> None:
         """
         TODO Desc
-        NOTE: Not a recursive algorithm, because Python has a standard recursion 
-            limit and workflows can be huge. The recursion limit can be increased, 
-            but the user shouldn't be bothered, so iterative it is.
         NOTE: Only called from the main process.
+
         """
         if not self.is_main:
             raise Exception("Not called from main process")
@@ -255,6 +253,10 @@ class BaseWorkflow(BaseProcess):
 
             # Search for the source of each input.
             for input_id in process.inputs:
+                # NOTE: Not a recursive algorithm, because Python has a
+                # standard recursion limit and workflows can be huge. The
+                # recursion limit can be increased, but the user shouldn't be
+                # bothered, so iterative it is.
                 _step_id: str = process.step_id
                 _process: BaseWorkflow = processes[process.parent_process_id]
                 source = input_id

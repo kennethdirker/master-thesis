@@ -1,8 +1,12 @@
 import dask.delayed
+import glob
 import os
+import subprocess
 
 from abc import abstractmethod
-from subprocess import run
+from contextlib import chdir
+from pathlib import Path
+# from subprocess import run
 from typing import Any, Optional, Tuple
 
 from .Process import BaseProcess
@@ -236,6 +240,35 @@ class BaseCommandLineTool(BaseProcess):
                 # Compose single argument
                 cmds.extend(self.compose_arg(input_id, input_dict))
         return cmds
+    
+
+    def _process_outputs(self, result) -> None:
+        for output_id, output_dict in self.outputs.items():
+            # FIXME Checking formatting should probably not be done at runtime
+            if "type" not in output_dict:
+                raise Exception("Type missing from output in\n", self.id)
+
+            # FIXME Checking formatting should probably not be done at runtime
+            output_type: str = output_dict["type"]
+            global_output_id = self.global_id(self.step_id + output_id)
+
+            if "string" in output_type:
+                self.runtime_context[global_output_id] = result.decode('utf-8')
+            elif "file" in output_type:
+                if not "glob" in output_dict:
+                    raise Exception(f"No glob field in output {output_id}")
+                
+                output_file_paths = glob.glob(self.eval(output_dict["glob"]))
+                if "[]" in output_type:
+                    self.runtime_context[global_output_id] = output_file_paths
+                elif len(output_file_paths) == 1:
+                    self.runtime_context[global_output_id] = output_file_paths[0]
+                else:
+                    raise Exception()
+            else:
+                raise NotImplementedError(f"Output type {output_type} is not supported")
+
+    
 
     def cmd_wrapper(
             self,
@@ -252,6 +285,14 @@ class BaseCommandLineTool(BaseProcess):
         #     stdin
         #     stdout
         #     stderr
+
+        # # Set-up working directory
+        # main_path: Path = Path(self.main_path)
+        # with chdir(main_path):
+        #     working_directory: Path = main_path / self.short_id
+        #     os.mkdir(working_directory)
+
+        # with chdir(working_directory):
         
         # Turn inputs into arguments
         cmd: list[str] = self.compose_command(inputs)
@@ -266,9 +307,13 @@ class BaseCommandLineTool(BaseProcess):
         print("Current working directory:", os.getcwd())
         print("Executing:", " ".join(cmd))
         print()
-        run(cmd)
-        # TODO process outputs
-        #  
+        result = subprocess.run(cmd, stdout=subprocess.PIPE).stdout
+        
+        # Process outputs if needed
+        if self.step_id:
+            self._process_outputs(result)
+
+        
 
 
     def create_task_graph(self, *parents) -> None:
