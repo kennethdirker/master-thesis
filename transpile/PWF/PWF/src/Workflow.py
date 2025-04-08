@@ -11,6 +11,7 @@ from typing import Optional, Tuple, Union
 
 from .CommandLineTool import BaseCommandLineTool
 from .Process import BaseProcess, Graph, Node
+from .utils import Absent
 
 class BaseWorkflow(BaseProcess):
     def __init__(
@@ -51,11 +52,13 @@ class BaseWorkflow(BaseProcess):
         self.set_outputs()
         self.set_requirements()
         self.set_steps()
+        self._process_step_outs()
 
         # Only the main process executes the workflow.
         if main:
             self.create_dependency_graph()
             self.optimize_dependency_graph()
+            self.register_input_sources()
             self.create_task_graph()
             self.execute()
 
@@ -95,7 +98,20 @@ class BaseWorkflow(BaseProcess):
         # }
         pass
 
+
+    def _process_step_outs(self) -> None:
+        """
+        TODO Desc
+        Register step outputs globally.
+        """
+        for step_id, step_dict in self.steps.items():
+            if isinstance(step_dict["out"], list):
+                for out_id in step_dict["out"]:
+                    self.runtime_context[self.global_id(step_id + "/" + out_id)] = Absent()
+            else:
+                self.runtime_context[self.global_id(step_id + "/" + step_dict["out"])] = Absent()
     
+
     def set_groups(self) -> None:
         """
         Override to declare which steps should be grouped and executed
@@ -149,11 +165,11 @@ class BaseWorkflow(BaseProcess):
         TODO Description
         """
         graph: Graph = self.loading_context["graph"]
-        frontier: list[str] = deepcopy(graph.roots)
-        visited: list[str] = []
-        id_to_delayed: dict[str, Delayed] = {}
         
-
+        # 
+        id_to_delayed: dict[str, Delayed] = {}
+        visited: list[str] = []
+        frontier: list[str] = deepcopy(graph.roots)
         while len(frontier) != 0:
             node_id = frontier.pop(0)
             node = graph.nodes[node_id]
@@ -199,7 +215,82 @@ class BaseWorkflow(BaseProcess):
 
         self.task_graph_ref = dask.delayed(knot)(leaves)
         self.task_graph_ref.visualize(filename="graph.svg")
-    
+
+
+    def register_input_sources(self) -> None:
+        """
+        TODO Desc
+        NOTE: Not a recursive algorithm, because Python has a standard recursion 
+            limit and workflows can be huge. The recursion limit can be increased, 
+            but the user shouldn't be bothered, so iterative it is.
+        NOTE: Only called from the main process.
+        """
+        if not self.is_main:
+            raise Exception("Not called from main process")
+
+        processes: dict[str, BaseProcess] = self.loading_context["processes"]
+
+        def get_source_from_step(
+                process: BaseWorkflow, 
+                step_id: str,
+                in_id: str
+            ) -> Tuple[bool, str]:
+            print(process.id)
+            print(step_id)
+            print(in_id)
+            # print(process.steps)
+            print()
+            step_in_dict = process.steps[step_id]["in"][in_id]
+            if "source" in step_in_dict:
+                return False, step_in_dict["source"]
+            elif "default" in step_in_dict:
+                return True, step_in_dict["default"]
+            raise NotImplementedError()
+
+        # Link tool inputs of each tool to their global source
+        for process in self.loading_context["processes"].values():
+            print()
+            print("Hello from process", process.id)
+            if not issubclass(type(process), BaseCommandLineTool):
+                continue
+
+            # The main process gets all its input from the input object
+            if process.is_main:
+                for input_id in self.inputs:
+                    process.input_to_source[input_id] = process.global_id(input_id)
+                continue
+
+            # Search for the source of each input.
+            for input_id in process.inputs:
+                _step_id: str = process.step_id
+                _process: BaseWorkflow = processes[process.parent_process_id]
+                source = input_id
+
+                while True:
+                    use_default, source = get_source_from_step(_process, _step_id, source)
+                    if use_default:
+                        # Input has no dynamic source: Use default value
+                        process.input_to_source[input_id] = _process.global_id(source)
+                        break
+                    
+                    if "/" in source:   # {global_process_id}:{step_id}/{output_id}
+                        # A step output is the input source
+                        process.input_to_source[input_id] = _process.global_id(source)
+                        break
+                    else:               # {global_process_id}:{input_id}
+                        # The input of the parent process is the input source
+                        if _process.is_main:
+                            # Reached the main process: # Input source is the input object
+                            process.input_to_source[input_id] = _process.global_id(source)
+                            break
+
+                        # Look in the parent process
+                        _step_id = _process.step_id
+                        _process = processes[_process.parent_process_id]
+
+
+
+
 
     def _load_process_from_uri(
             self, 
@@ -252,14 +343,17 @@ class BaseWorkflow(BaseProcess):
                 step_id = step_id
             )
         raise Exception(f"{uri} does not contain a BaseProcess subclass")
-
+    
 
 def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
     """
     TODO Description
+    NOTE: Not a recursive algorithm, because Python has a standard recursion 
+        limit and workflows can be huge. The recursion limit can be increased, 
+        but the user shouldn't be bothered, so iterative it is.
     NOTE: How to implement optional args? Handle at runtime!
     """
-    if tool.is_root:
+    if tool.is_main:
         return []
     
     def get_source(
@@ -284,13 +378,14 @@ def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
         process: BaseWorkflow = processes[tool.parent_process_id] 
         step_id = tool.step_id
         step_dict = process.steps[step_id]
-        cont, source = get_source(step_dict, input_id)
-        if cont:
-            continue
-        
+
         # Go up the process tree, until a tool or the input object
         # is encountered
         while True:
+            cont, source = get_source(step_dict, input_id)
+            if cont:
+                break
+
             if "/" in source:
                 # A step of this process is the input source
                 parent_step_id, _ = source.split("/")
@@ -299,7 +394,7 @@ def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
                 break
             else:
                 # Parent of this process is the input source
-                if process.is_root:
+                if process.is_main:
                     # Input comes from input object
                     break
                 else:
@@ -307,7 +402,4 @@ def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
                     process = processes[process.parent_process_id]
                     step_id = process.step_id
                     step_dict = process.steps[step_id]
-                    cont, source = get_source(step_dict, input_id)
-                    if cont:
-                        break
     return parents

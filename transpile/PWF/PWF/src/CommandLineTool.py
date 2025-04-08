@@ -26,6 +26,10 @@ class BaseCommandLineTool(BaseProcess):
             step_id = step_id
         )
 
+        # # Maps input_id to its source id, which is used as key in runtime_context
+        # NOTE moved to process for now
+        # self.input_to_source: dict[str, str] =  {}  # {input_id, global_source_id}
+
         # Digest CommandlineTool file
         self.set_metadata()
         self.set_inputs()
@@ -35,6 +39,7 @@ class BaseCommandLineTool(BaseProcess):
         self.set_base_command()
         
         if main:
+            self.register_input_sources()
             self.create_task_graph()
             self.execute()
 
@@ -61,11 +66,17 @@ class BaseCommandLineTool(BaseProcess):
         # self.base_command = ["ls", "-l"]
         pass
 
+
+    def register_input_sources(self) -> None:
+        """
+        Link local process inputs IDs to global input IDs.
+        NOTE: Only executed if CommandLineTool is called as main.
+        """
+        if not self.is_main:
+            raise Exception("Not called from main process")
         
-    def load_runtime_arg(self, input_id):
-        # TODO
-        # FIXME: Shouldn't be needed if YAML is loaded as string
-        return str(self.runtime_context[self.global_id(input_id)])
+        for input_id in self.inputs:
+            self.input_to_source[input_id] = self.global_id(input_id)
 
 
     def load_runtime_arg_array(
@@ -87,7 +98,8 @@ class BaseCommandLineTool(BaseProcess):
             # Python bool type with value True.
             raise NotImplementedError()
         else:
-            args = [str(item) for item in self.runtime_context[self.global_id(input_id)]]
+            global_source_id: str = self.input_to_source[input_id]
+            args = [str(item) for item in self.runtime_context[global_source_id]]
         return args
 
 
@@ -112,7 +124,7 @@ class BaseCommandLineTool(BaseProcess):
         itemSeparator: str = None
 
         # Load properties
-        input_type = "".join(c for c in input_type if c not in "[]?")
+        input_type = "".join(c for c in input_type if c not in "[]?")   # Filter '['/']'/'?' from type
         if "prefix" in input_dict:
             prefix = input_dict["prefix"]
         if "itemSeparator" in input_dict:
@@ -153,6 +165,13 @@ class BaseCommandLineTool(BaseProcess):
                     array_arg = items
         return array_arg
 
+        
+    def load_runtime_arg(self, input_id: str) -> str:
+        """
+        TODO
+        """
+        global_source_id: str = self.input_to_source[input_id]
+        return str(self.runtime_context[global_source_id])
 
 
     def compose_arg(
@@ -196,7 +215,6 @@ class BaseCommandLineTool(BaseProcess):
                 args.append(self.load_runtime_arg(input_id))
             else:
                 args.append(prefix + self.load_runtime_arg(input_id))
-
 
         return args
 

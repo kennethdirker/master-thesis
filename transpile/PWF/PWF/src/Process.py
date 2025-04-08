@@ -37,7 +37,7 @@ class BaseProcess(ABC):
         # A process that is called from the command-line is root. Processes
         # that are instantiated from other another process (sub-processes)
         # are not root.
-        self.is_root: bool = main
+        self.is_main: bool = main
 
         # Unique identity of a process instance. The id looks as follows:
         #   "{path/to/process/script/file}:{uuid}"  
@@ -49,8 +49,9 @@ class BaseProcess(ABC):
         if main:
             step_id = None
             parent_process_id = None
-        self.parent_process_id = parent_process_id
-        self.step_id = step_id
+        self.parent_process_id: str = parent_process_id
+        self.step_id: str = step_id
+        
 
         # Assign metadata attributes. Override in self.set_metadata().
         self.label: str = "" # Human readable process name.
@@ -60,6 +61,9 @@ class BaseProcess(ABC):
         # FIXME: dicts could use classes like CWLTool does, instead of dicts.
         self.inputs:  dict = {} # Override in set_inputs()
         self.outputs: dict = {} # Override in set_outputs()
+
+        # Maps input_id to its source id, which is used as key in runtime_context
+        self.input_to_source: dict[str, str] =  {}  # {input_id, global_source_id}
         
         # TODO What to do with self.parents / self.children???
         # self.parents: list[Any] = []
@@ -77,16 +81,19 @@ class BaseProcess(ABC):
         # dictionary loaded in the main process.
         if main:
             # The YAML file uri comes from the first command-line argument
-            self.runtime_context = self._load_yaml(sys.argv[1])
+            self.runtime_context = {}
+            yaml_dict = self._load_yaml(sys.argv[1])
             print("Inputs loaded into runtime context:")
-            for k, v in self.runtime_context.items():
+            for k, v in yaml_dict.items():
+                # Input is indexed by {Process.id}:{{step_id}'/'}{input_id}
+                self.runtime_context[self.global_id(k)] = v
                 print("\t-", k, ":", v)
             print()
 
             self.loading_context = {}
             self.loading_context["graph"] = Graph() # Used in create_dependency_graph()
             self.loading_context["processes"] = {}  # {proc_id, process}
-            self.loading_context["inputs"] = {}     # {, }
+            # self.loading_context["inputs"] = {}     # {, }
         else:
             if runtime_context is None:
                 raise Exception(f"Subprocess {type(self)}({self.id}) is not initialized as root process, but lacks runtime context")
@@ -94,6 +101,7 @@ class BaseProcess(ABC):
                 raise Exception(f"Subprocess {type(self)}({self.id}) is not initialized as root process, but lacks loading context")
             self.runtime_context = runtime_context
             self.loading_context = loading_context
+            
 
         # Register this process in the global cache
         self.loading_context["processes"][self.id] = self
@@ -101,7 +109,7 @@ class BaseProcess(ABC):
 
         # TODO: Prepare Dask?
         # dask_client = ...
-        
+
         # Used in create_task_graph()
         self.task_graph_ref: Union[Delayed, None] = None
 
@@ -158,9 +166,12 @@ class BaseProcess(ABC):
         # Create an entry in the runtime_context dict for each input argument.
         # The process ID is prepended to the input ID to ensure global
         # uniqueness of input IDs.
-        for input_id in self.inputs:
+        for input_id, input_dict in self.inputs.items():
             if input_id not in self.runtime_context:
-                self.runtime_context[self.global_id(input_id)] = Absent()
+                value = Absent()
+                if "default" in input_dict:
+                    value = input_dict["default"]
+                self.runtime_context[self.global_id(input_id)] = value
     
 
     @abstractmethod
@@ -220,40 +231,49 @@ class BaseProcess(ABC):
         """
         TODO Better description
         """
-        runnable, missing = self.runnable()
-        if runnable:
-            self.task_graph_ref.compute()
-        else:
-            raise RuntimeError(
-                f"{self.id} is missing inputs {missing} and cannot run")
+        # runnable, missing = self.runnable()
+        # if runnable:
+            # self.task_graph_ref.compute()
+        # else:
+            # raise RuntimeError(
+                # f"{self.id} is missing inputs {missing} and cannot run")
+        self.task_graph_ref.compute()
+
+    
+    @abstractmethod
+    def register_input_sources(self) -> None:
+        """
+        TODO
+        """
+        pass
 
 
     def __call__(self, runtime_dict: dict):
         self.execute(runtime_dict)
 
 
-    def runnable(self) -> bool:
-        """
-        TODO Better description
-        Check whether a process is ready to be executed.
+    # def runnable(self) -> bool:
+    #     """
+    #     TODO Better description
+    #     Check whether a process is ready to be executed.
 
-        Returns:
-            True if the process can be run, False otherwise.
-            Additionally, a list of missing inputs is returned.
-        """
-        # TODO: Currently only checks that all keys are matched. Additions: 
-        # - Validate type of inputs.
-        # - 
-        # # NOTE: Extra checks probably not needed for Minimal Viable Product.
+    #     Returns:
+    #         True if the process can be run, False otherwise.
+    #         Additionally, a list of missing inputs is returned.
+    #     """
+    #     # TODO: Currently only checks that all keys are matched. Additions: 
+    #     # - Validate type of inputs.
+    #     # - 
+    #     # # NOTE: Extra checks probably not needed for Minimal Viable Product.
             
-        green_light = True
-        missing_inputs: list[str] = []
-        for key, value in self.inputs.items():
-            if key not in self.runtime_context or \
-               isinstance(value, Absent):
-                green_light = False
-                missing_inputs.append(key)
-        return green_light, missing_inputs
+    #     green_light = True
+    #     missing_inputs: list[str] = []
+    #     for input_id, input_dict in self.inputs.items():
+    #         if input_id not in self.runtime_context or \
+    #            isinstance(input_dict, Absent):
+    #             green_light = False
+    #             missing_inputs.append(input_id)
+    #     return green_light, missing_inputs
     
 
     def global_id(
