@@ -131,10 +131,12 @@ class BaseProcess(ABC):
         """
         TODO Desc
         """
+        if isinstance(input_dict, str):
+            return input_dict
+        
         arg_type = input_dict["class"]
         if "file" in arg_type:
             value = input_dict["path"]
-        
         return value
 
     
