@@ -24,7 +24,7 @@ class ProcessImages(BaseWorkflow):
         # overwriting each other. Use process id?
         self.outputs = {
             "animal_bodypart": {
-                "type": "str",
+                "type": "string",
                 "outputSource": "concat_strings/output"
             }
         }

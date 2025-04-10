@@ -23,15 +23,16 @@ class Concat(BaseCommandLineTool):
     def set_outputs(self):
         self.outputs = {
             "output": {
-                "type": "file",
-                "glob": "concat.out"
+                # "type": "file",
+                # "glob": "concat.out"
+                "type": "string" 
             }
         }
 
 
     # FIXME: Better function name
     def set_base_command(self):
-        self.base_command: str | list[str] = ["echo", ">concat.out"]
+        self.base_command: str | list[str] = ["echo"]
     
     
 if __name__ == "__main__":

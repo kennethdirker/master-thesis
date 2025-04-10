@@ -13,16 +13,13 @@ class Cat(BaseCommandLineTool):
             }
         }
 
-
     def set_outputs(self):
         self.outputs = {
             "output": {
-                "type": "str"
+                "type": "string"
             }
         }
 
-
-    # FIXME: Better function name
     def set_base_command(self):
         self.base_command: str | list[str] = "cat"
     
