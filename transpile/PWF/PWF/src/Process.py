@@ -313,8 +313,8 @@ class BaseProcess(ABC):
             if isinstance(value, Absent):
                 raise Exception("Missing paramter ", global_input_id)
             return value
-        raise Exception("Formatting error in evaluation", s)
-    
+        return s
+
         #     if "/" in source:
         #         # From local step 
         #         raise NotImplementedError()

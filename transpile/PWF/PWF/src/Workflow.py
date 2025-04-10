@@ -40,7 +40,7 @@ class BaseWorkflow(BaseProcess):
         # FIXME
         # Mapping of step ins to their sources 
         self.step_in_to_source: dict[str, str] = {}
-        self.step_id_to_process: dict[str, str] = {}
+        self.step_id_to_process: dict[str, BaseProcess] = {}
 
         # Must be overridden in set_steps().
         self.steps: dict[str, dict[str, str]] = {}
@@ -52,13 +52,14 @@ class BaseWorkflow(BaseProcess):
         self.set_outputs()
         self.set_requirements()
         self.set_steps()
-        self._process_step_outs()
+        self._process_steps()
 
         # Only the main process executes the workflow.
         if main:
             self.create_dependency_graph()
             self.optimize_dependency_graph()
             self.register_input_sources()
+            # self.bind_default_inputs()
             self.create_task_graph()
             self.execute()
 
@@ -99,18 +100,26 @@ class BaseWorkflow(BaseProcess):
         pass
 
 
-    def _process_step_outs(self) -> None:
+    def _process_steps(self) -> None:
         """
         TODO Desc
-        Register step outputs globally.
         """
         for step_id, step_dict in self.steps.items():
+            # for input_id, input_dict in step_dict["in"].items():
+            #     if "default" in input_dict:
+            #         subprocess_id: str = self.step_id_to_process[step_id]
+            #         subprocess: BaseProcess = self.loading_context["processes"][subprocess_id]
+            #         self.runtime_context[subprocess.global_id(input_id)] = input_dict["default"]
+
+            # Register step outputs globally
             if isinstance(step_dict["out"], list):
                 for out_id in step_dict["out"]:
                     self.runtime_context[self.global_id(step_id + "/" + out_id)] = Absent()
             else:
                 self.runtime_context[self.global_id(step_id + "/" + step_dict["out"])] = Absent()
     
+
+
 
     def set_groups(self) -> None:
         """
@@ -266,7 +275,8 @@ class BaseWorkflow(BaseProcess):
                     use_default, source = get_source_from_step(_process, _step_id, source)
                     if use_default:
                         # Input has no dynamic source: Use default value
-                        process.input_to_source[input_id] = _process.global_id(source)
+                        process.input_to_source[input_id] = _process.global_id(input_id)
+                        # self.runtime_context[_process.global_id(input_id)] = source
                         break
                     
                     if "/" in source:   # {global_process_id}:{step_id}/{output_id}
@@ -283,6 +293,27 @@ class BaseWorkflow(BaseProcess):
                         # Look in the parent process
                         _step_id = _process.step_id
                         _process = processes[_process.parent_process_id]
+
+    
+    # def bind_default_inputs(self) -> None:
+    #     """
+    #     TODO Desc
+    #     NOTE: should this be moved somewhere else?
+    #     """
+    #     for process in self.loading_context["processes"].values():
+    #         # Look for defaults in process input
+    #         for input_id, input_dict in self.inputs.items():
+    #             if "default" in input_dict:
+    #                 # self.runtime_context[self.gl] = input_dict["default"]
+    #                 raise NotImplementedError()
+            
+    #         # Look for default in step input
+    #         for step_id, step_dict in self.steps.items():
+    #             for input_id, input_dict in step_dict["in"].items():
+    #                 if "default" in input_dict:
+    #                     subprocess: BaseProcess = self.step_id_to_process[step_id]
+    #                     source = self.input_to_source[subprocess.global_id(input_id)]
+    #                     self.runtime_context[source] = input_dict["default"]
 
 
     def _load_process_from_uri(
