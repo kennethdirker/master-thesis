@@ -48,7 +48,7 @@ class BaseWorkflow(BaseProcess):
         # Digest workflow file
         self.set_metadata()
         self.set_inputs()
-        self._process_inputs()
+        # self._process_inputs()
         self.set_outputs()
         self.set_requirements()
         self.set_steps()
@@ -150,7 +150,7 @@ class BaseWorkflow(BaseProcess):
                 )
 
         # TODO remove
-        graph.print()
+        # graph.print()
 
 
     def optimize_dependency_graph(self) -> None:
@@ -190,23 +190,24 @@ class BaseWorkflow(BaseProcess):
             for parent_node_id in node.parents:
                 parents.append(id_to_delayed[parent_node_id])
 
-            # Create and register dask.Delayed wrapper
+            # Create and register dask.Delayed tool wrapper
+            # FIXME This works only for nodes with a single process
             node.processes[0].create_task_graph(*parents)
             id_to_delayed[node_id] = node.processes[0].task_graph_ref
             visited.append(node_id)
 
             # Add children to frontier
             for child_node_id in node.children:
-                frontier.append(child_node_id)
-
-
+                if child_node_id not in frontier:
+                    frontier.append(child_node_id)
 
         if len(visited) != graph.size:
             raise Exception("Dangling nodes: Not all nodes have been visited")
 
         def knot(*parents):
             """ Tie together all leaves to ensure they are executed """
-            print("Finished executing task tree")
+            # print("Finished executing task tree")
+            pass
 
         leaves: list[Delayed] = []
         for node_id in graph.leaves:
@@ -226,8 +227,6 @@ class BaseWorkflow(BaseProcess):
         if not self.is_main:
             raise Exception("Not called from main process")
 
-        processes: dict[str, BaseProcess] = self.loading_context["processes"]
-
         def get_source_from_step(
                 process: BaseWorkflow, 
                 step_id: str,
@@ -240,8 +239,10 @@ class BaseWorkflow(BaseProcess):
                 return True, step_in_dict["default"]
             raise NotImplementedError()
 
+        processes: dict[str, BaseProcess] = self.loading_context["processes"]
+
         # Link tool inputs of each tool to their global source
-        for process in self.loading_context["processes"].values():
+        for process in processes.values():
             if not issubclass(type(process), BaseCommandLineTool):
                 continue
 
@@ -282,9 +283,6 @@ class BaseWorkflow(BaseProcess):
                         # Look in the parent process
                         _step_id = _process.step_id
                         _process = processes[_process.parent_process_id]
-
-
-
 
 
     def _load_process_from_uri(
@@ -343,11 +341,11 @@ class BaseWorkflow(BaseProcess):
 def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
     """
     TODO Description
-    NOTE: Not a recursive algorithm, because Python has a standard recursion 
-        limit and workflows can be huge. The recursion limit can be increased, 
-        but the user shouldn't be bothered, so iterative it is.
     NOTE: How to implement optional args? Handle at runtime!
     """
+    # NOTE: Not a recursive algorithm, because Python has a standard recursion 
+    # limit and workflows can be huge. The recursion limit can be increased, 
+    # but the user shouldn't be bothered, so iterative it is.
     if tool.is_main:
         return []
     

@@ -63,7 +63,7 @@ class BaseProcess(ABC):
         self.inputs:  dict = {} # Override in set_inputs()
         self.outputs: dict = {} # Override in set_outputs()
 
-        # Maps input_id to its source id, which is used as key in runtime_context
+        # Maps input_id to its global source id, which is used as key in runtime_context
         self.input_to_source: dict[str, str] =  {}  # {input_id, global_source_id}
         
         # TODO What to do with self.parents / self.children???
@@ -178,21 +178,21 @@ class BaseProcess(ABC):
         pass
     
     
-    def _process_inputs(self) -> None:
-        """
-        TODO Better description
-        """
-        # NOTE: This is needed for dynamic I/O
-        # FIXME: Find a better way to support dynamic I/O?
-        # Create an entry in the runtime_context dict for each input argument.
-        # The process ID is prepended to the input ID to ensure global
-        # uniqueness of input IDs.
-        for input_id, input_dict in self.inputs.items():
-            if self.global_id(input_id) not in self.runtime_context:
-                value = Absent()
-                if "default" in input_dict:
-                    value = input_dict["default"]
-                self.runtime_context[self.global_id(input_id)] = value
+    # def _process_inputs(self) -> None:
+    #     """
+    #     TODO Better description
+    #     """
+    #     # NOTE: This is needed for dynamic I/O
+    #     # FIXME: Find a better way to support dynamic I/O?
+    #     # Create an entry in the runtime_context dict for each input argument.
+    #     # The process ID is prepended to the input ID to ensure global
+    #     # uniqueness of input IDs.
+    #     for input_id, input_dict in self.inputs.items():
+    #         if self.global_id(input_id) not in self.runtime_context:
+    #             value = Absent()
+    #             if "default" in input_dict:
+    #                 value = input_dict["default"]
+    #             self.runtime_context[self.global_id(input_id)] = value
     
 
     @abstractmethod
@@ -252,14 +252,8 @@ class BaseProcess(ABC):
         """
         TODO Better description
         """
-        # runnable, missing = self.runnable()
-        # if runnable:
-            # self.task_graph_ref.compute()
-        # else:
-            # raise RuntimeError(
-                # f"{self.id} is missing inputs {missing} and cannot run")
         self.task_graph_ref.compute()
-
+        
     
     @abstractmethod
     def register_input_sources(self) -> None:
@@ -308,21 +302,32 @@ class BaseProcess(ABC):
 
 
     def eval(self, s: str):
+        """
+        Evaluate
+        """
         if s.startswith("$") and s.endswith("$"):
             source = s[1:-1]
-            if "/" in source:
-                # From local step
-                raise NotImplementedError()
-            else:
-                # From local input
-                global_input_id = self.input_to_source[self.global_id(source)]
-                value = self.runtime_context[global_input_id]
-                if isinstance(value, Absent):
-                    raise Exception("Missing paramter ", global_input_id)
-                else:
-                    return value
-        else:
-            return s
+            global_input_id = self.input_to_source[self.global_id(source)]
+            value = self.runtime_context[global_input_id]
+            
+            if isinstance(value, Absent):
+                raise Exception("Missing paramter ", global_input_id)
+            return value
+        raise Exception("Formatting error in evaluation", s)
+    
+        #     if "/" in source:
+        #         # From local step 
+        #         raise NotImplementedError()
+        #     else:
+        #         # From local input
+        #         global_input_id = self.input_to_source[self.global_id(source)]
+        #         value = self.runtime_context[global_input_id]
+        #         if isinstance(value, Absent):
+        #             raise Exception("Missing paramter ", global_input_id)
+        #         else:
+        #             return value
+        # else:
+        #     return s
 
 
 """ ######################################
@@ -428,17 +433,19 @@ class Graph:
         # mapping = {}
         # for i, key in enumerate(self.nodes.keys()):
         #     mapping[key] = i
-
-        s = "roots: " 
-        for root in self.roots:
-            s += f"{self.id_mapping[root]} "
+        s = "nodes: "
+        for node_id in self.nodes:
+            s+= f"{self.id_mapping[node_id]} "
+        s += "\nroots: " 
+        for root_id in self.roots:
+            s += f"{self.id_mapping[root_id]} "
         s += "\nedges: \n"
-        for node, children in self.out_deps.items():
-            for child in children:
-                s += f"\t{self.id_mapping[node]} -> {self.id_mapping[child]}\n"
+        for node_id, child_id in self.out_deps.items():
+            for child in child_id:
+                s += f"\t{self.id_mapping[node_id]} -> {self.id_mapping[child]}\n"
         s += "leaves: " 
-        for leaf in self.leaves:
-            s += f"{self.id_mapping[leaf]} "
+        for leaf_id in self.leaves:
+            s += f"{self.id_mapping[leaf_id]} "
         return s
 
     

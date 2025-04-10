@@ -37,7 +37,7 @@ class BaseCommandLineTool(BaseProcess):
         # Digest CommandlineTool file
         self.set_metadata()
         self.set_inputs()
-        self._process_inputs()
+        # self._process_inputs()
         self.set_outputs()
         self.set_requirements()
         self.set_base_command()
@@ -242,7 +242,8 @@ class BaseCommandLineTool(BaseProcess):
         return cmds
     
 
-    def _process_outputs(self, result) -> None:
+    def _process_outputs(self, result: bytes) -> None:
+
         for output_id, output_dict in self.outputs.items():
             # FIXME Checking formatting should probably not be done at runtime
             if "type" not in output_dict:
@@ -250,10 +251,12 @@ class BaseCommandLineTool(BaseProcess):
 
             # FIXME Checking formatting should probably not be done at runtime
             output_type: str = output_dict["type"]
-            global_output_id = self.global_id(self.step_id + output_id)
+            parent_process = self.loading_context["processes"][self.parent_process_id]
+            global_output_id = parent_process.global_id(self.step_id + "/" + output_id)
 
             if "string" in output_type:
-                self.runtime_context[global_output_id] = result.decode('utf-8')
+                self.runtime_context[global_output_id] = result.decode()
+                print(result.decode())
             elif "file" in output_type:
                 if not "glob" in output_dict:
                     raise Exception(f"No glob field in output {output_id}")
@@ -304,14 +307,19 @@ class BaseCommandLineTool(BaseProcess):
             else:
                 cmd = [self.base_command] + cmd
 
-        print("Current working directory:", os.getcwd())
+        # print("Current working directory:", os.getcwd())
         print("Executing:", " ".join(cmd))
         print()
-        result = subprocess.run(cmd, stdout=subprocess.PIPE).stdout
-        
+        result: bytes = subprocess.run(
+            cmd,
+            # stdout=subprocess.PIPE,
+            capture_output=True
+        ).stdout
         # Process outputs if needed
         if self.step_id:
             self._process_outputs(result)
+        else:
+            print(result.decode())
 
         
 
