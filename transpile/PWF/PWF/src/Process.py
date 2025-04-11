@@ -142,6 +142,9 @@ class BaseProcess(ABC):
 
     
     def _load_input_object(self, yaml_uri: str) -> dict:
+        """
+        TODO Desc
+        """
         runtime_context = {}
         yaml_dict = self._load_yaml(yaml_uri)
         print("Inputs loaded into runtime context:")
@@ -152,6 +155,7 @@ class BaseProcess(ABC):
             print("\t-", input_id, ":", input_value)
         print()
         return runtime_context
+
 
     @abstractmethod
     def set_metadata(self) -> None:
@@ -246,6 +250,9 @@ class BaseProcess(ABC):
 
     @abstractmethod
     def create_task_graph(self) -> None:
+        """
+        TODO Desc
+        """
         pass
     
 
@@ -304,11 +311,12 @@ class BaseProcess(ABC):
 
     def eval(self, s: str):
         """
+        TODO Desc
         Evaluate
         """
         if s.startswith("$") and s.endswith("$"):
             source = s[1:-1]
-            global_input_id = self.input_to_source[self.global_id(source)]
+            global_input_id = self.input_to_source[source]
             value = self.runtime_context[global_input_id]
             
             if isinstance(value, Absent):
@@ -331,11 +339,9 @@ class BaseProcess(ABC):
         #     return s
 
 
-""" ######################################
-
-""" ######################################
-
-
+#########################################
+#                 Node                  #
+#########################################
 class Node:
     def __init__(
             self,
@@ -393,11 +399,9 @@ class Node:
         return len(self.parents) == 0
 
 
-""" ######################################
-
-""" ######################################
-
-
+#########################################
+#                 Graph                 #
+#########################################
 class Graph:
     def __init__(
             self, 
