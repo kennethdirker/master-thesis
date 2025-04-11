@@ -261,13 +261,16 @@ class BaseCommandLineTool(BaseProcess):
                 if not "glob" in output_dict:
                     raise Exception(f"No glob field in output {output_id}")
                 
-                output_file_paths = glob.glob(self.eval(output_dict["glob"]))
+                value = self.eval(output_dict["glob"])
+                print(value)
+                output_file_paths = glob.glob(value)
                 if "[]" in output_type:
+                    # Output is an array of objects
                     self.runtime_context[global_output_id] = output_file_paths
-                elif len(output_file_paths) == 1:
-                    self.runtime_context[global_output_id] = output_file_paths[0]
                 else:
-                    raise Exception()
+                    # Output is a single object
+                    self.runtime_context[global_output_id] = output_file_paths[0]
+                print(output_file_paths)
             else:
                 raise NotImplementedError(f"Output type {output_type} is not supported")
 
@@ -309,7 +312,6 @@ class BaseCommandLineTool(BaseProcess):
 
         # print("Current working directory:", os.getcwd())
         print("Executing:", " ".join(cmd))
-        print()
         result: bytes = subprocess.run(
             cmd,
             # stdout=subprocess.PIPE,

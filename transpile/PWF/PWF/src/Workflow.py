@@ -37,9 +37,7 @@ class BaseWorkflow(BaseProcess):
         # TODO Decide if this is the way, see set_groups()
         # self.groupings = ...
 
-        # FIXME
-        # Mapping of step ins to their sources 
-        self.step_in_to_source: dict[str, str] = {}
+        # Mapping of a step ID to its child BaseProcess object
         self.step_id_to_process: dict[str, BaseProcess] = {}
 
         # Must be overridden in set_steps().
@@ -68,7 +66,8 @@ class BaseWorkflow(BaseProcess):
     def set_steps(self):
         """
         Defines the sub-processes of this workflow. Overwriting this function
-        is mandatory for workflows 
+        is mandatory for workflows.
+        TODO Desc
         """
         # Example:
         # self.steps = {
@@ -111,12 +110,14 @@ class BaseWorkflow(BaseProcess):
             #         subprocess: BaseProcess = self.loading_context["processes"][subprocess_id]
             #         self.runtime_context[subprocess.global_id(input_id)] = input_dict["default"]
 
-            # Register step outputs globally
+            # Register step outputs as global sources
             if isinstance(step_dict["out"], list):
                 for out_id in step_dict["out"]:
                     self.runtime_context[self.global_id(step_id + "/" + out_id)] = Absent()
-            else:
+            elif isinstance(step_dict["out"], str):
                 self.runtime_context[self.global_id(step_id + "/" + step_dict["out"])] = Absent()
+            else:
+                raise NotImplementedError("Encountered unsupported type", type(step_dict["out"]))
     
 
 
@@ -234,9 +235,9 @@ class BaseWorkflow(BaseProcess):
 
         """
         if not self.is_main:
-            raise Exception("Not called from main process")
+            raise Exception("Function should only be called from the main process")
 
-        def get_source_from_step(
+        def get_source_from_step_in(
                 process: BaseWorkflow, 
                 step_id: str,
                 in_id: str
@@ -272,11 +273,11 @@ class BaseWorkflow(BaseProcess):
                 source = input_id
 
                 while True:
-                    use_default, source = get_source_from_step(_process, _step_id, source)
+                    use_default, source = get_source_from_step_in(_process, _step_id, source)
                     if use_default:
                         # Input has no dynamic source: Use default value
                         process.input_to_source[input_id] = _process.global_id(input_id)
-                        # self.runtime_context[_process.global_id(input_id)] = source
+                        self.runtime_context[_process.global_id(input_id)] = source
                         break
                     
                     if "/" in source:   # {global_process_id}:{step_id}/{output_id}
@@ -290,7 +291,7 @@ class BaseWorkflow(BaseProcess):
                             process.input_to_source[input_id] = _process.global_id(source)
                             break
 
-                        # Look in the parent process
+                        # Move to the parent process
                         _step_id = _process.step_id
                         _process = processes[_process.parent_process_id]
 
@@ -299,6 +300,7 @@ class BaseWorkflow(BaseProcess):
     #     """
     #     TODO Desc
     #     NOTE: should this be moved somewhere else?
+    #     NOTE: Probably shouldn't be used at all
     #     """
     #     for process in self.loading_context["processes"].values():
     #         # Look for defaults in process input
