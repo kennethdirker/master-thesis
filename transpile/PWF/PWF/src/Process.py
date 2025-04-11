@@ -44,7 +44,8 @@ class BaseProcess(ABC):
         #   "{path/to/process/script/file}:{uuid}"  
         # FIXME: IDs could be made of {uuid} only, but the path adds debugging clarity.
         self.short_id: str = str(uuid.uuid4())
-        self.id = inspect.getfile(type(self)) + ":" + self.short_id
+        self.process_path: str = inspect.getfile(type(self))
+        self.id = self.process_path + ":" + self.short_id
 
         # ID of the step and process from which this process is called.
         # Both are None if this process is the root process.
