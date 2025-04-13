@@ -59,6 +59,20 @@ class ProcessImages(BaseWorkflow):
                 "run": "../steps/DownloadImages.py",
                 "label": "download_images"
             },
+            "after_plot_inspect": {
+                "in": {
+                    "input_fits": {
+                        "source": "noiseremover/output"
+                    },
+                    "output_image": {
+                        "default": "after_noise_remover.png"
+                    }
+
+                },
+                "out": "output",
+                "run": "../steps/ImagePlotter.py",
+                "label": "imageplotter"
+            },
 
         }
     
