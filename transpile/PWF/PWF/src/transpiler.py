@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Optional, TextIO, Union
 
 from cwl_utils.parser import load_document_by_uri
-
+from cwl_utils.parser.cwl_v1_2 import CommandOutputArraySchema
 
 
 def parse_prefix(
@@ -25,7 +25,7 @@ def parse_prefix(
         lines.append("from PWF.src.Workflow import BaseWorkflow")
         lines.append("")
         lines.append(f"class {class_name}(BaseWorkflow):")
-    lines.append("")
+    
     lines = [line + "\n" for line in lines]
     out_file.writelines(lines)
 
@@ -37,7 +37,9 @@ def parse_metadata(
     """
     
     """
-    lines: list[str] = ["\tdef set_metadata(self):"]
+    lines: list[str] = [""]
+    lines.append("\tdef set_metadata(self):")
+
     # Label
     if hasattr(cwl, "label") and cwl.label is not None:
         lines.append(f'\t\tself.label = "{cwl.label}"')
@@ -45,7 +47,7 @@ def parse_metadata(
     # Doc
     if hasattr(cwl, "doc") and cwl.doc is not None:
         doc_len = len(cwl.doc)
-        lines: list[str] = ["\t\tself.doc = ("]
+        lines.append("\t\tself.doc = (")
         begin = 0
         while begin < doc_len:
             end = min(begin + 60, doc_len)
@@ -69,12 +71,43 @@ def parse_inputs(
     """
     
     """
-    lines: list[str] = []
+    lines: list[str] = [""]
+    lines.append("\tdef set_inputs(self):")
+    lines.append("\t\tself.inputs = {")
+    
     if hasattr(cwl, "inputs"):
-        print(cwl.inputs)
-        # for input_id, input_dict in cwl["inputs"].items():
-            
-    raise NotImplementedError()
+        for input in cwl.inputs:
+            # ID
+            lines.append(f'\t\t\t"{input.id.split("/")[-1]}": {{')
+            # Type
+            type_: str = input.type_.lower()
+            lines.append(f'\t\t\t\t"type": "{type_}",')
+            # Inputbinding
+            if hasattr(input, "inputBinding"):
+                # Prefix
+                binding = input.inputBinding
+                if hasattr(binding, "prefix"):
+                    lines.append(f'\t\t\t\t"prefix": "{binding.prefix}",')
+                # Position
+                if hasattr(binding, "position"):
+                    lines.append(f'\t\t\t\t"position": {binding.position},')
+            lines.append("\t\t\t},")
+    lines.append("\t\t}")
+
+    # Add newlines to each string
+    lines = [line + "\n" for line in lines]
+    out_file.writelines(lines)
+
+
+def get_output_type(type_: Any) -> list[str]:
+    lines: list[str] = []
+
+    if isinstance(type_, CommandOutputArraySchema):
+        lines.append(f'\t\t\t\t"type": "{type_.items.lower()}[]",')
+    else:
+        raise NotImplementedError()
+
+    return lines
 
 
 def parse_outputs(
@@ -84,7 +117,32 @@ def parse_outputs(
     """
     
     """
-    raise NotImplementedError()
+    lines: list[str] = [""]
+    lines.append("\tdef set_outputs(self):")
+    lines.append("\t\tself.outputs = {")
+    
+    if hasattr(cwl, "outputs"):
+        for output in cwl.outputs:
+            # ID
+            lines.append(f'\t\t\t"{output.id.split("/")[-1]}": {{')
+
+            # Type
+            type_: list[str] = get_output_type(output.type_)
+            lines.extend(type_)
+            
+            # Glob
+            if hasattr(output, "outputBinding"):
+                binding = output.outputBinding
+                if hasattr(binding, "glob"):
+                    glob = binding.glob
+                    lines.append(f'\t\t\t\t"glob": "{glob}",')
+
+            lines.append("\t\t\t},")
+    lines.append("\t\t}")
+
+    # Add newlines to each string
+    lines = [line + "\n" for line in lines]
+    out_file.writelines(lines)
 
 
 def parse_base_command(
@@ -94,7 +152,21 @@ def parse_base_command(
     """
     
     """
-    raise NotImplementedError()
+    lines: list[str] = [""]
+    lines.append("\tdef set_base_command(self):")
+    lines.append("\t\tself.base_command = [")
+    
+    if hasattr(cwl, "baseCommand"):
+        if not isinstance(cwl.baseCommand, list):
+            cwl.baseCommand = [cwl.baseCommand]
+        for command in cwl.baseCommand:
+            lines.append(f'\t\t\t"{command}",')
+        
+    lines.append("\t\t]")
+
+    # Add newlines to each string
+    lines = [line + "\n" for line in lines]
+    out_file.writelines(lines)
 
 
 def parse_steps(
@@ -114,10 +186,12 @@ def parse_suffix(
     """
     
     """
-    lines: list[str] = ['if __name__ == "__main__":']
+    lines: list[str] = [""]
+    lines.append('if __name__ == "__main__":')
+    # Add newlines to each string
     lines = [line + "\n" for line in lines]
     lines.append(f"\t{class_name}(main=True)")
-
+    out_file.writelines(lines)
 
 def parse_cwl(
         cwl: dict[str, Any], 
@@ -132,11 +206,11 @@ def parse_cwl(
         parse_metadata(cwl, f)
         parse_inputs(cwl, f)
         parse_outputs(cwl, f)
-        if "CommandLineTool" in cwl["class_"]:
+        if "CommandLineTool" in cwl.class_:
             parse_base_command(cwl, f)
-        elif "Workflow" in cwl["class_"]:
+        elif "Workflow" in cwl.class_:
             parse_steps(cwl, f)
-        parse_suffix(cwl, class_name, f)
+        parse_suffix(class_name, f)
 
 
 def transpile_file(
@@ -160,7 +234,7 @@ def transpile_file(
             raise TypeError(f"Expected 'str' or 'Path', but got {type(output_file_path)}")
     else:
         # Use cwl_file_path basename for the output file
-        basename = str(Path.stem)
+        basename = str(cwl_file_path.stem)
         output_file_path = Path(basename + ".py")
 
     cwl_dict = load_document_by_uri(cwl_file_path)
@@ -204,7 +278,6 @@ def main():
                 raise Exception(f"Multiple output files were given for a single input file")
             output = output[0]
         transpile_file(args.input[0], output)
-
 
 
 if __name__ == "__main__":
