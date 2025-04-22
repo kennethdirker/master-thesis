@@ -1,5 +1,6 @@
 LINC/
 env/
+test_env/
 data/
 cwl_workshop/
 __pycache__
