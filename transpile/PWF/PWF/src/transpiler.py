@@ -287,13 +287,16 @@ def transpile_file(
 
 def transpile_files(
         cwl_file_paths: list[Union[str, Path]],
-        output_file_paths: Optional[list[Union[str, Path]]]
+        output_file_paths: Optional[list[Union[str, Path]]] = None
     ) -> None:
     """
     
     """
-    raise NotImplementedError()
-    pass
+    if output_file_paths is None:
+        output_file_paths = [None] * len(cwl_file_paths)
+    for in_path, out_path in zip(cwl_file_paths, output_file_paths):
+        transpile_file(in_path, out_path)
+        
 
 
 def main():
