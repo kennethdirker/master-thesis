@@ -1,14 +1,12 @@
 from PWF.src.CommandLineTool import BaseCommandLineTool
 
-class imagePlotter(BaseCommandLineTool):
+class ImagePlotter(BaseCommandLineTool):
 
     def set_metadata(self):
         self.label = "imageplotter"
 
     
     def set_inputs(self):
-        # FIXME make input ids globally unique to ensure sub-processes from
-        # overwriting each other. Use process id?
         self.inputs = {
             "input_fits": {
                 "type": "file[]",
@@ -25,8 +23,6 @@ class imagePlotter(BaseCommandLineTool):
         self.outputs = {
             "output": {
                 "type": "file",
-            # TODO Does the following work???
-            # NOTE: Prob not at workflow level, as input ids are not unique yet
                 "glob": "$output_image$"
             }
         }
@@ -40,5 +36,5 @@ class imagePlotter(BaseCommandLineTool):
     
     
 if __name__ == "__main__":
-    imagePlotter(main=True)
+    ImagePlotter(main=True)
     

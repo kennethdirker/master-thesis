@@ -4,8 +4,11 @@ from pathlib import Path
 from typing import Any, Optional, TextIO, Union
 
 from cwl_utils.parser import load_document_by_uri
-from cwl_utils.parser.cwl_v1_2 import CommandOutputArraySchema
 
+from cwl_utils.parser.cwl_v1_2 import (
+    CommandOutputArraySchema, 
+    CommandInputArraySchema
+)
 
 def parse_prefix(
         cwl: dict[str, Any],
@@ -64,6 +67,22 @@ def parse_metadata(
     out_file.writelines(lines)
 
 
+def get_input_type(type_: Any) -> list[str]:
+    """
+    
+    """
+    lines: list[str] = []
+
+    if isinstance(type_, CommandInputArraySchema):
+        lines.append(f'\t\t\t\t"type": "{type_.items.lower()}[]",')
+    elif isinstance(type_, str):
+        lines.append(f'\t\t\t\t"type": "{type_.lower()}",')
+    else:
+        raise NotImplementedError(f"Found unsuppored type {type(type_)}")
+
+    return lines
+
+
 def parse_inputs(
         cwl: dict[str, Any],
         out_file: TextIO
@@ -79,17 +98,19 @@ def parse_inputs(
         for input in cwl.inputs:
             # ID
             lines.append(f'\t\t\t"{input.id.split("/")[-1]}": {{')
+
             # Type
-            type_: str = input.type_.lower()
-            lines.append(f'\t\t\t\t"type": "{type_}",')
+            type_: list[str] = get_input_type(input.type_)
+            lines.extend(type_)
+            
             # Inputbinding
             if hasattr(input, "inputBinding"):
                 # Prefix
                 binding = input.inputBinding
-                if hasattr(binding, "prefix"):
+                if hasattr(binding, "prefix") and binding.prefix is not None:
                     lines.append(f'\t\t\t\t"prefix": "{binding.prefix}",')
                 # Position
-                if hasattr(binding, "position"):
+                if hasattr(binding, "position") and binding.position is not None:
                     lines.append(f'\t\t\t\t"position": {binding.position},')
             lines.append("\t\t\t},")
     lines.append("\t\t}")
@@ -100,14 +121,36 @@ def parse_inputs(
 
 
 def get_output_type(type_: Any) -> list[str]:
+    """
+    
+    """
     lines: list[str] = []
 
     if isinstance(type_, CommandOutputArraySchema):
         lines.append(f'\t\t\t\t"type": "{type_.items.lower()}[]",')
+    elif isinstance(type_, str):
+        lines.append(f'\t\t\t\t"type": "{type_.lower()}",')
     else:
-        raise NotImplementedError()
+        raise NotImplementedError(f"Found unsuppored type {type(type_)}")
 
     return lines
+
+
+def get_glob(glob: str) -> str:
+    """
+    
+    """
+    s = glob
+    if "$(" in glob and ")" in glob:
+        s = glob[2:-1].split(".")
+        if "inputs" in s[0]:
+            # Get glob from input
+            glob = s[1]
+        else:
+            # Get glob from step
+            glob = "/".join(s[1:])
+        s = f"${glob}$"
+    return s
 
 
 def parse_outputs(
@@ -134,7 +177,7 @@ def parse_outputs(
             if hasattr(output, "outputBinding"):
                 binding = output.outputBinding
                 if hasattr(binding, "glob"):
-                    glob = binding.glob
+                    glob = get_glob(binding.glob)
                     lines.append(f'\t\t\t\t"glob": "{glob}",')
 
             lines.append("\t\t\t},")
