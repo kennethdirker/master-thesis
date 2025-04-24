@@ -9,8 +9,8 @@ from dask.delayed import Delayed
 from pathlib import Path
 from typing import Optional, Tuple, Union
 
-from .CommandLineTool import BaseCommandLineTool
-from .Process import BaseProcess, Graph, Node
+from .commandlinetool import BaseCommandLineTool
+from .process import BaseProcess, Graph, Node
 from .utils import Absent
 
 class BaseWorkflow(BaseProcess):

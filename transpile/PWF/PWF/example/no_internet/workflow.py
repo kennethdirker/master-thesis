@@ -1,4 +1,4 @@
-from PWF.src.Workflow import BaseWorkflow
+from PWF.src.workflow import BaseWorkflow
 
 class ProcessImages(BaseWorkflow):
 

@@ -9,7 +9,7 @@ from pathlib import Path
 # from subprocess import run
 from typing import Any, Optional, Tuple
 
-from .Process import BaseProcess
+from .process import BaseProcess
 
 class BaseCommandLineTool(BaseProcess):
 

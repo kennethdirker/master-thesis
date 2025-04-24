@@ -1,4 +1,4 @@
-from PWF.src.CommandLineTool import BaseCommandLineTool
+from PWF.src.commandlinetool import BaseCommandLineTool
 
 class Cat(BaseCommandLineTool):
 
