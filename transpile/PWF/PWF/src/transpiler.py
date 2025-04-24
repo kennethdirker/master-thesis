@@ -304,8 +304,8 @@ def main():
         prog="progname",
         description=""
     )
-    arg_parser.add_argument("-i", "--input", nargs="+")#, type=argparse.FileType("r"))
-    arg_parser.add_argument("-o", "--output", nargs="*")#, type=argparse.FileType("w"))
+    arg_parser.add_argument("input", nargs="+")
+    arg_parser.add_argument("-o", "--output", nargs="*")
     args = arg_parser.parse_args()
 
 
