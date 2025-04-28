@@ -1,5 +1,5 @@
 import copy
-import dask.delayed
+# import dask.delayed
 import inspect
 import os
 import sys
@@ -8,7 +8,8 @@ import yaml
 
 from abc import ABC, abstractmethod
 from copy import deepcopy
-from dask.delayed import Delayed
+# from dask.delayed import Delayed
+from dask.distributed import Client
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -100,12 +101,19 @@ class BaseProcess(ABC):
         if main:
             self.main_path = os.getcwd()
 
-        # TODO: Prepare Dask?
-        # dask_client = ...
+        # Prepare Dask client
+        # NOTE Can easilty be replaced by other Dask clients
+        self.dask_client: Client = Client()
 
         # Used in create_task_graph()
-        self.task_graph_ref: Union[Delayed, None] = None
+        # self.task_graph_ref: Union[Delayed, None] = None
+    
 
+    def global_id(self, s: str) -> str:
+        """
+        Concatenate the process ID and another string, split by a colon.
+        """
+        return self.id  + ":" + s
 
 
     def _load_yaml(self, yaml_uri: str) -> dict:
@@ -124,30 +132,51 @@ class BaseProcess(ABC):
             return y
         
     
-    def extract_argument_from_input_dict(self, input_dict: dict) -> str:
+    def resolve_input_value(self, input_value: dict) -> Union[str, list[str]]:
         """
-        TODO Desc
+        Extract a value from a key-value entry. This is needed because CWL
+        input objects may contain key-value pairs that are more complicated
+        than needed... Below is an example, where we need to extract the path.
+
+        # Example 
+        # id:
+        #     class: file
+        #     path: path/to/some/file
+
+        Arguments:
+            input_value: A YAML entry.
+
+        Returns
         """
-        if isinstance(input_dict, str):
-            return input_dict
-        
-        arg_type = input_dict["class"]
-        if "file" in arg_type:
-            value = input_dict["path"]
-        return value
+        if isinstance(input_value, str):
+            return input_value
+        elif isinstance(input_value, list):
+            return input_value
+        elif isinstance(input_value, dict):
+            arg_type = input_value["class"]
+            if "file" in arg_type:
+                return input_value["path"]
+        raise Exception(f"Unexpected value type {type(input_value)}")
 
     
     def _load_input_object(self, yaml_uri: str) -> dict:
         """
-        TODO Desc
+        Read the input object from a YAML file and map the values
+        with the globalized input ID as key.
+
+        Arguments:
+            yaml_uri: Path to the input object YAML file.
+        
+        Returns a dictionary that maps global process input IDs to values from
+        the input object
         """
         runtime_context = {}
-        yaml_dict = self._load_yaml(yaml_uri)
+        input_obj = self._load_yaml(yaml_uri)
 
         print("Inputs loaded into runtime context:")
-        for input_id, input_dict in yaml_dict.items():
+        for input_id, input_value in input_obj.items():
             # Input from object is indexed by {Process.id}:{input_id}
-            input_value = self.extract_argument_from_input_dict(input_dict)
+            input_value = self.resolve_input_value(input_value)
             runtime_context[self.global_id(input_id)] = input_value
             print("\t-", input_id, ":", input_value)
         print()
@@ -246,12 +275,12 @@ class BaseProcess(ABC):
     #     pass
 
 
-    @abstractmethod
-    def create_task_graph(self) -> None:
-        """
-        TODO Desc
-        """
-        pass
+    # @abstractmethod
+    # def create_task_graph(self) -> None:
+    #     """
+    #     TODO Desc
+    #     """
+    #     pass
         
     
     @abstractmethod
@@ -262,15 +291,16 @@ class BaseProcess(ABC):
         pass
     
 
+    @abstractmethod
     def execute(self):
         """
         TODO Better description
         """
-        self.task_graph_ref.compute()
+        # self.task_graph_ref.compute()
 
 
-    def __call__(self, runtime_dict: dict):
-        self.execute(runtime_dict)
+    # def __call__(self, runtime_dict: dict):
+        # self.execute(runtime_dict)
 
 
     # def runnable(self) -> bool:
@@ -295,13 +325,6 @@ class BaseProcess(ABC):
     #             green_light = False
     #             missing_inputs.append(input_id)
     #     return green_light, missing_inputs
-    
-
-    def global_id(self, s: str) -> str:
-        """
-        Concatenate the process ID and another string, split by a colon.
-        """
-        return self.id  + ":" + s
 
 
     def eval(self, s: str):
