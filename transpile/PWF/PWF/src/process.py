@@ -295,7 +295,6 @@ class BaseProcess(ABC):
         """
         pass
 
-
     @abstractmethod
     def execute(self):
         """
@@ -303,11 +302,9 @@ class BaseProcess(ABC):
         """
         # self.task_graph_ref.compute()
 
-    def __call__(self):
-        """
-        TODO
-        """
-        self.execute()
+
+    # def __call__(self, runtime_dict: dict):
+        # self.execute(runtime_dict)
 
 
     # def runnable(self) -> bool:
