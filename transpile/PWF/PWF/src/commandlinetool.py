@@ -1,4 +1,4 @@
-import dask.delayed
+# import dask.delayed
 import glob
 import os
 import subprocess
@@ -44,7 +44,7 @@ class BaseCommandLineTool(BaseProcess):
         
         if main:
             self.register_input_sources()
-            self.create_task_graph()
+            # self.create_task_graph()
             self.execute()
 
 
@@ -279,8 +279,8 @@ class BaseCommandLineTool(BaseProcess):
     def cmd_wrapper(
             self,
             inputs: list[Tuple[str, dict[str, Any]]],
-            *parents
-        ):
+            # *parents
+        ) -> None:
         """
         TODO desc
         Wrapper for subprocess.run().
@@ -292,14 +292,6 @@ class BaseCommandLineTool(BaseProcess):
         #     stdout
         #     stderr
 
-        # # Set-up working directory
-        # main_path: Path = Path(self.main_path)
-        # with chdir(main_path):
-        #     working_directory: Path = main_path / self.short_id
-        #     os.mkdir(working_directory)
-
-        # with chdir(working_directory):
-        
         # Turn inputs into arguments
         cmd: list[str] = self.compose_command(inputs)
 
@@ -310,7 +302,6 @@ class BaseCommandLineTool(BaseProcess):
             else:
                 cmd = [self.base_command] + cmd
 
-        # print("Current working directory:", os.getcwd())
         print("Executing:", " ".join(cmd))
         result: bytes = subprocess.run(
             cmd,
@@ -323,14 +314,8 @@ class BaseCommandLineTool(BaseProcess):
         else:
             print(result.decode())
 
-        
-
-
-    def create_task_graph(self, *parents) -> None:
-        """
-        Build a Dask Delayed object to execute the wrapped tool with.
-        TODO desc
-        """
+    
+    def execute(self) -> None:
         pos_inputs: list[Tuple[str, dict[str, Any]]] = []
         key_inputs: list[Tuple[str, dict[str, Any]]] = []
 
@@ -344,6 +329,29 @@ class BaseCommandLineTool(BaseProcess):
         # Order input arguments
         inputs: list[Tuple[str, dict]] = sorted(pos_inputs, key=lambda x: x[1]["position"])
         inputs += key_inputs
+        
+        future = self.dask_client.submit(self.cmd_wrapper, inputs)
+        future.result()        
 
-        # "parents" parameter chains steps together
-        self.task_graph_ref = dask.delayed(self.cmd_wrapper)(inputs, *parents)
+
+    # def create_task_graph(self, *parents) -> None:
+    #     """
+    #     Build a Dask Delayed object to execute the wrapped tool with.
+    #     TODO desc
+    #     """
+    #     pos_inputs: list[Tuple[str, dict[str, Any]]] = []
+    #     key_inputs: list[Tuple[str, dict[str, Any]]] = []
+
+    #     # Decide whether this input argument is positional or not
+    #     for input_id, input_dict in self.inputs.items():
+    #         if hasattr(input_dict, "position"):
+    #             pos_inputs.append((input_id, input_dict))
+    #         else:
+    #             key_inputs.append((input_id, input_dict))
+
+    #     # Order input arguments
+    #     inputs: list[Tuple[str, dict]] = sorted(pos_inputs, key=lambda x: x[1]["position"])
+    #     inputs += key_inputs
+
+    #     # "parents" parameter chains steps together
+    #     self.task_graph_ref = dask.delayed(self.cmd_wrapper)(inputs, *parents)
