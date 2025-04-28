@@ -1,13 +1,14 @@
 # import dask.delayed
 import glob
 import os
-import subprocess
+# import subprocess
+import sys
 
 from abc import abstractmethod
 from contextlib import chdir
 from pathlib import Path
-# from subprocess import run
-from typing import Any, Optional, Tuple
+from subprocess import run, CompletedProcess
+from typing import Any, Callable, TextIO, Optional, Tuple, Union
 
 from .process import BaseProcess
 
@@ -242,57 +243,91 @@ class BaseCommandLineTool(BaseProcess):
         return cmds
     
 
-    def _process_outputs(self, result: bytes) -> None:
+    # def _process_outputs(self, result: bytes) -> None:
+    #     for output_id, output_dict in self.outputs.items():
+    #         # FIXME Checking formatting should probably not be done at runtime
+    #         if "type" not in output_dict:
+    #             raise Exception("Type missing from output in\n", self.id)
 
-        for output_id, output_dict in self.outputs.items():
-            # FIXME Checking formatting should probably not be done at runtime
-            if "type" not in output_dict:
-                raise Exception("Type missing from output in\n", self.id)
+    #         # FIXME Checking formatting should probably not be done at runtime
+    #         output_type: str = output_dict["type"]
+    #         parent_process = self.loading_context["processes"][self.parent_process_id]
+    #         global_output_id = parent_process.global_id(self.step_id + "/" + output_id)
 
-            # FIXME Checking formatting should probably not be done at runtime
-            output_type: str = output_dict["type"]
-            parent_process = self.loading_context["processes"][self.parent_process_id]
-            global_output_id = parent_process.global_id(self.step_id + "/" + output_id)
-
-            if "string" in output_type:
-                self.runtime_context[global_output_id] = result.decode()
-                print(result.decode())
-            elif "file" in output_type:
-                if not "glob" in output_dict:
-                    raise Exception(f"No glob field in output {output_id}")
+    #         if "string" in output_type:
+    #             self.runtime_context[global_output_id] = result.decode()
+    #             print(result.decode())
+    #         elif "file" in output_type:
+    #             if not "glob" in output_dict:
+    #                 raise Exception(f"No glob field in output {output_id}")
                 
-                value = self.eval(output_dict["glob"])
-                print(value)
-                output_file_paths = glob.glob(value)
-                if "[]" in output_type:
-                    # Output is an array of objects
-                    self.runtime_context[global_output_id] = output_file_paths
-                else:
-                    # Output is a single object
-                    self.runtime_context[global_output_id] = output_file_paths[0]
-                print(output_file_paths)
+    #             value = self.eval(output_dict["glob"])
+    #             print(value)
+    #             output_file_paths = glob.glob(value)
+    #             if "[]" in output_type:
+    #                 # Output is an array of objects
+    #                 self.runtime_context[global_output_id] = output_file_paths
+    #             else:
+    #                 # Output is a single object
+    #                 self.runtime_context[global_output_id] = output_file_paths[0]
+    #             print(output_file_paths)
+    #         else:
+    #             raise NotImplementedError(f"Output type {output_type} is not supported")
+
+
+    # def process_output(self, output: CompletedProcess) -> Union[str, None]:
+    #     ret = None
+    #     for output_id, output_dict in self.outputs.items():
+    #         # FIXME Checking formatting should probably not be done at runtime
+    #         if "type" not in output_dict:
+    #             raise Exception("Type missing from output in\n", self.id)
+    #         output_type: str = output_dict["type"]
+
+    #         # Get global output ID to store an output string if needed
+    #         parent_process = self.loading_context["processes"][self.parent_process_id]
+    #         global_output_id = parent_process.global_id(self.step_id + "/" + output_id)
+
+    #         if "string" in output_type:
+    #             # Get stdout from subprocess.run output
+    #             self.runtime_context[global_output_id] = output.stdout.decode()
+    #             ret = self.runtime_context[global_output_id]
+
+    #         elif "file" in output_type:
+    #             if not "glob" in output_dict:
+    #                 raise Exception(f"No glob field in output {output_id}")
+                
+    #             value = self.eval(output_dict["glob"])
+    #             print(value)
+    #             output_file_paths = glob.glob(value)
+    #             if "[]" in output_type:
+    #                 # Output is an array of objects
+    #                 self.runtime_context[global_output_id] = output_file_paths
+    #             else:
+    #                 # Output is a single object
+    #                 self.runtime_context[global_output_id] = output_file_paths[0]
+
+    #         else:
+    #             raise NotImplementedError(f"Output type {output_type} is not supported")
+    #     return ret
+            
+
+        
+    def execute(self) -> Union[str, None]:
+        pos_inputs: list[Tuple[str, dict[str, Any]]] = []
+        key_inputs: list[Tuple[str, dict[str, Any]]] = []
+
+        # Split positional arguments and key arguments
+        for input_id, input_dict in self.inputs.items():
+            if hasattr(input_dict, "position"):
+                pos_inputs.append((input_id, input_dict))
             else:
-                raise NotImplementedError(f"Output type {output_type} is not supported")
+                key_inputs.append((input_id, input_dict))
 
-    
-
-    def cmd_wrapper(
-            self,
-            inputs: list[Tuple[str, dict[str, Any]]],
-            # *parents
-        ) -> None:
-        """
-        TODO desc
-        Wrapper for subprocess.run().
-
-        The wrapper is lazily executed in a dask.delayed task graph.
-        """
-        # TODO: Add support for:
-        #     stdin
-        #     stdout
-        #     stderr
-
-        # Turn inputs into arguments
+        # Order the arguments
+        inputs: list[Tuple[str, dict]] = sorted(pos_inputs, key=lambda x: x[1]["position"])
+        inputs += key_inputs
+        
+        # Match arguments with runtime input arguments
         cmd: list[str] = self.compose_command(inputs)
 
         # Combine the base command with the arguments
@@ -302,36 +337,96 @@ class BaseCommandLineTool(BaseProcess):
             else:
                 cmd = [self.base_command] + cmd
 
-        print("Executing:", " ".join(cmd))
-        result: bytes = subprocess.run(
-            cmd,
-            # stdout=subprocess.PIPE,
-            capture_output=True
-        ).stdout
-        # Process outputs if needed
-        if self.step_id:
-            self._process_outputs(result)
-        else:
-            print(result.decode())
+        # TODO Evaluate expressions in inputs?
+        # Evaluate expressions in outputs
+        for output_dict in self.outputs.values():
+            for key, value in output_dict.items():
+                output_dict[key] = self.eval(value)
 
-    
-    def execute(self) -> None:
-        pos_inputs: list[Tuple[str, dict[str, Any]]] = []
-        key_inputs: list[Tuple[str, dict[str, Any]]] = []
 
-        # Decide whether this input argument is positional or not
-        for input_id, input_dict in self.inputs.items():
-            if hasattr(input_dict, "position"):
-                pos_inputs.append((input_id, input_dict))
-            else:
-                key_inputs.append((input_id, input_dict))
+        def cmd_wrapper(
+                cmd: list[str],
+                outputs: dict[str, Any],
+                process_id: str,
+                # stdin: Optional[TextIO] = None,
+                # stdout: Optional[TextIO] = None,
+                # stderr: Optional[TextIO] = None,
+            ) -> dict:
+            """
+            Wrapper for subprocess.run().
+            """
+            # Execute tool
+            completed: CompletedProcess = run(
+                cmd,
+                # stdin=stdin,
+                # stdout=stdout,
+                # stderr=stderr,
+                check=True,
+                capture_output=True
+            )
 
-        # Order input arguments
-        inputs: list[Tuple[str, dict]] = sorted(pos_inputs, key=lambda x: x[1]["position"])
-        inputs += key_inputs
+            # Capture stderr
+            output: dict = {"stderr": completed.stderr.decode()}
+            
+            # Process tool outputs
+            for output_id, output_dict in outputs.items():
+                if "type" not in output_dict:
+                    raise Exception("Type missing from output in\n", process_id)
+                output_type: str = output_dict["type"]
+
+                if "string" in output_type:
+                    # Get stdout from subprocess.run and decode to utf-8
+                    output[output_id] = completed.stdout.decode()
+                    output["stdout"] = completed.stdout.decode()
+                elif "file" in output_type:
+                    # Generate an output parameter based on the files produced
+                    # by a CommandLineTool.
+                    if "glob" in output_dict:
+                        output_file_paths = glob.glob(output_dict["glob"])
+                        if "[]" in output_type:
+                            # Output is an array of objects
+                            output[output_id] = output_file_paths
+                        else:
+                            # Output is a single object
+                            output[output_id] = output_file_paths[0]
+                    elif "loadContents" in output_dict:
+                        raise NotImplementedError()
+                    elif "outputEval" in output_dict:
+                        raise NotImplementedError()
+                    elif "secondaryFiles" in output_dict:
+                        raise NotImplementedError()
+                    else:
+                        raise Exception(f"No method to resolve output schema:{output_dict}")
+                else:
+                    raise NotImplementedError(f"Output type {output_type} is not supported")
+            return output
         
-        future = self.dask_client.submit(self.cmd_wrapper, inputs)
-        future.result()        
+        # Submit and execute tool and gather output
+        future = self.dask_client.submit(
+            cmd_wrapper,
+            cmd,
+            self.outputs,
+            self.id,
+            pure = False
+        )
+        output: dict = future.result()
+        # TODO Check output exit codes or something?
+
+        # Print stderr/stdout
+        if "stderr" in output:
+            print(output["stderr"], file=sys.stderr)
+        if "stdout" in output:
+            print(output["stdout"], file=sys.stdout)
+
+        if self.is_main:
+            # No need to make outputs known globally
+            return
+        
+        # Update global runtime_context with new outputs
+        for output_id, output_value in output.items():
+            parent_process = self.loading_context["processes"][self.parent_process_id]
+            global_output_id = parent_process.global_id(self.step_id + "/" + output_id)
+            self.runtime_context[global_output_id] = output_value
 
 
     # def create_task_graph(self, *parents) -> None:

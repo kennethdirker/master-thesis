@@ -298,9 +298,11 @@ class BaseProcess(ABC):
         """
         # self.task_graph_ref.compute()
 
-
-    # def __call__(self, runtime_dict: dict):
-        # self.execute(runtime_dict)
+    def __call__(self):
+        """
+        TODO
+        """
+        self.execute()
 
 
     # def runnable(self) -> bool:
