@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 # from dask.delayed import Delayed
 from dask.distributed import Client
+from enum import Enum
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -20,6 +21,7 @@ class BaseProcess(ABC):
     def __init__(
             self,
             main: bool = False,
+            client: Optional[Client] = None,
             runtime_context: Optional[dict[str, Any]] = None,
             loading_context: Optional[dict[str, Any]] = None,
             parent_process_id: Optional[str] = None,
@@ -103,7 +105,9 @@ class BaseProcess(ABC):
 
         # Prepare Dask client
         # NOTE Can easilty be replaced by other Dask clients
-        self.dask_client: Client = Client()
+        if client is None:
+            client = Client()
+        self.dask_client: Client = client
 
         # Used in create_task_graph()
         # self.task_graph_ref: Union[Delayed, None] = None
@@ -359,6 +363,13 @@ class BaseProcess(ABC):
         #     return s
 
 
+class NodeStatus(Enum):
+    WAITING = 0
+    RUNNABLE = 1
+    RUNNING = 2
+    COMPLETED = 3
+
+
 #########################################
 #                 Node                  #
 #########################################
@@ -366,15 +377,17 @@ class Node:
     def __init__(
             self,
             id: str,
+            processes: list[BaseProcess],
+            # processes: Optional[list[BaseProcess]] = None,
             parents: Optional[list[str]] = None,    #list[parent_ids]
             children: Optional[list[str]] = None,   #list[child_ids]
-            processes: Optional[list[BaseProcess]] = None,
-            internal_dependencies: Optional[dict[str, str]] = None  #{node_id: node_id}
+            internal_dependencies: Optional[dict[str, str]] = None,  #{node_id: node_id}
+            graph: Optional['Graph'] = None
         ) -> None:
         """
-        Node containing one or more processes. Stores dependencies between
-        the processes registered in self.processes, and between this node and
-        its parent/child nodes.
+        Node containing one or more processes. Stores dependencies between a
+        node and its parents/children and between the processes in 
+        self.processes.
         """
         
         self.id = id
@@ -382,19 +395,61 @@ class Node:
 
         if parents is None:
             parents = []
-        self.parents = parents
+        self.parents: list[str] = parents
 
         if children is None:
             children = []
-        self.children = children
+        self.children: list[str] = children
 
         if processes is None:
             processes = []
-        self.processes = processes
+        self.processes: list[BaseProcess] = processes
 
-        if internal_dependencies is None:
-            internal_dependencies = {}
-        self.internal_dependencies = internal_dependencies
+        # if internal_dependencies is None:
+        #     internal_dependencies = {}
+        # self.internal_dependencies = internal_dependencies
+        if graph is None:
+            graph = self.create_task_graph(
+                internal_dependencies,
+                processes
+            )
+        self.graph: Graph = graph
+
+        # FIXME doesn't do anything yet
+        self.starting_context: dict[str, Any] = None
+        self.runtime_context: dict[str, Any] = None
+        
+        # 
+        self.node_status: NodeStatus = NodeStatus.WAITING
+        # self.futures: dict[str, NodeStatus] = {
+        #     process.id: NodeStatus.WAITING for process in processes
+        # }
+
+
+    def create_task_graph(
+            self,
+            dependencies: dict[str, str],
+            processes: list[BaseProcess]
+        ) -> 'Graph':
+        """
+        Arguments:
+            dependencies: Maps parent IDs to child IDs.
+            processes: Processes to be contained by nodes. 
+
+        Returns:
+            Task graph with nodes that hold a single CommandLineTool.
+        """
+        graph = Graph()
+
+        # Add nodes, but don't connect them yet
+        for process in processes:
+            graph.add_node(Node(process.id, processes=[process]))
+
+        # Connect nodes
+        for node_id, child_id in dependencies.items():
+            graph.connect_node(node_id, children=[child_id])
+
+        return graph
 
 
     def __deepcopy__(self) -> 'Node':
@@ -404,19 +459,27 @@ class Node:
         instead of creating new processes. This ommits initializing
         processes again, which is pointless and takes time.
         """
-        node = Node(self.id)
-        node.parents = deepcopy(self.parents)
-        node.children = deepcopy(self.children)
-        node.processes = [p for p in self.processes] # << Not a deepcopy!
-        node.internal_dependencies = deepcopy(self.internal_dependencies)
+        # NOTE Untested
+        processes = [p for p in self.processes] # << Not a deepcopy!
+        parents = deepcopy(self.parents)
+        children = deepcopy(self.children)
+        graph = deepcopy(self.graph)
+        node = Node(
+            self.id, 
+            processes = processes, 
+            parents = parents, 
+            children = children,
+            graph = graph
+        )
         return node
-
+    
 
     def merge(
             self,
             nodes: Union['Node', list['Node']]
         ) -> 'Node':
         # self.merged = True
+        # 
         NotImplementedError()
 
     
@@ -425,6 +488,61 @@ class Node:
     
     def is_root(self) -> bool:
         return len(self.parents) == 0
+    
+    def has_completed(self):
+        """
+        TODO
+        """
+        for status in self.futures.values():
+            if status is not NodeStatus.COMPLETED:
+                return False
+        return True
+    
+
+    def execute(
+            self, 
+            runtime_context: dict[str, Any]
+        ) -> dict[str, Any]:
+        """
+        Execute the tasks of this node. 
+        
+        Graph nodes of this node contain a single process (CommandLineTool).
+
+        Tasks within a node are executed sequentially.
+        """
+        graph = self.graph
+        old_runtime_context = deepcopy(runtime_context)
+        new_runtime_context = {}
+        
+        finished: list[Node] = []
+        frontier: list[Node] = deepcopy(graph.get_nodes(self.graph.roots))
+        while len(frontier) != 0:
+            node = frontier.pop(0)
+            
+            # Check if parents have been finished
+            good = True
+            for parent in graph.get_nodes(node.parents):
+                # If not all parents have been visited, revisit later
+                if parent not in finished:
+                    good = False
+                    frontier.append(node)
+                    break
+            if not good:
+                continue
+
+            node.processes[0].execute(with_dask=False)
+            finished.append(node)
+            # TODO Runtime vars need to be communicated to main 
+            # FIXME Get self.runtime_context from processes
+            # Compare old runtime_context to new one
+            for key, value in runtime_context.items():
+                if key not in old_runtime_context:
+                    new_runtime_context[key] = value
+            return new_runtime_context            
+
+    def __call__(self):
+        self.execute()
+
 
 
 #########################################
@@ -509,7 +627,7 @@ class Graph:
         return self._next_id - 1
     
 
-    def register_node(
+    def add_node(
             self,
             node: Node
         ) -> None:
@@ -631,4 +749,18 @@ class Graph:
         Merge nodes 
         """
         raise NotImplementedError()
-            
+    
+
+    def get_nodes(
+            self,
+            node_ids: str | list[str]
+        ) -> list[Node]:
+        """
+        TODO
+        """
+        if isinstance(node_ids, str):
+            node_ids = [node_ids]
+        elif not isinstance(node_ids, list):
+            raise Exception(f"Expected str or list type, but got {type(node_ids)}")
+
+        return [self.nodes[node_id] for node_id in node_ids]

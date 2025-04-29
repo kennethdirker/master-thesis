@@ -58,7 +58,7 @@ class BaseWorkflow(BaseProcess):
             self.optimize_dependency_graph()
             self.register_input_sources()
             # self.bind_default_inputs()
-            self.create_task_graph()
+            # self.create_task_graph()
             self.execute()
 
 
@@ -141,14 +141,14 @@ class BaseWorkflow(BaseProcess):
         processes: dict[str, BaseProcess] = self.loading_context["processes"]
         graph: Graph = self.loading_context["graph"]
 
-        # Recursively load all processes
+        # Recursively load all processes from steps
         print("Loading process files:")
         for step_id, step_dict in self.steps.items():
             step_process = self._load_process_from_uri(step_dict["run"], step_id)
             processes[step_process.id] = step_process
             self.step_id_to_process[step_id] = step_process
             node = Node(id = step_process.id, processes = [step_process])
-            graph.register_node(node)
+            graph.add_node(node)
 
         # Add tool nodes to the dependency graph
         for tool in processes.values():
@@ -159,9 +159,6 @@ class BaseWorkflow(BaseProcess):
                     # children = 
                 )
 
-        # TODO remove
-        # graph.print()
-
 
     def optimize_dependency_graph(self) -> None:
         """
@@ -170,62 +167,61 @@ class BaseWorkflow(BaseProcess):
         pass
 
 
-    def create_task_graph(self) -> None:
-        """
-        TODO Description
-        """
-        graph: Graph = self.loading_context["graph"]
+    # def create_task_graph(self) -> None:
+    #     """
+    #     TODO Description
+    #     """
+    #     graph: Graph = self.loading_context["graph"]
         
-        # 
-        id_to_delayed: dict[str, Delayed] = {}
-        visited: list[str] = []
-        frontier: list[str] = deepcopy(graph.roots)
-        while len(frontier) != 0:
-            node_id = frontier.pop(0)
-            node = graph.nodes[node_id]
+    #     # 
+    #     id_to_delayed: dict[str, Delayed] = {}
+    #     visited: list[str] = []
+    #     frontier: list[str] = deepcopy(graph.roots)
+    #     while len(frontier) != 0:
+    #         node_id = frontier.pop(0)
+    #         node = graph.nodes[node_id]
 
-            # Check if parents have been visited
-            good = True
-            for parent in node.parents:
-                # If not all parents have been visited, visit later
-                if parent not in visited:
-                    good = False
-                    frontier.append(node.id)
-                    break
+    #         # Check if parents have been visited
+    #         good = True
+    #         for parent in node.parents:
+    #             # If not all parents have been visited, revisit later
+    #             if parent not in visited:
+    #                 good = False
+    #                 frontier.append(node.id)
+    #                 break
+    #         if not good: 
+    #             continue
 
-            if not good: 
-                continue
+    #         parents: list[Delayed] = []
+    #         for parent_node_id in node.parents:
+    #             parents.append(id_to_delayed[parent_node_id])
 
-            parents: list[Delayed] = []
-            for parent_node_id in node.parents:
-                parents.append(id_to_delayed[parent_node_id])
+    #         # Create and register dask.Delayed tool wrapper
+    #         # FIXME This works only for nodes with a single process
+    #         node.processes[0].create_task_graph(*parents)
+    #         id_to_delayed[node_id] = node.processes[0].task_graph_ref
+    #         visited.append(node_id)
 
-            # Create and register dask.Delayed tool wrapper
-            # FIXME This works only for nodes with a single process
-            node.processes[0].create_task_graph(*parents)
-            id_to_delayed[node_id] = node.processes[0].task_graph_ref
-            visited.append(node_id)
+    #         # Add children to frontier
+    #         for child_node_id in node.children:
+    #             if child_node_id not in frontier:
+    #                 frontier.append(child_node_id)
 
-            # Add children to frontier
-            for child_node_id in node.children:
-                if child_node_id not in frontier:
-                    frontier.append(child_node_id)
+    #     if len(visited) != graph.size:
+    #         raise Exception("Dangling nodes: Not all nodes have been visited")
 
-        if len(visited) != graph.size:
-            raise Exception("Dangling nodes: Not all nodes have been visited")
+    #     def knot(*parents):
+    #         """ Tie together all leaves to ensure they are executed """
+    #         # print("Finished executing task tree")
+    #         pass
 
-        def knot(*parents):
-            """ Tie together all leaves to ensure they are executed """
-            # print("Finished executing task tree")
-            pass
+    #     leaves: list[Delayed] = []
+    #     for node_id in graph.leaves:
+    #         # FIXME This works only for nodes with a single process
+    #         leaves.append(graph.nodes[node_id].processes[0].task_graph_ref)
 
-        leaves: list[Delayed] = []
-        for node_id in graph.leaves:
-            # FIXME This works only for nodes with a single process
-            leaves.append(graph.nodes[node_id].processes[0].task_graph_ref)
-
-        self.task_graph_ref = dask.delayed(knot)(leaves)
-        self.task_graph_ref.visualize(filename="graph.svg")
+    #     self.task_graph_ref = dask.delayed(knot)(leaves)
+    #     self.task_graph_ref.visualize(filename="graph.svg")
 
 
     def register_input_sources(self) -> None:
@@ -317,6 +313,51 @@ class BaseWorkflow(BaseProcess):
     #                     source = self.input_to_source[subprocess.global_id(input_id)]
     #                     self.runtime_context[source] = input_dict["default"]
 
+    def execute(self) -> Union[str, None]:
+        """
+        TODO
+        """
+        graph: Graph = self.loading_context["graph"]
+        runnable: list[Node] = graph.get_nodes(graph.roots)
+        waiting: list[Node] = [node for node in graph.nodes.values() if node not in runnable]
+        running: list[Node] = []
+        completed: list[Node] = []
+
+        while len(runnable) != 0 and len(running) != 0:
+            if len(runnable) == 0 and len(running) == 0 and len(waiting) != 0:
+                # Deadlock detected
+                s = "\n\t".join([node.id for node in waiting])
+                raise Exception(f"Deadlock detected. Waiting nodes:\n\t{s}")
+
+            # Execute runnable nodes
+            for node in runnable.copy():
+                self.dask_client.submit(node)
+                runnable.remove(node)
+                running.append(node)
+
+            # Check for completed nodes and move runnable children from to the
+            # running queue.
+            for node in running.copy():
+                if node.has_completed():
+                    # Change node status from running to completed
+                    running.remove(node)
+                    completed.append(node)
+
+                    # Add new runnable nodes to queue
+                    for child in graph.get_nodes(node.children):
+                        # Check for each child if all parents have completed.
+                        ready = True
+                        for child_parent in graph.get_nodes(child.parents):
+                            if child_parent not in completed:
+                                ready = False
+                                break
+                        if ready:
+                            # All parents of child have completed:
+                            # Queue up the child.
+                            waiting.remove(child)
+                            runnable.append(child)
+        # TODO Gather output / delete temp files? Does this already happen?
+
 
     def _load_process_from_uri(
             self, 
@@ -369,6 +410,9 @@ class BaseWorkflow(BaseProcess):
                 step_id = step_id
             )
         raise Exception(f"{uri} does not contain a BaseProcess subclass")
+    
+
+
     
 
 def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
