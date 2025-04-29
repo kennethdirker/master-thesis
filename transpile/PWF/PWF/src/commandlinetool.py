@@ -312,7 +312,7 @@ class BaseCommandLineTool(BaseProcess):
             
 
         
-    def execute(self) -> Union[str, None]:
+    def execute(self, with_dask: bool = True) -> Union[str, None]:
         pos_inputs: list[Tuple[str, dict[str, Any]]] = []
         key_inputs: list[Tuple[str, dict[str, Any]]] = []
 
@@ -402,14 +402,22 @@ class BaseCommandLineTool(BaseProcess):
             return output
         
         # Submit and execute tool and gather output
-        future = self.dask_client.submit(
-            cmd_wrapper,
-            cmd,
-            self.outputs,
-            self.id,
-            pure = False
-        )
-        output: dict = future.result()
+        if with_dask:
+            future = self.dask_client.submit(
+                cmd_wrapper,
+                cmd,
+                self.outputs,
+                self.id,
+                pure = False
+            )
+            output: dict = future.result()
+        else:
+            output: dict = cmd_wrapper(
+                cmd,
+                self.outputs,
+                self.id,
+                pure = False
+            )
         # TODO Check output exit codes or something?
 
         # Print stderr/stdout
