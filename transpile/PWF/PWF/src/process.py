@@ -81,6 +81,7 @@ class BaseProcess(ABC):
         # map processes and step IDs. Only the root process must load the input
         # YAML from a file. Non-root processes get a reference to the
         # dictionary loaded in the main process.
+        self.runtime_context: dict[str, Any] = {}
         if main:
             # The YAML file uri comes from the first command-line argument.
             self.runtime_context = self._load_input_object(sys.argv[1])
@@ -107,7 +108,7 @@ class BaseProcess(ABC):
         # NOTE Can easilty be replaced by other Dask clients
         if client is None:
             client = Client()
-        self.dask_client: Client = client
+        self.client: Client = client
 
         # Used in create_task_graph()
         # self.task_graph_ref: Union[Delayed, None] = None
@@ -285,15 +286,15 @@ class BaseProcess(ABC):
     #     TODO Desc
     #     """
     #     pass
-        
-    
+
+
     @abstractmethod
     def register_input_sources(self) -> None:
         """
         TODO
         """
         pass
-    
+
 
     @abstractmethod
     def execute(self):
@@ -322,7 +323,7 @@ class BaseProcess(ABC):
     #     # - Validate type of inputs.
     #     # - 
     #     # # NOTE: Extra checks probably not needed for Minimal Viable Product.
-            
+
     #     green_light = True
     #     missing_inputs: list[str] = []
     #     for input_id, input_dict in self.inputs.items():
@@ -363,11 +364,11 @@ class BaseProcess(ABC):
         #     return s
 
 
-class NodeStatus(Enum):
-    WAITING = 0
-    RUNNABLE = 1
-    RUNNING = 2
-    COMPLETED = 3
+# class NodeStatus(Enum):
+#     WAITING = 0
+#     RUNNABLE = 1
+#     RUNNING = 2
+#     COMPLETED = 3
 
 
 #########################################
@@ -378,9 +379,10 @@ class Node:
             self,
             id: str,
             processes: list[BaseProcess],
-            # processes: Optional[list[BaseProcess]] = None,
             parents: Optional[list[str]] = None,    #list[parent_ids]
             children: Optional[list[str]] = None,   #list[child_ids]
+            # internal_dependencies and graph are used in graph optimization 
+            is_tool_node: bool = False,
             internal_dependencies: Optional[dict[str, str]] = None,  #{node_id: node_id}
             graph: Optional['Graph'] = None
         ) -> None:
@@ -389,9 +391,9 @@ class Node:
         node and its parents/children and between the processes in 
         self.processes.
         """
-        
         self.id = id
-        # self.merged = False
+        self.is_tool_node: bool = is_tool_node
+        self.processes: list[BaseProcess] = processes
 
         if parents is None:
             parents = []
@@ -401,34 +403,21 @@ class Node:
             children = []
         self.children: list[str] = children
 
-        if processes is None:
-            processes = []
-        self.processes: list[BaseProcess] = processes
+        if not is_tool_node:
+            if graph is None:
+                if internal_dependencies is None:
+                    internal_dependencies = {}
 
-        # if internal_dependencies is None:
-        #     internal_dependencies = {}
-        # self.internal_dependencies = internal_dependencies
-        if graph is None:
-            graph = self.create_task_graph(
-                internal_dependencies,
-                processes
-            )
+                graph = self.create_task_graph(
+                    internal_dependencies,
+                    processes
+                )
         self.graph: Graph = graph
-
-        # FIXME doesn't do anything yet
-        self.starting_context: dict[str, Any] = None
-        self.runtime_context: dict[str, Any] = None
-        
-        # 
-        self.node_status: NodeStatus = NodeStatus.WAITING
-        # self.futures: dict[str, NodeStatus] = {
-        #     process.id: NodeStatus.WAITING for process in processes
-        # }
 
 
     def create_task_graph(
             self,
-            dependencies: dict[str, str],
+            dependencies: dict[str, Union[str, list[str]]],
             processes: list[BaseProcess]
         ) -> 'Graph':
         """
@@ -443,16 +432,25 @@ class Node:
 
         # Add nodes, but don't connect them yet
         for process in processes:
-            graph.add_node(Node(process.id, processes=[process]))
+            graph.add_node(
+                Node(
+                    process.id, 
+                    processes = [process], 
+                    is_tool_node = True
+                )
+            )
 
         # Connect nodes
-        for node_id, child_id in dependencies.items():
-            graph.connect_node(node_id, children=[child_id])
-
+        for node_id, child_ids in dependencies.items():
+            if isinstance(child_ids, str):
+                child_ids = [child_ids]
+            elif not isinstance(child_ids, list):
+                raise Exception(f"Expected str or list, but found {type(child_ids)}")
+            graph.connect_node(node_id, children=child_ids)
         return graph
 
 
-    def __deepcopy__(self) -> 'Node':
+    def __deepcopy__(self, memo) -> 'Node':
         """
         Make a deep copy of the node and return it.
         NOTE: Creates copies are reference to the underlying processes,
@@ -460,7 +458,7 @@ class Node:
         processes again, which is pointless and takes time.
         """
         # NOTE Untested
-        processes = [p for p in self.processes] # << Not a deepcopy!
+        processes = [p for p in self.processes] # << Shallow copy!
         parents = deepcopy(self.parents)
         children = deepcopy(self.children)
         graph = deepcopy(self.graph)
@@ -469,6 +467,7 @@ class Node:
             processes = processes, 
             parents = parents, 
             children = children,
+            is_tool_node = self.is_tool_node,
             graph = graph
         )
         return node
@@ -489,59 +488,64 @@ class Node:
     def is_root(self) -> bool:
         return len(self.parents) == 0
     
-    def has_completed(self):
-        """
-        TODO
-        """
-        for status in self.futures.values():
-            if status is not NodeStatus.COMPLETED:
-                return False
-        return True
+    # def has_completed(self):
+    #     """
+    #     TODO
+    #     """
+    #     for status in self.futures.values():
+    #         if status is not NodeStatus.COMPLETED:
+    #             return False
+    #     return True
     
 
-    def execute(
-            self, 
-            runtime_context: dict[str, Any]
-        ) -> dict[str, Any]:
-        """
-        Execute the tasks of this node. 
+    # def execute(
+    #         self, 
+    #         runtime_context: dict[str, Any],
+    #         with_dask: bool = True
+    #     ) -> dict[str, Any]:
+    #     """
+    #     Execute the tasks of this node. 
         
-        Graph nodes of this node contain a single process (CommandLineTool).
+    #     Graph nodes in self.graph contain a single process (CommandLineTool).
 
-        Tasks within a node are executed sequentially.
-        """
-        graph = self.graph
-        old_runtime_context = deepcopy(runtime_context)
-        new_runtime_context = {}
+    #     Tasks within a node are executed sequentially.
+    #     """
+    #     graph = self.graph
+    #     # old_runtime_context = deepcopy(runtime_context)
+    #     # new_runtime_context = {}
         
-        finished: list[Node] = []
-        frontier: list[Node] = deepcopy(graph.get_nodes(self.graph.roots))
-        while len(frontier) != 0:
-            node = frontier.pop(0)
+    #     finished: list[Node] = []
+    #     frontier: list[Node] = deepcopy(graph.get_nodes(self.graph.roots))
+    #     while len(frontier) != 0:
+    #         node = frontier.pop(0)
             
-            # Check if parents have been finished
-            good = True
-            for parent in graph.get_nodes(node.parents):
-                # If not all parents have been visited, revisit later
-                if parent not in finished:
-                    good = False
-                    frontier.append(node)
-                    break
-            if not good:
-                continue
+    #         # Check if parents have been finished
+    #         good = True
+    #         for parent in graph.get_nodes(node.parents):
+    #             # If not all parents have been visited, revisit later
+    #             if parent not in finished:
+    #                 good = False
+    #                 frontier.append(node)
+    #                 break
+    #         if not good:
+    #             continue
 
-            node.processes[0].execute(with_dask=False)
-            finished.append(node)
+    #         node.processes[0].execute(with_dask=False)
+    #         finished.append(node)
             # TODO Runtime vars need to be communicated to main 
             # FIXME Get self.runtime_context from processes
             # Compare old runtime_context to new one
-            for key, value in runtime_context.items():
-                if key not in old_runtime_context:
-                    new_runtime_context[key] = value
-            return new_runtime_context            
+            # for key, value in runtime_context.items():
+            #     if key not in old_runtime_context:
+            #         new_runtime_context[key] = value
+            # return new_runtime_context            
 
-    def __call__(self):
-        self.execute()
+    # def __call__(
+    #         self, 
+    #         # runtime_context: dict[str, Any]
+    #     ) -> dict[str, Any]:
+    #     self.execute()
+    #     # self.execute(runtime_context)
 
 
 
@@ -567,10 +571,10 @@ class Graph:
         
         # Create placeholder IDs for nodes to improve readability
         self._next_id: int = 0
-        self.id_mapping: dict[str, int] = {}
+        self.short_id: dict[str, int] = {}
 
     
-    def __deepcopy__(self) -> 'Graph':
+    def __deepcopy__(self, memo) -> 'Graph':
         """
         Make a deep copy of the graph and return it.
         NOTE: Creates shallow copies of nodes instead. This ommits initializing
@@ -583,7 +587,7 @@ class Graph:
         graph.in_deps = deepcopy(self.in_deps)
         graph.out_deps = deepcopy(self.out_deps)
         graph._next_id = self._next_id
-        graph.id_mapping = deepcopy(self.id_mapping)    # {node_id: simple_id}
+        graph.short_id = deepcopy(self.short_id)    # {node_id: simple_id}
         return graph
 
     
@@ -600,17 +604,17 @@ class Graph:
         """
         s = "nodes: "
         for node_id in self.nodes:
-            s+= f"{self.id_mapping[node_id]} "
+            s+= f"{self.short_id[node_id]} "
         s += "\nroots: " 
         for root_id in self.roots:
-            s += f"{self.id_mapping[root_id]} "
+            s += f"{self.short_id[root_id]} "
         s += "\nedges: \n"
         for node_id, child_id in self.out_deps.items():
             for child in child_id:
-                s += f"\t{self.id_mapping[node_id]} -> {self.id_mapping[child]}\n"
+                s += f"\t{self.short_id[node_id]} -> {self.short_id[child]}\n"
         s += "leaves: " 
         for leaf_id in self.leaves:
-            s += f"{self.id_mapping[leaf_id]} "
+            s += f"{self.short_id[leaf_id]} "
         return s
 
     
@@ -639,7 +643,9 @@ class Graph:
             raise Exception(f"Node ID already exists in graph. Invalid ID: {node.id}")
         
         self.nodes[node.id] = node
-        self.id_mapping[node.id] = self.next_id()
+        self.roots.append(node.id)
+        self.leaves.append(node.id)
+        self.short_id[node.id] = self.next_id()
         self.size += 1
 
 
@@ -665,12 +671,12 @@ class Graph:
         if parents is None:
             parents = []
         node.parents.extend(parents)
-        node.parents = list(set(node.parents))   # Remove duplicates
+        node.parents = list(set(node.parents))   # Removes duplicates
 
         if children is None:
             children = []
         node.children.extend(children)
-        node.children = list(set(node.children)) # Remove duplicates
+        node.children = list(set(node.children)) # Removes duplicates
 
         for parent_id in node.parents:
             # Add node as child to parent
@@ -737,7 +743,10 @@ class Graph:
         TODO Description
         Remove a node
         """
-        raise NotImplementedError()
+        self.roots.remove(node_id)
+        self.leaves.remove(node_id)
+        self.nodes.pop(node_id)
+        self.size -= 1
 
 
     def merge(
@@ -748,7 +757,23 @@ class Graph:
         TODO Description
         Merge nodes 
         """
-        raise NotImplementedError()
+        if isinstance(node_ids, str):
+            node_ids = [node_ids]
+            
+        # Create new_node with id = {short_id0}:{short_id1}:...
+        new_id: str = ":".join(
+            [self.short_id[node_id] for node_id in node_ids]
+        )
+        new_node = Node(new_id, [], is_tool_node = False)
+        self.add_node(new_node)
+
+        # Merge nodes into new node
+        new_node.merge([self.nodes[node_id] for node_id in node_ids])
+
+        # Remove old nodes
+        for node_id in node_ids:
+            self.remove_node(node_id)
+        return new_node
     
 
     def get_nodes(
