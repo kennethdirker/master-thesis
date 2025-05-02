@@ -6,6 +6,7 @@ import sys
 
 from abc import abstractmethod
 from contextlib import chdir
+from dask.distributed import Client
 from pathlib import Path
 from subprocess import run, CompletedProcess
 from typing import Any, Callable, TextIO, Optional, Tuple, Union
@@ -17,14 +18,17 @@ class BaseCommandLineTool(BaseProcess):
     def __init__(
             self,
             main: bool = False,
+            client: Optional[Client] = None,
             runtime_context: Optional[dict] = None,
             loading_context: Optional[dict[str, str]] = None,
             parent_id: Optional[str] = None,
-            step_id: Optional[str] = None
+            step_id: Optional[str] = None,
+            with_dask: bool = False
         ):
         """ TODO: class description """
         super().__init__(
             main = main,
+            client = client,
             runtime_context = runtime_context,
             loading_context = loading_context,
             parent_process_id = parent_id,
@@ -46,7 +50,7 @@ class BaseCommandLineTool(BaseProcess):
         if main:
             self.register_input_sources()
             # self.create_task_graph()
-            self.execute()
+            self.execute(self.runtime_context, True)
 
 
     def set_metadata(self):
@@ -312,7 +316,14 @@ class BaseCommandLineTool(BaseProcess):
             
 
         
-    def execute(self, with_dask: bool = True) -> Union[str, None]:
+    def execute(
+            self, 
+            runtime_context: dict[str, Any],
+            use_dask: bool,
+        ) -> dict[str, Any]:
+        """
+        TODO Desc
+        """
         pos_inputs: list[Tuple[str, dict[str, Any]]] = []
         key_inputs: list[Tuple[str, dict[str, Any]]] = []
 
@@ -344,16 +355,18 @@ class BaseCommandLineTool(BaseProcess):
                 output_dict[key] = self.eval(value)
 
 
-        def cmd_wrapper(
+        def run_wrapper(
                 cmd: list[str],
                 outputs: dict[str, Any],
                 process_id: str,
                 # stdin: Optional[TextIO] = None,
                 # stdout: Optional[TextIO] = None,
                 # stderr: Optional[TextIO] = None,
-            ) -> dict:
+            ) -> dict[str, Any]:
             """
             Wrapper for subprocess.run().
+            Returns:
+                A dictionary containing all newly added runtime state.
             """
             # Execute tool
             completed: CompletedProcess = run(
@@ -402,39 +415,43 @@ class BaseCommandLineTool(BaseProcess):
             return output
         
         # Submit and execute tool and gather output
-        if with_dask:
-            future = self.dask_client.submit(
-                cmd_wrapper,
+        output: dict[str, Any] = []
+        if use_dask:
+            future = self.client.submit(
+                run_wrapper,
                 cmd,
                 self.outputs,
                 self.id,
                 pure = False
             )
-            output: dict = future.result()
+            output = future.result()
         else:
-            output: dict = cmd_wrapper(
+            output = run_wrapper(
                 cmd,
                 self.outputs,
                 self.id,
-                pure = False
             )
         # TODO Check output exit codes or something?
 
         # Print stderr/stdout
+        # FIXME Check if this works
+        # TODO IF THIS CODE STAYS IN: stderr and stdout cannot be used as output ID
         if "stderr" in output:
             print(output["stderr"], file=sys.stderr)
         if "stdout" in output:
             print(output["stdout"], file=sys.stdout)
+        return output
 
-        if self.is_main:
-            # No need to make outputs known globally
-            return
+        # if self.is_main:
+        #     # No need to make outputs known globally
+        #     return
         
-        # Update global runtime_context with new outputs
-        for output_id, output_value in output.items():
-            parent_process = self.loading_context["processes"][self.parent_process_id]
-            global_output_id = parent_process.global_id(self.step_id + "/" + output_id)
-            self.runtime_context[global_output_id] = output_value
+        # # Update global runtime_context with new outputs
+        # # NOTE runtime_context update happens in upper layers
+        # for output_id, output_value in output.items():
+        #     parent_process = self.loading_context["processes"][self.parent_process_id]
+        #     global_output_id = parent_process.global_id(self.step_id + "/" + output_id)
+        #     self.runtime_context[global_output_id] = output_value
 
 
     # def create_task_graph(self, *parents) -> None:

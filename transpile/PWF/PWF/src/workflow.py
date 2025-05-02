@@ -1,13 +1,13 @@
-import dask.delayed
 import importlib
 import inspect
 import sys
 
 from abc import abstractmethod
+from concurrent.futures import Future
 from copy import deepcopy
-from dask.delayed import Delayed
+from dask.distributed import Client
 from pathlib import Path
-from typing import Optional, Tuple, Union
+from typing import Any, Optional, Tuple, Union
 
 from .commandlinetool import BaseCommandLineTool
 from .process import BaseProcess, Graph, Node
@@ -17,6 +17,7 @@ class BaseWorkflow(BaseProcess):
     def __init__(
             self,
             main: bool = False,
+            client: Optional[Client] = None,
             runtime_context: Optional[dict] = None,
             loading_context: Optional[dict[str, str]] = None,
             parent_process_id: Optional[str] = None,
@@ -28,6 +29,7 @@ class BaseWorkflow(BaseProcess):
         """
         super().__init__(
             main = main,
+            client = client,
             runtime_context = runtime_context,
             loading_context = loading_context,
             parent_process_id = parent_process_id,
@@ -147,7 +149,11 @@ class BaseWorkflow(BaseProcess):
             step_process = self._load_process_from_uri(step_dict["run"], step_id)
             processes[step_process.id] = step_process
             self.step_id_to_process[step_id] = step_process
-            node = Node(id = step_process.id, processes = [step_process])
+            node = Node(
+                id = step_process.id,
+                processes = [step_process],
+                is_tool_node = False
+            )
             graph.add_node(node)
 
         # Add tool nodes to the dependency graph
@@ -317,46 +323,108 @@ class BaseWorkflow(BaseProcess):
         """
         TODO
         """
+        def dask_execute_node(
+            graph: Graph,
+            runtime_context: dict[str, Any]
+        ) -> dict[str, Any]:
+            """
+            Execute the tasks of this node. 
+            
+            NOTE: Nodes contained in node.graph contain a single 
+            BaseCommandLineTool and are executed sequentially.
+            """
+            # BUG Serialization BUG 
+            graph = node.graph
+
+            tool_queue: list[Node] = graph.get_nodes(graph.roots)
+            finished: list[Node] = []
+            new_runtime_context: dict[str, Any] = {}
+            # Cycle through tool nodes
+            while len(tool_queue) != 0:
+                # Retrieve tool node from the queue
+                node = tool_queue.pop(0)
+                
+                # Check if the node is ready for execution by checking if all
+                # of its parents have finished.
+                good: bool = True
+                for parent in graph.get_nodes(node.parents):
+                    # If not all parents have been visited, requeue node
+                    if parent not in finished:
+                        good = False
+                        tool_queue.append(node)
+                        break
+                if not good:
+                    continue
+
+                # Dask sends a copy of runtime_context to the cluster node. 
+                # This means that outputs have to be registered in the main 
+                # runtime_context.
+                # Nodes at this level contain a single BaseCommandLineTool.
+                tool: BaseCommandLineTool = node.processes[0]
+                result = tool.execute(runtime_context, use_dask=False)
+                new_runtime_context.update(result)
+                finished.append(node)
+            return new_runtime_context
+            
         graph: Graph = self.loading_context["graph"]
-        runnable: list[Node] = graph.get_nodes(graph.roots)
+        runnable: list[Node] = deepcopy(graph.get_nodes(graph.roots))
         waiting: list[Node] = [node for node in graph.nodes.values() if node not in runnable]
-        running: list[Node] = []
+        running: list[Tuple[Future, Node]] = []
         completed: list[Node] = []
 
-        while len(runnable) != 0 and len(running) != 0:
+        # Polling loop that runs until all graph nodes have been executed.
+        # Each node execution is submitted to the Dask scheduler as an async
+        # task. The polling loop checks for finished nodes and submits newly
+        # executable nodes. Invalid workflows might result in deadlocks, in
+        # which case an exception is raised.
+        while len(runnable) != 0 or len(running) != 0:
+            # Check for deadlock
             if len(runnable) == 0 and len(running) == 0 and len(waiting) != 0:
-                # Deadlock detected
                 s = "\n\t".join([node.id for node in waiting])
                 raise Exception(f"Deadlock detected. Waiting nodes:\n\t{s}")
 
             # Execute runnable nodes
             for node in runnable.copy():
-                self.dask_client.submit(node)
+                # BUG Serialization BUG 
+                future = self.client.submit(
+                    dask_execute_node, 
+                    node.graph, 
+                    self.runtime_context
+                )
+                running.append((future, node))
                 runnable.remove(node)
-                running.append(node)
 
-            # Check for completed nodes and move runnable children from to the
+            # Check for completed nodes and move runnable children to the
             # running queue.
-            for node in running.copy():
-                if node.has_completed():
-                    # Change node status from running to completed
-                    running.remove(node)
-                    completed.append(node)
+            for running_node in running.copy(): # running_node: (Future, Node)
+                # Remove node from the running list if it has finished
+                if running_node[0].done():
+                    # Add new runtime state
+                    result = running_node[0].result()
+                    self.runtime_context.update(result)
+
+                    # Move node to finished
+                    running.remove(running_node)
+                    completed.append(running_node[1])
 
                     # Add new runnable nodes to queue
                     for child in graph.get_nodes(node.children):
                         # Check for each child if all parents have completed.
                         ready = True
-                        for child_parent in graph.get_nodes(child.parents):
-                            if child_parent not in completed:
+                        for childs_parent in graph.get_nodes(child.parents):
+                            if childs_parent not in completed:
                                 ready = False
                                 break
                         if ready:
-                            # All parents of child have completed:
-                            # Queue up the child.
+                            # All parents have finished: Queue up the child
                             waiting.remove(child)
                             runnable.append(child)
-        # TODO Gather output / delete temp files? Does this already happen?
+
+        # if "stderr" in output:
+        #     print(output["stderr"], file=sys.stderr)
+        # if "stdout" in output:
+        #     print(output["stdout"], file=sys.stdout)
+        # return output
 
 
     def _load_process_from_uri(
@@ -404,6 +472,7 @@ class BaseWorkflow(BaseProcess):
             print(f"\tFound process at {uri}")
             return obj(
                 main = False,
+                client = self.client,
                 runtime_context = self.runtime_context,
                 loading_context = self.loading_context,
                 parent_id = self.id,
