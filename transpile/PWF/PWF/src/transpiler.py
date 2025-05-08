@@ -1,4 +1,5 @@
 import argparse
+import os
 
 from pathlib import Path
 from typing import Any, Optional, TextIO, Union
@@ -9,6 +10,9 @@ from cwl_utils.parser.cwl_v1_2 import (
     CommandOutputArraySchema, 
     CommandInputArraySchema
 )
+
+def indent(str, n) -> str:
+    return "\t" * n + str
 
 def parse_prefix(
         cwl: dict[str, Any],
@@ -21,11 +25,11 @@ def parse_prefix(
     lines: list[str] = []
 
     if "CommandLineTool" in cwl.class_:
-        lines.append("from PWF.src.CommandLineTool import BaseCommandLineTool")
+        lines.append("from PWF.src.commandlinetool import BaseCommandLineTool")
         lines.append("")
         lines.append(f"class {class_name}(BaseCommandLineTool):")
     elif "Workflow" in cwl.class_:
-        lines.append("from PWF.src.Workflow import BaseWorkflow")
+        lines.append("from PWF.src.workflow import BaseWorkflow")
         lines.append("")
         lines.append(f"class {class_name}(BaseWorkflow):")
     
@@ -34,33 +38,33 @@ def parse_prefix(
 
 
 def parse_metadata(
-        cwl: dict[str, Any],
+        cwl,
         out_file: TextIO
     ) -> None:
     """
     
     """
     lines: list[str] = [""]
-    lines.append("\tdef set_metadata(self):")
+    lines.append(indent("def set_metadata(self):", 1))
 
     # Label
     if hasattr(cwl, "label") and cwl.label is not None:
-        lines.append(f'\t\tself.label = "{cwl.label}"')
+        lines.append(indent(f'self.label = "{cwl.label}"', 2))
 
     # Doc
     if hasattr(cwl, "doc") and cwl.doc is not None:
         doc_len = len(cwl.doc)
-        lines.append("\t\tself.doc = (")
+        lines.append(indent("self.doc = (", 2))
         begin = 0
         while begin < doc_len:
             end = min(begin + 60, doc_len)
-            lines.append(f'\t\t\t"{cwl.doc[begin:end]}"')
+            lines.append(indent(f'"{cwl.doc[begin:end]}"', 3))
             begin += 60
-        lines.append("\t\t)")
+        lines.append(indent(")", 2))
 
     # Insert 'pass' when the file has no label or doc
     if len(lines) == 1:
-        lines.append("\t\tpass")
+        lines.append(indent("pass", 2))
 
     # Add newlines to each string
     lines = [line + "\n" for line in lines]
@@ -74,9 +78,9 @@ def get_input_type(type_: Any) -> list[str]:
     lines: list[str] = []
 
     if isinstance(type_, CommandInputArraySchema):
-        lines.append(f'\t\t\t\t"type": "{type_.items.lower()}[]",')
+        lines.append(indent(f'"type": "{type_.items.lower()}[]",', 4))
     elif isinstance(type_, str):
-        lines.append(f'\t\t\t\t"type": "{type_.lower()}",')
+        lines.append(indent(f'"type": "{type_.lower()}[]",', 4))
     else:
         raise NotImplementedError(f"Found unsuppored type {type(type_)}")
 
@@ -84,20 +88,20 @@ def get_input_type(type_: Any) -> list[str]:
 
 
 def parse_inputs(
-        cwl: dict[str, Any],
+        cwl,
         out_file: TextIO
     ) -> None:
     """
     
     """
     lines: list[str] = [""]
-    lines.append("\tdef set_inputs(self):")
-    lines.append("\t\tself.inputs = {")
+    lines.append(indent("def set_inputs(self):", 1))
+    lines.append(indent("self.inputs = {", 2))
     
     if hasattr(cwl, "inputs"):
         for input in cwl.inputs:
             # ID
-            lines.append(f'\t\t\t"{input.id.split("/")[-1]}": {{')
+            lines.append(indent(f'"{input.id.split("/")[-1]}": {{', 3))
 
             # Type
             type_: list[str] = get_input_type(input.type_)
@@ -108,12 +112,12 @@ def parse_inputs(
                 # Prefix
                 binding = input.inputBinding
                 if hasattr(binding, "prefix") and binding.prefix is not None:
-                    lines.append(f'\t\t\t\t"prefix": "{binding.prefix}",')
+                    lines.append(indent(f'"prefix": "{binding.prefix}",', 4))
                 # Position
                 if hasattr(binding, "position") and binding.position is not None:
-                    lines.append(f'\t\t\t\t"position": {binding.position},')
-            lines.append("\t\t\t},")
-    lines.append("\t\t}")
+                    lines.append(indent(f'"position": {binding.position},', 4))
+            lines.append(indent("},", 3))
+    lines.append(indent("}", 2))
 
     # Add newlines to each string
     lines = [line + "\n" for line in lines]
@@ -127,9 +131,9 @@ def get_output_type(type_: Any) -> list[str]:
     lines: list[str] = []
 
     if isinstance(type_, CommandOutputArraySchema):
-        lines.append(f'\t\t\t\t"type": "{type_.items.lower()}[]",')
+        lines.append(indent(f'"type": "{type_.items.lower()}[]",', 4))
     elif isinstance(type_, str):
-        lines.append(f'\t\t\t\t"type": "{type_.lower()}",')
+        lines.append(indent(f'"type": "{type_.lower()}",', 4))
     else:
         raise NotImplementedError(f"Found unsuppored type {type(type_)}")
 
@@ -154,20 +158,20 @@ def get_glob(glob: str) -> str:
 
 
 def parse_outputs(
-        cwl: dict[str, Any],
+        cwl,
         out_file: TextIO
     ) -> None:
     """
     
     """
     lines: list[str] = [""]
-    lines.append("\tdef set_outputs(self):")
-    lines.append("\t\tself.outputs = {")
+    lines.append(indent("def set_outputs(self):", 1))
+    lines.append(indent("self.outputs = {", 2))
     
     if hasattr(cwl, "outputs"):
         for output in cwl.outputs:
             # ID
-            lines.append(f'\t\t\t"{output.id.split("/")[-1]}": {{')
+            lines.append(indent(f'"{output.id.split("/")[-1]}": {{', 3))
 
             # Type
             type_: list[str] = get_output_type(output.type_)
@@ -178,10 +182,10 @@ def parse_outputs(
                 binding = output.outputBinding
                 if hasattr(binding, "glob"):
                     glob = get_glob(binding.glob)
-                    lines.append(f'\t\t\t\t"glob": "{glob}",')
+                    lines.append(indent(f'"glob": "{glob}",', 4))
 
-            lines.append("\t\t\t},")
-    lines.append("\t\t}")
+            lines.append(indent("},", 3))
+    lines.append(indent("}", 2))
 
     # Add newlines to each string
     lines = [line + "\n" for line in lines]
@@ -189,37 +193,99 @@ def parse_outputs(
 
 
 def parse_base_command(
-        cwl: dict[str, Any],
+        cwl,
         out_file: TextIO
     ) -> None:
     """
     
     """
     lines: list[str] = [""]
-    lines.append("\tdef set_base_command(self):")
-    lines.append("\t\tself.base_command = [")
+    lines.append(indent("def set_base_command(self):", 1))
+    lines.append(indent("self.base_command = [", 2))
     
     if hasattr(cwl, "baseCommand"):
         if not isinstance(cwl.baseCommand, list):
             cwl.baseCommand = [cwl.baseCommand]
         for command in cwl.baseCommand:
-            lines.append(f'\t\t\t"{command}",')
+            lines.append(indent(f'"{command}",', 3))
         
-    lines.append("\t\t]")
+    lines.append(indent("]", 2))
 
     # Add newlines to each string
     lines = [line + "\n" for line in lines]
     out_file.writelines(lines)
 
 
+def resolve_source(source: str) -> str:
+    return "/".join(source.split("#")[-1].split("/")[1:])
+
+
+def resolve_run_uri(run_uri: str, step_id: str) -> str:
+    # Remove 'file://'
+    run_path = Path(run_uri[7:])
+    file_path = Path(step_id[7:].split("#")[0])
+    rel_path = os.path.relpath(run_path.parent, file_path.parent)
+    return "python " +  rel_path + ".py"
+
+def resolve_valueFrom(valueFrom: str) -> str:
+    return "$" + valueFrom[2:-1] + "$"
+
+
 def parse_steps(
-        cwl: dict[str, Any],
+        cwl,
         out_file: TextIO
     ) -> None:
     """
     
     """
-    raise NotImplementedError()
+    lines: list[str] = [""]
+    lines.append(indent("def set_steps(self):", 1))
+    lines.append(indent("self.steps = {", 2))
+
+    for step in cwl.steps:
+        # ID
+        lines.append(indent(f'"{step.id.split("/")[-1]}": {{', 3))
+
+        # in
+        lines.append(indent(f'"in": {{', 4))
+        for i in step.in_:
+            lines.append(indent(f'"{i.id.split("/")[-1]}": {{', 5))
+            if hasattr(i, "source") and i.source is not None:
+                if isinstance(i.source, str):
+                    lines.append(indent(f'"source": "{resolve_source(i.source)}",', 6))
+                else:   # array
+                    lines.append(indent(f'"source": [', 6))
+                    for s in i.source:
+                        lines.append(indent(f'"{resolve_source(s)}",', 7))
+                    lines.append(indent(f'],', 6))
+
+            if hasattr(i, "default") and i.default is not None:
+                lines.append(indent(f'"default": "{i.default}",', 6))
+            if hasattr(i, "valueFrom") and i.valueFrom is not None:
+                valueFrom = resolve_valueFrom(i.valueFrom)
+                lines.append(indent(f'"valueFrom": "{valueFrom}"', 6))
+            lines.append(indent('},', 5))
+        lines.append(indent('},', 4))
+
+        # out
+        lines.append(indent(f'"out": {{', 4))
+        for out in step.out:
+            lines.append(indent(f'"{i.id.split("/")[-1]}",', 5))
+        lines.append(indent('},', 4))
+            
+        # run
+        run_uri: str = resolve_run_uri(step.run, step.id)
+        lines.append(f'\t\t\t\t"run": "{run_uri}",')
+
+        # label
+        if hasattr(step, "label"):
+            lines.append(f'\t\t\t\t"label": "{step.label}",')
+        lines.append("\t\t\t},")
+    lines.append("\t\t}")
+
+    # Add newlines to each string
+    lines = [line + "\n" for line in lines]
+    out_file.writelines(lines)
 
 
 def parse_suffix(
