@@ -3,4 +3,4 @@ input_fits:
   - image_mf_02.fits
   - image_mf_03.fits
   - image_mf_04.fits
-output_image: out
+output_image: out.png
