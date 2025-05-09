@@ -220,12 +220,13 @@ def resolve_source(source: str) -> str:
     return "/".join(source.split("#")[-1].split("/")[1:])
 
 
-def resolve_run_uri(run_uri: str, step_id: str) -> str:
-    # Remove 'file://'
-    run_path = Path(run_uri[7:])
+def resolve_run_uri(run_script_uri: str, step_id: str) -> str:
+    run_script_path = Path(run_script_uri[7:])      # Remove 'file://'
+    run_script_filename = run_script_path.name[:-4] + ".py" # Extract filename
+    
     file_path = Path(step_id[7:].split("#")[0])
-    rel_path = os.path.relpath(run_path.parent, file_path.parent)
-    return "python " +  rel_path + ".py"
+    rel_path = Path(os.path.relpath(run_script_path.parent, file_path.parent))
+    return f"python {rel_path / run_script_filename}"
 
 def resolve_valueFrom(valueFrom: str) -> str:
     return "$" + valueFrom[2:-1] + "$"
