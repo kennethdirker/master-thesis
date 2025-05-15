@@ -226,7 +226,7 @@ def resolve_run_uri(run_script_uri: str, step_id: str) -> str:
     
     file_path = Path(step_id[7:].split("#")[0])
     rel_path = Path(os.path.relpath(run_script_path.parent, file_path.parent))
-    return f"python {rel_path / run_script_filename}"
+    return f"{rel_path / run_script_filename}"
 
 def resolve_valueFrom(valueFrom: str) -> str:
     return "$" + valueFrom[2:-1] + "$"
