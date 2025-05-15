@@ -2,6 +2,7 @@ class: CommandLineTool
 cwlVersion: v1.2
 id: imageplotter
 baseCommand:
+  - python
   - imageplotter.py
 inputs:
   - id: input_fits

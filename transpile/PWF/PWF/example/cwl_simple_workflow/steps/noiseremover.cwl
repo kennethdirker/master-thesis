@@ -2,6 +2,7 @@ class: CommandLineTool
 cwlVersion: v1.2
 id: noiseremover
 baseCommand:
+  - python
   - noiseremover.py
 inputs:
   - id: input

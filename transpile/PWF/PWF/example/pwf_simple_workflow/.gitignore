@@ -1,4 +1,5 @@
 steps/*
 workflows/*
 !__init__.py
+!*.py
 !*.yaml
