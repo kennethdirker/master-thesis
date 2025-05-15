@@ -295,6 +295,7 @@ class BaseProcess(ABC):
         """
         pass
 
+
     @abstractmethod
     def execute(self):
         """
