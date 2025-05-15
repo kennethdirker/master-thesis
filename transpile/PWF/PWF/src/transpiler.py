@@ -80,7 +80,7 @@ def get_input_type(type_: Any) -> list[str]:
     if isinstance(type_, CommandInputArraySchema):
         lines.append(indent(f'"type": "{type_.items.lower()}[]",', 4))
     elif isinstance(type_, str):
-        lines.append(indent(f'"type": "{type_.lower()}[]",', 4))
+        lines.append(indent(f'"type": "{type_.lower()}",', 4))
     else:
         raise NotImplementedError(f"Found unsuppored type {type(type_)}")
 
