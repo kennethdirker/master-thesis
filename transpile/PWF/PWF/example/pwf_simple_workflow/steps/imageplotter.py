@@ -12,7 +12,7 @@ class imageplotter(BaseCommandLineTool):
 				"position": 0,
 			},
 			"output_image": {
-				"type": "string[]",
+				"type": "string",
 				"position": 1,
 			},
 		}
@@ -28,7 +28,7 @@ class imageplotter(BaseCommandLineTool):
 	def set_base_command(self):
 		self.base_command = [
 			"python",
-			"imageplotter.py",
+			"../scripts/imageplotter.py",
 		]
 
 if __name__ == "__main__":

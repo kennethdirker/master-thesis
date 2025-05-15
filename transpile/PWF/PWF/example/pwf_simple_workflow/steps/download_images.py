@@ -8,7 +8,7 @@ class download_images(BaseCommandLineTool):
 	def set_inputs(self):
 		self.inputs = {
 			"url_list": {
-				"type": "file[]",
+				"type": "file",
 				"prefix": "-i",
 				"position": 0,
 			},

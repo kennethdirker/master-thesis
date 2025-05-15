@@ -337,7 +337,7 @@ class BaseCommandLineTool(BaseProcess):
         # Order the arguments
         inputs: list[Tuple[str, dict]] = sorted(pos_inputs, key=lambda x: x[1]["position"])
         inputs += key_inputs
-        
+
         # Match arguments with runtime input arguments
         cmd: list[str] = self.compose_command(inputs)
 
@@ -365,6 +365,9 @@ class BaseCommandLineTool(BaseProcess):
             ) -> dict[str, Any]:
             """
             Wrapper for subprocess.run().
+            NOTE: Reason for being nested is that dask doesnt play nice with
+            the self object.
+
             Returns:
                 A dictionary containing all newly added runtime state.
             """
@@ -374,7 +377,7 @@ class BaseCommandLineTool(BaseProcess):
                 # stdin=stdin,
                 # stdout=stdout,
                 # stderr=stderr,
-                check=True,
+                # check=True,   # Probably shouldnt be used
                 capture_output=True
             )
 
@@ -413,7 +416,7 @@ class BaseCommandLineTool(BaseProcess):
                 else:
                     raise NotImplementedError(f"Output type {output_type} is not supported")
             return output
-        
+
         # Submit and execute tool and gather output
         output: dict[str, Any] = []
         if use_dask:
@@ -435,7 +438,7 @@ class BaseCommandLineTool(BaseProcess):
 
         # Print stderr/stdout
         # FIXME Check if this works
-        # TODO IF THIS CODE STAYS IN: stderr and stdout cannot be used as output ID
+        # TODO IF THIS CODE STAYS IN: "stderr" and "stdout" cannot be used as output ID
         if "stderr" in output:
             print(output["stderr"], file=sys.stderr)
         if "stdout" in output:

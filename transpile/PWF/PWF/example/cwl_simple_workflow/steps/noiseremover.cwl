@@ -3,7 +3,7 @@ cwlVersion: v1.2
 id: noiseremover
 baseCommand:
   - python
-  - noiseremover.py
+  - ../scripts/noiseremover.py
 inputs:
   - id: input
     type: File
