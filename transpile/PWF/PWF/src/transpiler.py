@@ -8,7 +8,8 @@ from cwl_utils.parser import load_document_by_uri
 
 from cwl_utils.parser.cwl_v1_2 import (
     CommandOutputArraySchema, 
-    CommandInputArraySchema
+    CommandInputArraySchema,
+    WorkflowStepOutput
 )
 
 def indent(str, n) -> str:
@@ -269,10 +270,10 @@ def parse_steps(
         lines.append(indent('},', 4))
 
         # out
-        lines.append(indent(f'"out": {{', 4))
+        lines.append(indent(f'"out": [', 4))
         for out in step.out:
-            lines.append(indent(f'"{i.id.split("/")[-1]}",', 5))
-        lines.append(indent('},', 4))
+            lines.append(indent(f'"{out.id.split("/")[-1]}",', 5))
+        lines.append(indent('],', 4))
             
         # run
         run_uri: str = resolve_run_uri(step.run, step.id)

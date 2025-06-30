@@ -8,7 +8,7 @@ class process_images(BaseWorkflow):
 	def set_inputs(self):
 		self.inputs = {
 			"url_list": {
-				"type": "file[]",
+				"type": "file",
 			},
 		}
 
@@ -35,9 +35,9 @@ class process_images(BaseWorkflow):
 						"default": "before_noise_remover.png",
 					},
 				},
-				"out": {
-					"output_image",
-				},
+				"out": [
+					"output",
+				],
 				"run": "python ../steps/imageplotter.py",
 				"label": "imageplotter",
 			},
@@ -50,9 +50,9 @@ class process_images(BaseWorkflow):
 						"valueFrom": "$'no_noise' + inputs.input.basename$"
 					},
 				},
-				"out": {
-					"output_file_name",
-				},
+				"out": [
+					"output",
+				],
 				"run": "python ../steps/noiseremover.py",
 				"label": "noiseremover",
 			},
@@ -62,9 +62,9 @@ class process_images(BaseWorkflow):
 						"source": "url_list",
 					},
 				},
-				"out": {
-					"url_list",
-				},
+				"out": [
+					"output",
+				],
 				"run": "python ../steps/download_images.py",
 				"label": "download_images",
 			},
@@ -79,9 +79,9 @@ class process_images(BaseWorkflow):
 						"default": "after_noise_remover.png",
 					},
 				},
-				"out": {
-					"output_image",
-				},
+				"out": [
+					"output",
+				],
 				"run": "python ../steps/imageplotter.py",
 				"label": "imageplotter",
 			},
