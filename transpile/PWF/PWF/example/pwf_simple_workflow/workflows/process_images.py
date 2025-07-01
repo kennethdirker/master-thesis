@@ -38,7 +38,7 @@ class process_images(BaseWorkflow):
 				"out": [
 					"output",
 				],
-				"run": "python ../steps/imageplotter.py",
+				"run": "../steps/imageplotter.py",
 				"label": "imageplotter",
 			},
 			"noiseremover": {
@@ -53,7 +53,7 @@ class process_images(BaseWorkflow):
 				"out": [
 					"output",
 				],
-				"run": "python ../steps/noiseremover.py",
+				"run": "../steps/noiseremover.py",
 				"label": "noiseremover",
 			},
 			"download_images": {
@@ -65,7 +65,7 @@ class process_images(BaseWorkflow):
 				"out": [
 					"output",
 				],
-				"run": "python ../steps/download_images.py",
+				"run": "../steps/download_images.py",
 				"label": "download_images",
 			},
 			"after_plot_inspect": {
@@ -82,7 +82,7 @@ class process_images(BaseWorkflow):
 				"out": [
 					"output",
 				],
-				"run": "python ../steps/imageplotter.py",
+				"run": "../steps/imageplotter.py",
 				"label": "imageplotter",
 			},
 		}
