@@ -14,7 +14,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from .utils import Absent
+from .utils import Absent, FileObject
 
 
 class BaseProcess(ABC):
@@ -334,20 +334,52 @@ class BaseProcess(ABC):
     #     return green_light, missing_inputs
 
 
-    def eval(self, s: str):
+    def eval(
+            self, 
+            expression: str
+        ) -> str:
         """
-        TODO Desc
-        Evaluate
+        Evaluate an expression. The expression may access CWL namespace
+        variables, like 'inputs'.
+        TODO Extend supported CWL namespace variables
         """
-        if s.startswith("$") and s.endswith("$"):
-            source = s[1:-1]
-            global_input_id = self.input_to_source[source]
-            value = self.runtime_context[global_input_id]
+
+        if not expression.startswith("$") and not expression.endswith("$"):
+            # Expression is a plain string and doesn't need evaluating.
+            return expression
+
+
+        local_vars: dict[str, Any] = {}
+
+        # Build inputs object with built-in file properties
+        inputs = lambda: None
+        for input_id, input_dict in self.inputs.items():
+            if "file" in input_dict["type"]:
+                if "[]" in input_dict["type"]:
+                    raise NotImplementedError("Arrays not supported")
+                
+                source = self.input_to_source[input_id]
+                path = self.runtime_context[source]
+                setattr(inputs, input_id, FileObject(path))
+        local_vars["inputs"] = inputs
+
+        return eval(expression, local_vars)
+    
+
+    # def eval(self, s: str):
+    #     """
+    #     TODO Desc
+    #     Evaluate
+    #     """
+    #     if s.startswith("$") and s.endswith("$"):
+    #         source = s[1:-1]
+    #         global_input_id = self.input_to_source[source]
+    #         value = self.runtime_context[global_input_id]
             
-            if isinstance(value, Absent):
-                raise Exception("Missing paramter ", global_input_id)
-            return value
-        return s
+    #         if isinstance(value, Absent):
+    #             raise Exception("Missing paramter ", global_input_id)
+    #         return value
+    #     return s
 
         #     if "/" in source:
         #         # From local step 

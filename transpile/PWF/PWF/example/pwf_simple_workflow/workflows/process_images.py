@@ -27,9 +27,7 @@ class process_images(BaseWorkflow):
 			"imageplotter": {
 				"in": {
 					"input_fits": {
-						"source": [
-							"download_images/output",
-						],
+						"source": "download_images/output",
 					},
 					"output_image": {
 						"default": "before_noise_remover.png",
@@ -71,9 +69,7 @@ class process_images(BaseWorkflow):
 			"after_plot_inspect": {
 				"in": {
 					"input_fits": {
-						"source": [
-							"noiseremover/output",
-						],
+						"source": "noiseremover/output",
 					},
 					"output_image": {
 						"default": "after_noise_remover.png",

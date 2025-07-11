@@ -78,11 +78,11 @@ class BaseCommandLineTool(BaseProcess):
 
     def register_input_sources(self) -> None:
         """
-        Link local process inputs IDs to global input IDs.
+        Link local process input IDs to global input IDs.
         NOTE: Only executed if CommandLineTool is called as main.
         """
         if not self.is_main:
-            raise Exception("Not called from main process")
+            raise Exception("register_input_sources should be called from main process")
         
         for input_id in self.inputs:
             self.input_to_source[input_id] = self.global_id(input_id)
@@ -133,7 +133,7 @@ class BaseCommandLineTool(BaseProcess):
         itemSeparator: str = None
 
         # Load properties
-        input_type = "".join(c for c in input_type if c not in "[]?")   # Filter '['/']'/'?' from type
+        input_type = "".join(c for c in input_type if c not in "[]?")   # Filter []? from type string
         if "prefix" in input_dict:
             prefix = input_dict["prefix"]
         if "itemSeparator" in input_dict:
@@ -318,7 +318,8 @@ class BaseCommandLineTool(BaseProcess):
         
     def execute(
             self, 
-            runtime_context: dict[str, Any],
+            # runtime_context: dict[str, Any],
+            input_object: Any,
             use_dask: bool,
         ) -> dict[str, Any]:
         """
@@ -352,7 +353,9 @@ class BaseCommandLineTool(BaseProcess):
         # Evaluate expressions in outputs
         for output_dict in self.outputs.values():
             for key, value in output_dict.items():
-                output_dict[key] = self.eval(value)
+                local_dict = {"inputs": input_object}
+                output_dict[key] = eval(value, local_dict)
+                # output_dict[key] = self.eval(value)
 
 
         def run_wrapper(

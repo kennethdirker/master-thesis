@@ -245,8 +245,11 @@ class BaseWorkflow(BaseProcess):
                 in_id: str
             ) -> Tuple[bool, str]:
             step_in_dict = process.steps[step_id]["in"][in_id]
+            print(step_in_dict)
             if "source" in step_in_dict:
                 return False, step_in_dict["source"]
+            elif "valueFrom" in step_in_dict:
+                return False, step_in_dict["valueFrom"]
             elif "default" in step_in_dict:
                 return True, step_in_dict["default"]
             raise NotImplementedError()
@@ -504,9 +507,15 @@ def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
         """
         if "source" in step_dict["in"][input_id]:
             return False, step_dict["in"][input_id]["source"]
+        # elif "default" in step_dict["in"][input_id]:
+        #     return True, None
+        elif "valueFrom" in step_dict["in"][input_id]:
+            return True, None
+            # return True, step_dict["in"][input_id]["valueFrom"]
+            # return True, tool.eval(step_dict["in"][input_id]["valueFrom"])
         elif "default" in step_dict["in"][input_id]:
             return True, None
-        raise NotImplementedError()
+        raise NotImplementedError(step_dict["in"][input_id])
     
     parents = []
     processes: dict[str, BaseProcess] = tool.loading_context["processes"]

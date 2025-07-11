@@ -1,6 +1,6 @@
 from typing import Any, Optional, Tuple
 # from .Process import BaseProcess
-# from pathlib import Path
+from pathlib import Path
 
 
 class Absent:
@@ -17,3 +17,28 @@ class Absent:
 #     if default_value in d:
 #         return d[default_value]
 #     return default_value
+
+class FileObject:
+    """
+    Object that stores path properties as strings.
+    Available properties: 
+        path     : path/to/file.ext,
+        basename : file.ext,
+        dirname  : path/to,
+        nameroot : file,
+        nameext  : .ext
+    """
+    
+    path: str = ""
+    basename: str = ""
+    dirname: str = ""
+    nameroot: str = ""
+    nameext: str = ""
+    
+    def __init__(self, file_path: str):
+        path: Path = Path(file_path)
+        self.path = str(path)
+        self.basename = path.name
+        self.dirname = str(path.parent)
+        self.nameroot = path.stem
+        self.nameext = path.suffix

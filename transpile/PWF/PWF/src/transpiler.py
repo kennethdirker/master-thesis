@@ -83,7 +83,7 @@ def get_input_type(type_: Any) -> list[str]:
     elif isinstance(type_, str):
         lines.append(indent(f'"type": "{type_.lower()}",', 4))
     else:
-        raise NotImplementedError(f"Found unsuppored type {type(type_)}")
+        raise NotImplementedError(f"Found unsupported type {type(type_)}")
 
     return lines
 
@@ -277,13 +277,13 @@ def parse_steps(
             
         # run
         run_uri: str = resolve_run_uri(step.run, step.id)
-        lines.append(f'\t\t\t\t"run": "{run_uri}",')
+        lines.append(indent(f'"run": "{run_uri}",', 4))
 
         # label
         if hasattr(step, "label"):
-            lines.append(f'\t\t\t\t"label": "{step.label}",')
-        lines.append("\t\t\t},")
-    lines.append("\t\t}")
+            lines.append(indent(f'"label": "{step.label}",', 4))
+        lines.append(indent("},", 3))
+    lines.append(indent("}", 2))
 
     # Add newlines to each string
     lines = [line + "\n" for line in lines]
