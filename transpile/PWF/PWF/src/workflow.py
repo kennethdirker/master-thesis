@@ -17,7 +17,7 @@ class BaseWorkflow(BaseProcess):
     def __init__(
             self,
             main: bool = False,
-            client: Optional[Client] = None,
+            # client: Optional[Client] = None,
             runtime_context: Optional[dict] = None,
             loading_context: Optional[dict[str, str]] = None,
             parent_process_id: Optional[str] = None,
@@ -29,7 +29,7 @@ class BaseWorkflow(BaseProcess):
         """
         super().__init__(
             main = main,
-            client = client,
+            # client = client,
             runtime_context = runtime_context,
             loading_context = loading_context,
             parent_process_id = parent_process_id,
@@ -388,7 +388,9 @@ class BaseWorkflow(BaseProcess):
             # Execute runnable nodes
             for node in runnable.copy():
                 # BUG Serialization BUG 
-                future = self.client.submit(
+                client = Client()
+                future = client.submit(
+                # future = self.client.submit(
                     dask_execute_node, 
                     node.graph, 
                     self.runtime_context.copy()
@@ -474,7 +476,7 @@ class BaseWorkflow(BaseProcess):
             print(f"\tFound process at {uri}")
             return obj(
                 main = False,
-                client = self.client,
+                # client = self.client,
                 runtime_context = self.runtime_context,
                 loading_context = self.loading_context,
                 parent_id = self.id,

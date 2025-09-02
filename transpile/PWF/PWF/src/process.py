@@ -21,7 +21,7 @@ class BaseProcess(ABC):
     def __init__(
             self,
             main: bool = False,
-            client: Optional[Client] = None,
+            # client: Optional[Client] = None,
             runtime_context: Optional[dict[str, Any]] = None,
             loading_context: Optional[dict[str, Any]] = None,
             parent_process_id: Optional[str] = None,
@@ -105,10 +105,14 @@ class BaseProcess(ABC):
             self.main_path = os.getcwd()
 
         # Prepare Dask client
+        # BUG Adding the client causes a serialization bug when Dask wants to
+        #     pack and send this class to an execution node.
+        #     FIX: Instead of passing a single client, initialize it in local
+        #          function context when needed.  
         # NOTE Can easilty be replaced by other Dask clients
-        if client is None:
-            client = Client()
-        self.client: Client = client
+        # if client is None:
+        #     client = Client()
+        # self.client: Client = client
 
         # Used in create_task_graph()
         # self.task_graph_ref: Union[Delayed, None] = None

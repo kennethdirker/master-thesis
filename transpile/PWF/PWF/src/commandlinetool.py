@@ -18,7 +18,7 @@ class BaseCommandLineTool(BaseProcess):
     def __init__(
             self,
             main: bool = False,
-            client: Optional[Client] = None,
+            # client: Optional[Client] = None,
             runtime_context: Optional[dict] = None,
             loading_context: Optional[dict[str, str]] = None,
             parent_id: Optional[str] = None,
@@ -28,7 +28,7 @@ class BaseCommandLineTool(BaseProcess):
         """ TODO: class description """
         super().__init__(
             main = main,
-            client = client,
+            # client = client,
             runtime_context = runtime_context,
             loading_context = loading_context,
             parent_process_id = parent_id,
@@ -315,6 +315,69 @@ class BaseCommandLineTool(BaseProcess):
     #     return ret
             
 
+
+    def run_wrapper(
+            cmd: list[str],
+            outputs: dict[str, Any],
+            process_id: str,
+            # stdin: Optional[TextIO] = None,
+            # stdout: Optional[TextIO] = None,
+            # stderr: Optional[TextIO] = None,
+        ) -> dict[str, Any]:
+        """
+        Wrapper for subprocess.run().
+        NOTE: Reason for being nested is that dask doesnt play nice with
+        the self object.
+
+        Returns:
+            A dictionary containing all newly added runtime state.
+        """
+        # Execute tool
+        completed: CompletedProcess = run(
+            cmd,
+            # stdin=stdin,
+            # stdout=stdout,
+            # stderr=stderr,
+            # check=True,   # Probably shouldnt be used
+            capture_output=True
+        )
+
+        # Capture stderr
+        output: dict = {"stderr": completed.stderr.decode()}
+        
+        # Process tool outputs
+        for output_id, output_dict in outputs.items():
+            if "type" not in output_dict:
+                raise Exception("Type missing from output in\n", process_id)
+            output_type: str = output_dict["type"]
+
+            if "string" in output_type:
+                # Get stdout from subprocess.run and decode to utf-8
+                output[output_id] = completed.stdout.decode()
+                output["stdout"] = completed.stdout.decode()
+            elif "file" in output_type:
+                # Generate an output parameter based on the files produced
+                # by a CommandLineTool.
+                if "glob" in output_dict:
+                    output_file_paths = glob.glob(output_dict["glob"])
+                    if "[]" in output_type:
+                        # Output is an array of objects
+                        output[output_id] = output_file_paths
+                    else:
+                        # Output is a single object
+                        output[output_id] = output_file_paths[0]
+                elif "loadContents" in output_dict:
+                    raise NotImplementedError()
+                elif "outputEval" in output_dict:
+                    raise NotImplementedError()
+                elif "secondaryFiles" in output_dict:
+                    raise NotImplementedError()
+                else:
+                    raise Exception(f"No method to resolve output schema:{output_dict}")
+            else:
+                raise NotImplementedError(f"Output type {output_type} is not supported")
+        return output
+
         
     def execute(
             self, 
@@ -350,89 +413,32 @@ class BaseCommandLineTool(BaseProcess):
                 cmd = [self.base_command] + cmd
 
         # TODO Evaluate expressions in inputs?
+        # NOTE Cant remember why this is here, might be needed?
         # Evaluate expressions in outputs
-        for output_dict in self.outputs.values():
-            for key, value in output_dict.items():
-                local_dict = {"inputs": input_object}
-                output_dict[key] = eval(value, local_dict)
-                # output_dict[key] = self.eval(value)
-
-
-        def run_wrapper(
-                cmd: list[str],
-                outputs: dict[str, Any],
-                process_id: str,
-                # stdin: Optional[TextIO] = None,
-                # stdout: Optional[TextIO] = None,
-                # stderr: Optional[TextIO] = None,
-            ) -> dict[str, Any]:
-            """
-            Wrapper for subprocess.run().
-            NOTE: Reason for being nested is that dask doesnt play nice with
-            the self object.
-
-            Returns:
-                A dictionary containing all newly added runtime state.
-            """
-            # Execute tool
-            completed: CompletedProcess = run(
-                cmd,
-                # stdin=stdin,
-                # stdout=stdout,
-                # stderr=stderr,
-                # check=True,   # Probably shouldnt be used
-                capture_output=True
-            )
-
-            # Capture stderr
-            output: dict = {"stderr": completed.stderr.decode()}
-            
-            # Process tool outputs
-            for output_id, output_dict in outputs.items():
-                if "type" not in output_dict:
-                    raise Exception("Type missing from output in\n", process_id)
-                output_type: str = output_dict["type"]
-
-                if "string" in output_type:
-                    # Get stdout from subprocess.run and decode to utf-8
-                    output[output_id] = completed.stdout.decode()
-                    output["stdout"] = completed.stdout.decode()
-                elif "file" in output_type:
-                    # Generate an output parameter based on the files produced
-                    # by a CommandLineTool.
-                    if "glob" in output_dict:
-                        output_file_paths = glob.glob(output_dict["glob"])
-                        if "[]" in output_type:
-                            # Output is an array of objects
-                            output[output_id] = output_file_paths
-                        else:
-                            # Output is a single object
-                            output[output_id] = output_file_paths[0]
-                    elif "loadContents" in output_dict:
-                        raise NotImplementedError()
-                    elif "outputEval" in output_dict:
-                        raise NotImplementedError()
-                    elif "secondaryFiles" in output_dict:
-                        raise NotImplementedError()
-                    else:
-                        raise Exception(f"No method to resolve output schema:{output_dict}")
-                else:
-                    raise NotImplementedError(f"Output type {output_type} is not supported")
-            return output
+        # for output_dict in self.outputs.values():
+        #     for key, value in output_dict.items():
+        #         local_dict = {"inputs": input_object}
+        #         print(value, local_dict)
+        #         output_dict[key] = eval(value, local_dict)
+        #       # output_dict[key] = self.eval(value)
 
         # Submit and execute tool and gather output
         output: dict[str, Any] = []
         if use_dask:
-            future = self.client.submit(
-                run_wrapper,
+            client = Client()
+            # BUG run_wrapper() takes 3 positional arguments but 4 were given <- ????
+            # Even without the pure argument (which doesnt cause problems in test files) it states 4 arguments were given
+            future = client.submit(
+                self.run_wrapper,
                 cmd,
                 self.outputs,
                 self.id,
                 pure = False
             )
+
             output = future.result()
         else:
-            output = run_wrapper(
+            output = self.run_wrapper(
                 cmd,
                 self.outputs,
                 self.id,
