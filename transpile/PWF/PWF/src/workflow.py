@@ -245,7 +245,6 @@ class BaseWorkflow(BaseProcess):
                 in_id: str
             ) -> Tuple[bool, str]:
             step_in_dict = process.steps[step_id]["in"][in_id]
-            print(step_in_dict)
             if "source" in step_in_dict:
                 return False, step_in_dict["source"]
             elif "valueFrom" in step_in_dict:
@@ -337,7 +336,7 @@ class BaseWorkflow(BaseProcess):
             BaseCommandLineTool and are executed sequentially.
             """
             # BUG Serialization BUG 
-            graph = node.graph
+            # graph = node.graph
 
             tool_queue: list[Node] = graph.get_nodes(graph.roots)
             finished: list[Node] = []
@@ -351,7 +350,7 @@ class BaseWorkflow(BaseProcess):
                 # of its parents have finished.
                 good: bool = True
                 for parent in graph.get_nodes(node.parents):
-                    # If not all parents have been visited, requeue node
+                    # If not all parents have been visited, re-queue node
                     if parent not in finished:
                         good = False
                         tool_queue.append(node)
@@ -392,7 +391,7 @@ class BaseWorkflow(BaseProcess):
                 future = self.client.submit(
                     dask_execute_node, 
                     node.graph, 
-                    self.runtime_context
+                    self.runtime_context.copy()
                 )
                 running.append((future, node))
                 runnable.remove(node)

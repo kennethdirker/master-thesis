@@ -447,6 +447,30 @@ class Node:
         self.graph: Graph = graph
 
 
+    def __deepcopy__(self, memo) -> 'Node':
+        """
+        Make a deep copy of the node and return it.
+        NOTE: Creates copies are reference to the underlying processes,
+        instead of creating new processes. This ommits initializing
+        processes again, which is pointless and takes time.
+        """
+        # NOTE Untested
+        processes = self.processes.copy() # << Shallow copy!
+        # processes = [p for p in self.processes] # << Shallow copy!
+        parents = deepcopy(self.parents)
+        children = deepcopy(self.children)
+        graph = deepcopy(self.graph)
+        node = Node(
+            self.id, 
+            processes = processes, 
+            parents = parents, 
+            children = children,
+            is_tool_node = self.is_tool_node,
+            graph = graph
+        )
+        return node
+    
+
     def create_task_graph(
             self,
             dependencies: dict[str, Union[str, list[str]]],
@@ -480,29 +504,6 @@ class Node:
                 raise Exception(f"Expected str or list, but found {type(child_ids)}")
             graph.connect_node(node_id, children=child_ids)
         return graph
-
-
-    def __deepcopy__(self, memo) -> 'Node':
-        """
-        Make a deep copy of the node and return it.
-        NOTE: Creates copies are reference to the underlying processes,
-        instead of creating new processes. This ommits initializing
-        processes again, which is pointless and takes time.
-        """
-        # NOTE Untested
-        processes = [p for p in self.processes] # << Shallow copy!
-        parents = deepcopy(self.parents)
-        children = deepcopy(self.children)
-        graph = deepcopy(self.graph)
-        node = Node(
-            self.id, 
-            processes = processes, 
-            parents = parents, 
-            children = children,
-            is_tool_node = self.is_tool_node,
-            graph = graph
-        )
-        return node
     
 
     def merge(
@@ -519,65 +520,6 @@ class Node:
     
     def is_root(self) -> bool:
         return len(self.parents) == 0
-    
-    # def has_completed(self):
-    #     """
-    #     TODO
-    #     """
-    #     for status in self.futures.values():
-    #         if status is not NodeStatus.COMPLETED:
-    #             return False
-    #     return True
-    
-
-    # def execute(
-    #         self, 
-    #         runtime_context: dict[str, Any],
-    #         with_dask: bool = True
-    #     ) -> dict[str, Any]:
-    #     """
-    #     Execute the tasks of this node. 
-        
-    #     Graph nodes in self.graph contain a single process (CommandLineTool).
-
-    #     Tasks within a node are executed sequentially.
-    #     """
-    #     graph = self.graph
-    #     # old_runtime_context = deepcopy(runtime_context)
-    #     # new_runtime_context = {}
-        
-    #     finished: list[Node] = []
-    #     frontier: list[Node] = deepcopy(graph.get_nodes(self.graph.roots))
-    #     while len(frontier) != 0:
-    #         node = frontier.pop(0)
-            
-    #         # Check if parents have been finished
-    #         good = True
-    #         for parent in graph.get_nodes(node.parents):
-    #             # If not all parents have been visited, revisit later
-    #             if parent not in finished:
-    #                 good = False
-    #                 frontier.append(node)
-    #                 break
-    #         if not good:
-    #             continue
-
-    #         node.processes[0].execute(with_dask=False)
-    #         finished.append(node)
-            # TODO Runtime vars need to be communicated to main 
-            # FIXME Get self.runtime_context from processes
-            # Compare old runtime_context to new one
-            # for key, value in runtime_context.items():
-            #     if key not in old_runtime_context:
-            #         new_runtime_context[key] = value
-            # return new_runtime_context            
-
-    # def __call__(
-    #         self, 
-    #         # runtime_context: dict[str, Any]
-    #     ) -> dict[str, Any]:
-    #     self.execute()
-    #     # self.execute(runtime_context)
 
 
 
@@ -613,17 +555,24 @@ class Graph:
         processes again, which is pointless and takes time.
         """
         graph = Graph()
-        graph.roots = deepcopy(self.roots)
-        graph.leaves = deepcopy(self.leaves)
-        graph.nodes = deepcopy(self.nodes) # << processes in nodes are references to originals!
-        graph.in_deps = deepcopy(self.in_deps)
-        graph.out_deps = deepcopy(self.out_deps)
+        graph.roots = self.roots.copy()
+        graph.leaves = self.leaves.copy()
+        graph.nodes = self.nodes.copy() # << processes in nodes are references to originals!
+        graph.in_deps = self.in_deps.copy()
+        graph.out_deps = self.out_deps.copy()
         graph._next_id = self._next_id
-        graph.short_id = deepcopy(self.short_id)    # {node_id: simple_id}
+        graph.short_id = self.short_id.copy()    # {node_id: simple_id}
+        # graph.roots = deepcopy(self.roots)
+        # graph.leaves = deepcopy(self.leaves)
+        # graph.nodes = deepcopy(self.nodes) # << processes in nodes are references to originals!
+        # graph.in_deps = deepcopy(self.in_deps)
+        # graph.out_deps = deepcopy(self.out_deps)
+        # graph._next_id = self._next_id
+        # graph.short_id = deepcopy(self.short_id)    # {node_id: simple_id}
         return graph
 
     
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         """
         Construct a string containing graph info and return it. Simple node
         IDs are used to improve clarity. Node IDs are mapped to simple node
