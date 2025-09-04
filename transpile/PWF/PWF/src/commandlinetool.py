@@ -317,6 +317,7 @@ class BaseCommandLineTool(BaseProcess):
 
 
     def run_wrapper(
+            self,
             cmd: list[str],
             outputs: dict[str, Any],
             process_id: str,
