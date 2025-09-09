@@ -338,36 +338,59 @@ class BaseProcess(ABC):
     #     return green_light, missing_inputs
 
 
+    def build_namespace(self):
+        """
+        Build a local namespace that can be used in eval() calls to evaluate
+        expressions that access CWL namespaces, like 'inputs'.
+        """
+        namespace: dict[str, Any] = {}
+
+        # Create an object that holds the CWL 'inputs' namespace. This object
+        # is used in the eval() call.
+        # Example: If the process has an input 'input_fits', it can be
+        #          accessed in the expression as 'inputs.input_fits'.
+        inputs = lambda: None       # Create empty object
+        for input_id, input_dict in self.inputs.items():
+            source = self.input_to_source[input_id]
+            value = self.runtime_context[source]
+
+            if "file" in input_dict["type"]:
+
+                # Create built-in file properties used in CWL expressions
+                if "[]" in input_dict["type"]:
+                    # Array of files
+                    file_objects = [FileObject(p) for p in value]
+                    setattr(inputs, input_id, file_objects)
+                else:
+                    # Single file
+                    setattr(inputs, input_id, FileObject(value))
+            elif "string" in input_dict["type"]:
+                setattr(inputs, input_id, value)
+            else:
+                raise NotImplementedError(f"Input type {input_dict['type']} not supported")
+            
+        namespace["inputs"] = inputs
+
+        # TODO Other CWL namespaces, like 'self', 'runtime', 'env'?
+
+        return namespace
+
+
     def eval(
             self, 
-            expression: str
+            expression: str,
+            local_vars: dict[str, Any]
         ) -> str:
         """
         Evaluate an expression. The expression may access CWL namespace
         variables, like 'inputs'.
-        TODO Extend supported CWL namespace variables
         """
 
         if not expression.startswith("$") and not expression.endswith("$"):
-            # Expression is a plain string and doesn't need evaluating.
+            # Expression is a plain string and doesn't need evaluating
             return expression
 
-
-        local_vars: dict[str, Any] = {}
-
-        # Build inputs object with built-in file properties
-        inputs = lambda: None
-        for input_id, input_dict in self.inputs.items():
-            if "file" in input_dict["type"]:
-                if "[]" in input_dict["type"]:
-                    raise NotImplementedError("Arrays not supported")
-                
-                source = self.input_to_source[input_id]
-                path = self.runtime_context[source]
-                setattr(inputs, input_id, FileObject(path))
-        local_vars["inputs"] = inputs
-
-        return eval(expression, local_vars)
+        return eval(expression[1:-1], local_vars)
     
 
     # def eval(self, s: str):

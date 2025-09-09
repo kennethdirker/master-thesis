@@ -42,3 +42,6 @@ class FileObject:
         self.dirname = str(path.parent)
         self.nameroot = path.stem
         self.nameext = path.suffix
+
+    def __str__(self) -> str:
+        return self.path

@@ -389,6 +389,7 @@ class BaseCommandLineTool(BaseProcess):
         """
         TODO Desc
         """
+        # Prepare command line arguments
         pos_inputs: list[Tuple[str, dict[str, Any]]] = []
         key_inputs: list[Tuple[str, dict[str, Any]]] = []
 
@@ -413,22 +414,22 @@ class BaseCommandLineTool(BaseProcess):
             else:
                 cmd = [self.base_command] + cmd
 
+        namespace = self.build_namespace()
+
         # TODO Evaluate expressions in inputs?
-        # NOTE Cant remember why this is here, might be needed?
-        # Evaluate expressions in outputs
-        # for output_dict in self.outputs.values():
-        #     for key, value in output_dict.items():
-        #         local_dict = {"inputs": input_object}
-        #         print(value, local_dict)
-        #         output_dict[key] = eval(value, local_dict)
-        #       # output_dict[key] = self.eval(value)
+        #      Or does this already somewhere else?
+
+        # Evaluate expressions in outputs. This has to be done before wrapper 
+        # execution, FIXME but I cant remember why.
+        for output_id, output_dict in self.outputs.items():
+            for property, value in output_dict.items():
+                self.outputs[output_id][property] = self.eval(value, namespace)
+
 
         # Submit and execute tool and gather output
-        output: dict[str, Any] = []
+        new_state: dict[str, Any] = []
         if use_dask:
             client = Client()
-            # BUG run_wrapper() takes 3 positional arguments but 4 were given <- ????
-            # Even without the pure argument (which doesnt cause problems in test files) it states 4 arguments were given
             future = client.submit(
                 self.run_wrapper,
                 cmd,
@@ -437,23 +438,24 @@ class BaseCommandLineTool(BaseProcess):
                 pure = False
             )
 
-            output = future.result()
+            new_state = future.result()
         else:
-            output = self.run_wrapper(
+            new_state = self.run_wrapper(
                 cmd,
                 self.outputs,
                 self.id,
             )
-        # TODO Check output exit codes or something?
 
+        # TODO Check if all outputs are present
+        
         # Print stderr/stdout
         # FIXME Check if this works
         # TODO IF THIS CODE STAYS IN: "stderr" and "stdout" cannot be used as output ID
-        if "stderr" in output:
-            print(output["stderr"], file=sys.stderr)
-        if "stdout" in output:
-            print(output["stdout"], file=sys.stdout)
-        return output
+        if "stderr" in new_state:
+            print(new_state["stderr"], file=sys.stderr)
+        if "stdout" in new_state:
+            print(new_state["stdout"], file=sys.stdout)
+        return new_state
 
         # if self.is_main:
         #     # No need to make outputs known globally
