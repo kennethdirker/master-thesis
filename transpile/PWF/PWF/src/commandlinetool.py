@@ -228,92 +228,42 @@ class BaseCommandLineTool(BaseProcess):
         return args
 
 
-    def compose_command(
-            self,
-            inputs: list[Tuple[str, dict[str, Any]]]
-        ) -> list[str]:
+    def build_commandline(self) -> list[str]:
         """
-        TODO desc
-        
+        Build the command line to be executed.
         """
-        cmds: list[str] = []
+        pos_inputs: list[Tuple[str, dict[str, Any]]] = []
+        key_inputs: list[Tuple[str, dict[str, Any]]] = []
+
+        # Split positional arguments and key arguments
+        for input_id, input_dict in self.inputs.items():
+            if hasattr(input_dict, "position"):
+                pos_inputs.append((input_id, input_dict))
+            else:
+                key_inputs.append((input_id, input_dict))
+
+        # Order the arguments
+        inputs: list[Tuple[str, dict]] = sorted(pos_inputs, key=lambda x: x[1]["position"])
+        inputs += key_inputs
+
+        # Match arguments with runtime input values
+        cmd: list[str] = []
         for input_id, input_dict  in inputs:
             if "[]" in input_dict["type"]:
                 # Compose array argument
-                cmds.extend(self.compose_array_arg(input_id, input_dict))
+                cmd.extend(self.compose_array_arg(input_id, input_dict))
             else:
                 # Compose single argument
-                cmds.extend(self.compose_arg(input_id, input_dict))
-        return cmds
-    
+                cmd.extend(self.compose_arg(input_id, input_dict))
 
-    # def _process_outputs(self, result: bytes) -> None:
-    #     for output_id, output_dict in self.outputs.items():
-    #         # FIXME Checking formatting should probably not be done at runtime
-    #         if "type" not in output_dict:
-    #             raise Exception("Type missing from output in\n", self.id)
+        # Combine the base command with the arguments
+        if hasattr(self, "base_command"):
+            if isinstance(self.base_command, list):
+                cmd = [*self.base_command] + cmd
+            else:
+                cmd = [self.base_command] + cmd
 
-    #         # FIXME Checking formatting should probably not be done at runtime
-    #         output_type: str = output_dict["type"]
-    #         parent_process = self.loading_context["processes"][self.parent_process_id]
-    #         global_output_id = parent_process.global_id(self.step_id + "/" + output_id)
-
-    #         if "string" in output_type:
-    #             self.runtime_context[global_output_id] = result.decode()
-    #             print(result.decode())
-    #         elif "file" in output_type:
-    #             if not "glob" in output_dict:
-    #                 raise Exception(f"No glob field in output {output_id}")
-                
-    #             value = self.eval(output_dict["glob"])
-    #             print(value)
-    #             output_file_paths = glob.glob(value)
-    #             if "[]" in output_type:
-    #                 # Output is an array of objects
-    #                 self.runtime_context[global_output_id] = output_file_paths
-    #             else:
-    #                 # Output is a single object
-    #                 self.runtime_context[global_output_id] = output_file_paths[0]
-    #             print(output_file_paths)
-    #         else:
-    #             raise NotImplementedError(f"Output type {output_type} is not supported")
-
-
-    # def process_output(self, output: CompletedProcess) -> Union[str, None]:
-    #     ret = None
-    #     for output_id, output_dict in self.outputs.items():
-    #         # FIXME Checking formatting should probably not be done at runtime
-    #         if "type" not in output_dict:
-    #             raise Exception("Type missing from output in\n", self.id)
-    #         output_type: str = output_dict["type"]
-
-    #         # Get global output ID to store an output string if needed
-    #         parent_process = self.loading_context["processes"][self.parent_process_id]
-    #         global_output_id = parent_process.global_id(self.step_id + "/" + output_id)
-
-    #         if "string" in output_type:
-    #             # Get stdout from subprocess.run output
-    #             self.runtime_context[global_output_id] = output.stdout.decode()
-    #             ret = self.runtime_context[global_output_id]
-
-    #         elif "file" in output_type:
-    #             if not "glob" in output_dict:
-    #                 raise Exception(f"No glob field in output {output_id}")
-                
-    #             value = self.eval(output_dict["glob"])
-    #             print(value)
-    #             output_file_paths = glob.glob(value)
-    #             if "[]" in output_type:
-    #                 # Output is an array of objects
-    #                 self.runtime_context[global_output_id] = output_file_paths
-    #             else:
-    #                 # Output is a single object
-    #                 self.runtime_context[global_output_id] = output_file_paths[0]
-
-    #         else:
-    #             raise NotImplementedError(f"Output type {output_type} is not supported")
-    #     return ret
-            
+        return cmd
 
 
     def run_wrapper(
@@ -389,30 +339,8 @@ class BaseCommandLineTool(BaseProcess):
         """
         TODO Desc
         """
-        # Prepare command line arguments
-        pos_inputs: list[Tuple[str, dict[str, Any]]] = []
-        key_inputs: list[Tuple[str, dict[str, Any]]] = []
-
-        # Split positional arguments and key arguments
-        for input_id, input_dict in self.inputs.items():
-            if hasattr(input_dict, "position"):
-                pos_inputs.append((input_id, input_dict))
-            else:
-                key_inputs.append((input_id, input_dict))
-
-        # Order the arguments
-        inputs: list[Tuple[str, dict]] = sorted(pos_inputs, key=lambda x: x[1]["position"])
-        inputs += key_inputs
-
-        # Match arguments with runtime input arguments
-        cmd: list[str] = self.compose_command(inputs)
-
-        # Combine the base command with the arguments
-        if hasattr(self, "base_command"):
-            if isinstance(self.base_command, list):
-                cmd = [*self.base_command] + cmd
-            else:
-                cmd = [self.base_command] + cmd
+        # Build the command line
+        cmd: list[str] = self.build_commandline()
 
         namespace = self.build_namespace()
 
@@ -437,7 +365,6 @@ class BaseCommandLineTool(BaseProcess):
                 self.id,
                 pure = False
             )
-
             new_state = future.result()
         else:
             new_state = self.run_wrapper(
@@ -467,26 +394,3 @@ class BaseCommandLineTool(BaseProcess):
         #     parent_process = self.loading_context["processes"][self.parent_process_id]
         #     global_output_id = parent_process.global_id(self.step_id + "/" + output_id)
         #     self.runtime_context[global_output_id] = output_value
-
-
-    # def create_task_graph(self, *parents) -> None:
-    #     """
-    #     Build a Dask Delayed object to execute the wrapped tool with.
-    #     TODO desc
-    #     """
-    #     pos_inputs: list[Tuple[str, dict[str, Any]]] = []
-    #     key_inputs: list[Tuple[str, dict[str, Any]]] = []
-
-    #     # Decide whether this input argument is positional or not
-    #     for input_id, input_dict in self.inputs.items():
-    #         if hasattr(input_dict, "position"):
-    #             pos_inputs.append((input_id, input_dict))
-    #         else:
-    #             key_inputs.append((input_id, input_dict))
-
-    #     # Order input arguments
-    #     inputs: list[Tuple[str, dict]] = sorted(pos_inputs, key=lambda x: x[1]["position"])
-    #     inputs += key_inputs
-
-    #     # "parents" parameter chains steps together
-    #     self.task_graph_ref = dask.delayed(self.cmd_wrapper)(inputs, *parents)
