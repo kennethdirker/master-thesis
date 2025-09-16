@@ -559,6 +559,7 @@ class Graph:
             # grouping: bool = False
         ) -> None:
         """
+        BUG where a node is added twice to parents/children
         Directed Acyclic Graph (DAG) implementation to represent a workflow
         task graph. Can be used to optimize task graph execution.
         """
@@ -610,14 +611,18 @@ class Graph:
             - Edges
             - Leaf nodes
         """
-        s = "nodes: "
+        s = "nodes[parents/children]: "
         for node_id in self.nodes:
             s += f"{self.short_id[node_id]}["
             if node_id in self.in_deps:
                 s += f"{','.join([str(self.short_id[p_id]) for p_id in self.in_deps[node_id]])}"
+            else:
+                s += "."
             s += "/"
             if node_id in self.out_deps:
                 s += f"{','.join([str(self.short_id[c_id]) for c_id in self.out_deps[node_id]])}"
+            else:
+                s += "."
             s += "] "
         s += "\nroots: " 
         for root_id in self.roots:

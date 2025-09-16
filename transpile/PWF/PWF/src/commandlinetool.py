@@ -35,22 +35,16 @@ class BaseCommandLineTool(BaseProcess):
             step_id = step_id
         )
 
-        # # Maps input_id to its source id, which is used as key in runtime_context
-        # NOTE moved to process for now
-        # self.input_to_source: dict[str, str] =  {}  # {input_id, global_source_id}
-
         # Digest CommandlineTool file
         self.set_metadata()
         self.set_inputs()
-        # self._process_inputs()
         self.set_outputs()
         self.set_requirements()
         self.set_base_command()
         
         if main:
             self.register_input_sources()
-            # self.create_task_graph()
-            self.execute(self.runtime_context, True)
+            self.execute(with_dask)
 
 
     def set_metadata(self):
@@ -262,7 +256,6 @@ class BaseCommandLineTool(BaseProcess):
                 cmd = [*self.base_command] + cmd
             else:
                 cmd = [self.base_command] + cmd
-
         return cmd
 
 
@@ -270,7 +263,7 @@ class BaseCommandLineTool(BaseProcess):
             self,
             cmd: list[str],
             outputs: dict[str, Any],
-            process_id: str,
+            # process_id: str,
             # stdin: Optional[TextIO] = None,
             # stdout: Optional[TextIO] = None,
             # stderr: Optional[TextIO] = None,
@@ -281,7 +274,7 @@ class BaseCommandLineTool(BaseProcess):
         the self object.
 
         Returns:
-            A dictionary containing all newly added runtime state.
+            A dictionary containing all newly added runtime output state.
         """
         # Execute tool
         completed: CompletedProcess = run(
@@ -299,7 +292,7 @@ class BaseCommandLineTool(BaseProcess):
         # Process tool outputs
         for output_id, output_dict in outputs.items():
             if "type" not in output_dict:
-                raise Exception("Type missing from output in\n", process_id)
+                raise Exception("Type missing from output in\n", self.id)
             output_type: str = output_dict["type"]
 
             if "string" in output_type:
@@ -332,8 +325,6 @@ class BaseCommandLineTool(BaseProcess):
         
     def execute(
             self, 
-            # runtime_context: dict[str, Any],
-            input_object: Any,
             use_dask: bool,
             verbose: Optional[bool] = True
         ) -> dict[str, Any]:
@@ -342,8 +333,6 @@ class BaseCommandLineTool(BaseProcess):
         """
         # Build the command line
         cmd: list[str] = self.build_commandline()
-        print(*cmd)
-
         namespace = self.build_namespace()
 
         # TODO Evaluate expressions in inputs?
@@ -364,7 +353,7 @@ class BaseCommandLineTool(BaseProcess):
                 self.run_wrapper,
                 cmd,
                 self.outputs,
-                self.id,
+                # self.id,
                 pure = False
             )
             new_state = future.result()
@@ -372,7 +361,7 @@ class BaseCommandLineTool(BaseProcess):
             new_state = self.run_wrapper(
                 cmd,
                 self.outputs,
-                self.id,
+                # self.id,
             )
 
         # TODO Check if all outputs are present
@@ -380,21 +369,9 @@ class BaseCommandLineTool(BaseProcess):
         # Print stderr/stdout
         # FIXME Check if this works
         # TODO IF THIS CODE STAYS IN: "stderr" and "stdout" cannot be used as output ID
-        
         if verbose:
             if "stderr" in new_state:
                 print(new_state["stderr"], file=sys.stderr)
             if "stdout" in new_state:
                 print(new_state["stdout"], file=sys.stdout)
         return new_state
-
-        # if self.is_main:
-        #     # No need to make outputs known globally
-        #     return
-        
-        # # Update global runtime_context with new outputs
-        # # NOTE runtime_context update happens in upper layers
-        # for output_id, output_value in output.items():
-        #     parent_process = self.loading_context["processes"][self.parent_process_id]
-        #     global_output_id = parent_process.global_id(self.step_id + "/" + output_id)
-        #     self.runtime_context[global_output_id] = output_value

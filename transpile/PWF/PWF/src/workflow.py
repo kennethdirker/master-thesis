@@ -321,7 +321,7 @@ class BaseWorkflow(BaseProcess):
     #                     source = self.input_to_source[subprocess.global_id(input_id)]
     #                     self.runtime_context[source] = input_dict["default"]
 
-    def dask_execute_node(
+    def execute_workflow_node(
             self,
             workflow_node: Node,
             runtime_context: dict[str, Any],
@@ -364,14 +364,17 @@ class BaseWorkflow(BaseProcess):
                 # Nodes at this level contain a single BaseCommandLineTool.
                 tool: BaseCommandLineTool = tool_node.processes[0]
                 print(f"[NODE]: Executing tool {tool.id}")
-                result = tool.execute(runtime_context, False, verbose)
+                result = tool.execute(False, verbose)  # BUG tool.runtime_context not updated with parent runtime context
                 new_runtime_context.update(result)
                 finished.append(tool_node)
             
             return new_runtime_context
     
 
-    def execute(self, verbose: Optional[bool] = True) -> Union[str, None]:
+    def execute(
+            self, 
+            verbose: Optional[bool] = True
+        ) -> dict[str, Any]:
         """
         TODO
         """
@@ -386,17 +389,18 @@ class BaseWorkflow(BaseProcess):
         waiting: dict[str, Node] = {id: node for id, node in nodes.items() if id not in runnable}
         running: dict[str, Tuple[Future, Node]] = {}
         completed: dict[str, Node] = {}
+        output: dict[str, Any] = {}
 
         def lprint():
             s = "\n"
             print()
-            print(f"waiting: {s.join([node_id for node_id in waiting.keys()])}")
+            print(f"waiting:\n{s.join([node_id for node_id in waiting.keys()])}")
             print()
-            print(f"runnable: {s.join([node_id for node_id in runnable.keys()])}")
+            print(f"runnable:\n{s.join([node_id for node_id in runnable.keys()])}")
             print()
-            print(f"running: {s.join([node_id for node_id in running.keys()])}")
+            print(f"running:\n{s.join([node_id for node_id in running.keys()])}")
             print()
-            print(f"completed: {s.join([node_id for node_id in completed.keys()])}")
+            print(f"completed:\n{s.join([node_id for node_id in completed.keys()])}")
             print()
 
         graph.print()
@@ -420,7 +424,7 @@ class BaseWorkflow(BaseProcess):
                 client = Client()
                 print("[WORKFLOW]: Submitting node ", node_id)
                 future = client.submit(
-                    self.dask_execute_node, 
+                    self.execute_workflow_node, 
                     node, 
                     self.runtime_context.copy(),
                     verbose
@@ -435,6 +439,7 @@ class BaseWorkflow(BaseProcess):
                 if running_node[0].done():
                     # Add new runtime state from finished node
                     result = running_node[0].result()
+                    output.update(result)
                     self.runtime_context.update(result)
 
                     # Move node to finished
@@ -443,7 +448,7 @@ class BaseWorkflow(BaseProcess):
                     lprint()
 
                     # Add new runnable nodes to queue by checking for each
-                    # child if all parents have completed.
+                    # child if all its parents have completed.
                     for child_id in running_node[1].children:
 
                         # Only check children that have not already been queued
@@ -453,9 +458,8 @@ class BaseWorkflow(BaseProcess):
                         print("[CHILD]: ", child_id)
 
                         ready = True
-                        # print(f"[WORKFLOW]: Child {child.id}\nhas parents {[p.id for p in graph.get_nodes(child.parents)]}")
                         for childs_parent_id in nodes[child_id].parents:
-                            print(f"[PARENT]: {childs_parent_id}")
+                            print(f"[PARENT]: {childs_parent_id}")      # Signals BUG with duplicate parent entries
                             if childs_parent_id not in completed:
                                 print("[PARENT]: not completed")
                                 ready = False
@@ -463,27 +467,16 @@ class BaseWorkflow(BaseProcess):
                         if ready:
                             # All parents have finished: Queue up the child
                             runnable[child_id] = waiting.pop(child_id)
-                            # waiting.remove(child)
-                            # runnable.append(child)
-                            # print(f"waiting: {[node.id for node in waiting]}")
-                            # print(child)
-                            exit()
                     print("[WORKFLOW]: Completed node ", running_node[1].id)
                     lprint()
-            # print(f"runnable: {[node.id for node in runnable]}")
-            # print()
-            # print(f"waiting: {[node.id for node in waiting]}")
-            # print()
-            # print(f"running: {[node[1].id for node in running]}")
-            # print()
-            # print(f"completed: {[node.id for node in completed]}")
             # time.sleep(0.1)
 
+        # TODO Return new runtime state
         # if "stderr" in output:
-        #     print(output["stderr"], file=sys.stderr)
+            # print(output["stderr"], file=sys.stderr)
         # if "stdout" in output:
-        #     print(output["stdout"], file=sys.stdout)
-        # return output
+            # print(output["stdout"], file=sys.stdout)
+        return output
 
 
     def _load_process_from_uri(
