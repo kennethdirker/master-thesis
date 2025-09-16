@@ -335,12 +335,14 @@ class BaseCommandLineTool(BaseProcess):
             # runtime_context: dict[str, Any],
             input_object: Any,
             use_dask: bool,
+            verbose: Optional[bool] = True
         ) -> dict[str, Any]:
         """
         TODO Desc
         """
         # Build the command line
         cmd: list[str] = self.build_commandline()
+        print(*cmd)
 
         namespace = self.build_namespace()
 
@@ -378,10 +380,12 @@ class BaseCommandLineTool(BaseProcess):
         # Print stderr/stdout
         # FIXME Check if this works
         # TODO IF THIS CODE STAYS IN: "stderr" and "stdout" cannot be used as output ID
-        if "stderr" in new_state:
-            print(new_state["stderr"], file=sys.stderr)
-        if "stdout" in new_state:
-            print(new_state["stdout"], file=sys.stdout)
+        
+        if verbose:
+            if "stderr" in new_state:
+                print(new_state["stderr"], file=sys.stderr)
+            if "stdout" in new_state:
+                print(new_state["stdout"], file=sys.stdout)
         return new_state
 
         # if self.is_main:

@@ -603,7 +603,7 @@ class Graph:
         """
         Construct a string containing graph info and return it. Simple node
         IDs are used to improve clarity. Node IDs are mapped to simple node
-        IDs in self.id_mapping.
+        IDs in self.short_id.
 
         Returns a string containing:
             - Root nodes
@@ -612,7 +612,13 @@ class Graph:
         """
         s = "nodes: "
         for node_id in self.nodes:
-            s+= f"{self.short_id[node_id]} "
+            s += f"{self.short_id[node_id]}["
+            if node_id in self.in_deps:
+                s += f"{','.join([str(self.short_id[p_id]) for p_id in self.in_deps[node_id]])}"
+            s += "/"
+            if node_id in self.out_deps:
+                s += f"{','.join([str(self.short_id[c_id]) for c_id in self.out_deps[node_id]])}"
+            s += "] "
         s += "\nroots: " 
         for root_id in self.roots:
             s += f"{self.short_id[root_id]} "
