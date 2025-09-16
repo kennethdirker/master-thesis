@@ -1,6 +1,6 @@
 input_fits:
   - image_mf_01.fits
   - image_mf_02.fits
-  - image_mf_03.fits
+  - image_mf_02.fits.1
   - image_mf_04.fits
 output_image: out.png
