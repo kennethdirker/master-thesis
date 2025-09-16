@@ -1,3 +1,4 @@
 url_list:
   class: file
-  path: ../links
+  path: ../1_link
+  # path: ../links
