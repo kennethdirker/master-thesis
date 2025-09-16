@@ -21,7 +21,7 @@ class noiseremover(BaseCommandLineTool):
 		self.outputs = {
 			"output": {
 				"type": "file",
-				"glob": "$output_file_name$",
+				"glob": "$inputs.output_file_name$",
 			},
 		}
 
