@@ -321,39 +321,39 @@ class BaseWorkflow(BaseProcess):
     #                     source = self.input_to_source[subprocess.global_id(input_id)]
     #                     self.runtime_context[source] = input_dict["default"]
 
-    def execute(self) -> Union[str, None]:
-        """
-        TODO
-        """
-        def dask_execute_node(
-            graph: Graph,
-            runtime_context: dict[str, Any]
+    def dask_execute_node(
+            self,
+            workflow_node: Node,
+            runtime_context: dict[str, Any],
+            verbose: Optional[bool] = True
         ) -> dict[str, Any]:
             """
             Execute the tasks of this node. 
             
+            FIXME: Is the following note still accurate?
             NOTE: Nodes contained in node.graph contain a single 
-            BaseCommandLineTool and are executed sequentially.
+            BaseCommandLineTool and are executed according to the nodes
+            internal dependency graph.
             """
-            # BUG Serialization BUG 
-            # graph = node.graph
+            graph = workflow_node.graph
 
             tool_queue: list[Node] = graph.get_nodes(graph.roots)
             finished: list[Node] = []
             new_runtime_context: dict[str, Any] = {}
-            # Cycle through tool nodes
-            while len(tool_queue) != 0:
+            
+            # Cycle through tool nodes until all tools have been executed
+            while len(tool_queue) != 0 and len(finished) != len(tool_queue):
                 # Retrieve tool node from the queue
-                node = tool_queue.pop(0)
+                tool_node = tool_queue.pop(0)
                 
                 # Check if the node is ready for execution by checking if all
                 # of its parents have finished.
                 good: bool = True
-                for parent in graph.get_nodes(node.parents):
+                for parent in graph.get_nodes(tool_node.parents):
                     # If not all parents have been visited, re-queue node
                     if parent not in finished:
                         good = False
-                        tool_queue.append(node)
+                        tool_queue.append(tool_node)
                         break
                 if not good:
                     continue
@@ -362,67 +362,122 @@ class BaseWorkflow(BaseProcess):
                 # This means that outputs have to be registered in the main 
                 # runtime_context.
                 # Nodes at this level contain a single BaseCommandLineTool.
-                tool: BaseCommandLineTool = node.processes[0]
-                result = tool.execute(runtime_context, use_dask=False)
+                tool: BaseCommandLineTool = tool_node.processes[0]
+                print(f"[NODE]: Executing tool {tool.id}")
+                result = tool.execute(runtime_context, False, verbose)
                 new_runtime_context.update(result)
-                finished.append(node)
-            return new_runtime_context
+                finished.append(tool_node)
             
+            return new_runtime_context
+    
+
+    def execute(self, verbose: Optional[bool] = True) -> Union[str, None]:
+        """
+        TODO
+        """
+        # TODO turn on verbose boolean
+        verbose = False
+
+
         graph: Graph = self.loading_context["graph"]
-        runnable: list[Node] = deepcopy(graph.get_nodes(graph.roots))
-        waiting: list[Node] = [node for node in graph.nodes.values() if node not in runnable]
-        running: list[Tuple[Future, Node]] = []
-        completed: list[Node] = []
+        nodes = graph.nodes
+        runnable_nodes: list[Node] = deepcopy(graph.get_nodes(graph.roots))
+        runnable: dict[str, Node] = {node.id: node for node in runnable_nodes}
+        waiting: dict[str, Node] = {id: node for id, node in nodes.items() if id not in runnable}
+        running: dict[str, Tuple[Future, Node]] = {}
+        completed: dict[str, Node] = {}
+
+        def lprint():
+            s = "\n"
+            print()
+            print(f"waiting: {s.join([node_id for node_id in waiting.keys()])}")
+            print()
+            print(f"runnable: {s.join([node_id for node_id in runnable.keys()])}")
+            print()
+            print(f"running: {s.join([node_id for node_id in running.keys()])}")
+            print()
+            print(f"completed: {s.join([node_id for node_id in completed.keys()])}")
+            print()
+
+        graph.print()
+        print("\n".join([f"{short}: {id}" for id, short in graph.short_id.items()]))
+        lprint()
 
         # Polling loop that runs until all graph nodes have been executed.
         # Each node execution is submitted to the Dask scheduler as an async
         # task. The polling loop checks for finished nodes and submits newly
-        # executable nodes. Invalid workflows might result in deadlocks, in
-        # which case an exception is raised.
+        # executable nodes. Invalid workflows, faulty tools or bad input might
+        # result in deadlocks, in which case an exception is raised.
+        print("[WORKFLOW]Executing workflow")
         while len(runnable) != 0 or len(running) != 0:
             # Check for deadlock
             if len(runnable) == 0 and len(running) == 0 and len(waiting) != 0:
-                s = "\n\t".join([node.id for node in waiting])
+                s = "\n\t".join([node_id for node_id in waiting.keys()])
                 raise Exception(f"Deadlock detected. Waiting nodes:\n\t{s}")
 
             # Execute runnable nodes
-            for node in runnable.copy():
-                # BUG Serialization BUG 
+            for node_id, node in runnable.copy().items():
                 client = Client()
+                print("[WORKFLOW]: Submitting node ", node_id)
                 future = client.submit(
-                # future = self.client.submit(
-                    dask_execute_node, 
-                    node.graph, 
-                    self.runtime_context.copy()
+                    self.dask_execute_node, 
+                    node, 
+                    self.runtime_context.copy(),
+                    verbose
                 )
-                running.append((future, node))
-                runnable.remove(node)
+                running[node_id] = (future, node)
+                runnable.pop(node_id)
 
             # Check for completed nodes and move runnable children to the
             # running queue.
-            for running_node in running.copy(): # running_node: (Future, Node)
+            for node_id, running_node in running.copy().items(): # running_node: (Future, Node)
                 # Remove node from the running list if it has finished
                 if running_node[0].done():
-                    # Add new runtime state
+                    # Add new runtime state from finished node
                     result = running_node[0].result()
                     self.runtime_context.update(result)
 
                     # Move node to finished
-                    running.remove(running_node)
-                    completed.append(running_node[1])
+                    completed[node_id] = running_node[1]
+                    running.pop(node_id)
+                    lprint()
 
-                    # Add new runnable nodes to queue
-                    for child in graph.get_nodes(node.children):
-                        # Check for each child if all parents have completed.
+                    # Add new runnable nodes to queue by checking for each
+                    # child if all parents have completed.
+                    for child_id in running_node[1].children:
+
+                        # Only check children that have not already been queued
+                        if child_id not in waiting:
+                            continue
+
+                        print("[CHILD]: ", child_id)
+
                         ready = True
-                        for childs_parent in graph.get_nodes(child.parents):
-                            if childs_parent not in completed:
+                        # print(f"[WORKFLOW]: Child {child.id}\nhas parents {[p.id for p in graph.get_nodes(child.parents)]}")
+                        for childs_parent_id in nodes[child_id].parents:
+                            print(f"[PARENT]: {childs_parent_id}")
+                            if childs_parent_id not in completed:
+                                print("[PARENT]: not completed")
                                 ready = False
                                 break
                         if ready:
                             # All parents have finished: Queue up the child
-                            waiting.remove(child)
-                            runnable.append(child)
+                            runnable[child_id] = waiting.pop(child_id)
+                            # waiting.remove(child)
+                            # runnable.append(child)
+                            # print(f"waiting: {[node.id for node in waiting]}")
+                            # print(child)
+                            exit()
+                    print("[WORKFLOW]: Completed node ", running_node[1].id)
+                    lprint()
+            # print(f"runnable: {[node.id for node in runnable]}")
+            # print()
+            # print(f"waiting: {[node.id for node in waiting]}")
+            # print()
+            # print(f"running: {[node[1].id for node in running]}")
+            # print()
+            # print(f"completed: {[node.id for node in completed]}")
+            # time.sleep(0.1)
 
         # if "stderr" in output:
         #     print(output["stderr"], file=sys.stderr)
