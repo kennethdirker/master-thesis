@@ -17,11 +17,11 @@ class BaseCommandLineTool(BaseProcess):
 
     def __init__(
             self,
-            main: bool = False,
+            main: bool = False, #TODO Change default main to True
             # client: Optional[Client] = None,
             runtime_context: Optional[dict] = None,
             loading_context: Optional[dict[str, str]] = None,
-            parent_id: Optional[str] = None,
+            parent_process_id: Optional[str] = None,
             step_id: Optional[str] = None,
             with_dask: bool = False
         ):
@@ -31,9 +31,12 @@ class BaseCommandLineTool(BaseProcess):
             # client = client,
             runtime_context = runtime_context,
             loading_context = loading_context,
-            parent_process_id = parent_id,
+            parent_process_id = parent_process_id,
             step_id = step_id
         )
+
+        # Prepare properties
+        self.base_command: list[str] | str | None = None
 
         # Digest CommandlineTool file
         self.set_metadata()
@@ -44,7 +47,7 @@ class BaseCommandLineTool(BaseProcess):
         
         if main:
             self.register_input_sources()
-            self.execute(with_dask)
+            self.execute(with_dask, verbose=True)
 
 
     def set_metadata(self):
@@ -72,6 +75,7 @@ class BaseCommandLineTool(BaseProcess):
 
     def register_input_sources(self) -> None:
         """
+        TODO Explain why this is needed.
         Link local process input IDs to global input IDs.
         NOTE: Only executed if CommandLineTool is called as main.
         """
@@ -85,9 +89,11 @@ class BaseCommandLineTool(BaseProcess):
     def load_runtime_arg_array(
             self,
             input_id: str,
-            input_type: str
+            input_type: str,
+            cwl_namespace: dict[str, Any]   #TODO Use to evaluate expressions
         ) -> list[str]:
         """
+        TODO Expression evaluation in array items
         TODO desc
         """
         args: list[str] = []
@@ -100,7 +106,8 @@ class BaseCommandLineTool(BaseProcess):
             # This is a problem here, as 'True' and 'true' both convert to the
             # Python bool type with value True.
             raise NotImplementedError()
-        else:
+        else:   
+            # TODO FIXME Evaluate expressions in array items needed?
             global_source_id: str = self.input_to_source[input_id]
             args = [str(item) for item in self.runtime_context[global_source_id]]
         return args
@@ -109,7 +116,8 @@ class BaseCommandLineTool(BaseProcess):
     def compose_array_arg(
             self,
             input_id: str,
-            input_dict: dict[str, Any]
+            input_dict: dict[str, Any],
+            cwl_namespace: dict[str, Any]
         ) -> list[str]:
         """
         Compose a single command-line array argument.
@@ -124,7 +132,7 @@ class BaseCommandLineTool(BaseProcess):
         # Set default properties
         prefix: str = ""
         separate: bool = True
-        itemSeparator: str = None
+        itemSeparator: str | None = None
 
         # Load properties
         input_type = "".join(c for c in input_type if c not in "[]?")   # Filter []? from type string
@@ -137,7 +145,7 @@ class BaseCommandLineTool(BaseProcess):
 
         # Convert array items to strings
         items: list[str] = []
-        items = self.load_runtime_arg_array(input_id, input_type)
+        items = self.load_runtime_arg_array(input_id, input_type, cwl_namespace)
 
         if "null" in input_type:
             return []
@@ -149,14 +157,14 @@ class BaseCommandLineTool(BaseProcess):
             raise NotImplementedError()
         else:
             if itemSeparator:
-                items = itemSeparator.join(items)
+                items_joined = itemSeparator.join(items)
                 if prefix and separate:         # -i= A,B,C
                     array_arg.append(prefix)
-                    array_arg.append(items)
+                    array_arg.append(items_joined)
                 elif prefix and not separate:   # -i=A,B,C
-                    array_arg.append(prefix + items)
+                    array_arg.append(prefix + items_joined)
                 else:                           # A,B,C
-                    array_arg.append(items)
+                    array_arg.append(items_joined)
             else:
                 if prefix and separate:         # -i= A B C
                     array_arg.append(prefix)
@@ -169,18 +177,26 @@ class BaseCommandLineTool(BaseProcess):
         return array_arg
 
         
-    def load_runtime_arg(self, input_id: str) -> str:
+    def load_runtime_arg(
+            self, 
+            input_id: str,
+            cwl_namespace: dict[str, Any]
+        ) -> str:
         """
         TODO
         """
         global_source_id: str = self.input_to_source[input_id]
-        return str(self.runtime_context[global_source_id])
+        value = self.eval(str(self.runtime_context[global_source_id]), cwl_namespace)
+        print("[TOOL] LOAD_RUNTIME_ARG\n\t", f"{input_id}: {value}")
+        return value
+        # return str(self.runtime_context[global_source_id])
 
 
     def compose_arg(
             self,
             input_id: str,
-            input_dict: dict[str, Any]
+            input_dict: dict[str, Any],
+            cwl_namespace: dict[str, Any]
         ) -> list[str]:
         """
         Compose a single command-line argument.
@@ -215,14 +231,17 @@ class BaseCommandLineTool(BaseProcess):
             if separate:
                 if prefix:
                     args.append(prefix)
-                args.append(self.load_runtime_arg(input_id))
+                args.append(self.load_runtime_arg(input_id, cwl_namespace))
             else:
-                args.append(prefix + self.load_runtime_arg(input_id))
+                args.append(prefix + self.load_runtime_arg(input_id, cwl_namespace))
 
         return args
 
 
-    def build_commandline(self) -> list[str]:
+    def build_commandline(
+            self, 
+            cwl_namespace: dict[str, Any]
+        ) -> list[str]:
         """
         Build the command line to be executed.
         """
@@ -245,33 +264,35 @@ class BaseCommandLineTool(BaseProcess):
         for input_id, input_dict  in inputs:
             if "[]" in input_dict["type"]:
                 # Compose array argument
-                cmd.extend(self.compose_array_arg(input_id, input_dict))
+                cmd.extend(self.compose_array_arg(input_id, input_dict, cwl_namespace))
             else:
                 # Compose single argument
-                cmd.extend(self.compose_arg(input_id, input_dict))
+                cmd.extend(self.compose_arg(input_id, input_dict, cwl_namespace))
 
         # Combine the base command with the arguments
         if hasattr(self, "base_command"):
             if isinstance(self.base_command, list):
                 cmd = [*self.base_command] + cmd
-            else:
+            elif isinstance(self.base_command, str):
                 cmd = [self.base_command] + cmd
+            else:
+                raise Exception(f"base_command should be 'str' or 'list[str]',"
+                                f"but found '{type(self.base_command)}'")
         return cmd
 
 
     def run_wrapper(
             self,
             cmd: list[str],
-            outputs: dict[str, Any],
+            outputs: dict[str, Any]
             # process_id: str,
             # stdin: Optional[TextIO] = None,
             # stdout: Optional[TextIO] = None,
             # stderr: Optional[TextIO] = None,
         ) -> dict[str, Any]:
         """
-        Wrapper for subprocess.run().
-        NOTE: Reason for being nested is that dask doesnt play nice with
-        the self object.
+        Wrapper for subprocess.run(). Executes the command line tool and
+        processes the outputs.
 
         Returns:
             A dictionary containing all newly added runtime output state.
@@ -291,13 +312,14 @@ class BaseCommandLineTool(BaseProcess):
         
         # Process tool outputs
         for output_id, output_dict in outputs.items():
+            global_output_id = self.global_id(output_id)
             if "type" not in output_dict:
                 raise Exception("Type missing from output in\n", self.id)
             output_type: str = output_dict["type"]
 
             if "string" in output_type:
                 # Get stdout from subprocess.run and decode to utf-8
-                output[output_id] = completed.stdout.decode()
+                output[global_output_id] = completed.stdout.decode()
                 output["stdout"] = completed.stdout.decode()
             elif "file" in output_type:
                 # Generate an output parameter based on the files produced
@@ -306,10 +328,10 @@ class BaseCommandLineTool(BaseProcess):
                     output_file_paths = glob.glob(output_dict["glob"])
                     if "[]" in output_type:
                         # Output is an array of objects
-                        output[output_id] = output_file_paths
+                        output[global_output_id] = output_file_paths
                     else:
                         # Output is a single object
-                        output[output_id] = output_file_paths[0]
+                        output[global_output_id] = output_file_paths[0]
                 elif "loadContents" in output_dict:
                     raise NotImplementedError()
                 elif "outputEval" in output_dict:
@@ -326,14 +348,20 @@ class BaseCommandLineTool(BaseProcess):
     def execute(
             self, 
             use_dask: bool,
+            # runtime_context: dict[str, Any] = None,
             verbose: Optional[bool] = True
         ) -> dict[str, Any]:
         """
         TODO Desc
         """
+        # Update runtime context
+        # self.runtime_context = runtime_context
+        # print(f"[TOOL]: RUNTIME CONTEXT:\n{self.runtime_context}")
+        cwl_namespace = self.build_namespace()
+        # print("[TOOL] NAMESPACE", *[f"{k}: {v}" for k, v in cwl_namespace.items()], sep="\n\t")
+
         # Build the command line
-        cmd: list[str] = self.build_commandline()
-        namespace = self.build_namespace()
+        cmd: list[str] = self.build_commandline(cwl_namespace)
 
         # TODO Evaluate expressions in inputs?
         #      Or does this already somewhere else?
@@ -342,11 +370,11 @@ class BaseCommandLineTool(BaseProcess):
         # execution, FIXME but I cant remember why.
         for output_id, output_dict in self.outputs.items():
             for property, value in output_dict.items():
-                self.outputs[output_id][property] = self.eval(value, namespace)
+                self.outputs[output_id][property] = self.eval(value, cwl_namespace)
 
 
         # Submit and execute tool and gather output
-        new_state: dict[str, Any] = []
+        new_state: dict[str, Any] = {}
         if use_dask:
             client = Client()
             future = client.submit(
@@ -369,9 +397,15 @@ class BaseCommandLineTool(BaseProcess):
         # Print stderr/stdout
         # FIXME Check if this works
         # TODO IF THIS CODE STAYS IN: "stderr" and "stdout" cannot be used as output ID
+        # NOTE I dont think this is a problem, because output dict keys are prefixed with process ID
         if verbose:
-            if "stderr" in new_state:
-                print(new_state["stderr"], file=sys.stderr)
-            if "stdout" in new_state:
-                print(new_state["stdout"], file=sys.stdout)
+            # if "stderr" in new_state:
+            #     print(new_state["stderr"], file=sys.stderr)
+            # if "stdout" in new_state:
+            #     print(new_state["stdout"], file=sys.stdout)
+
+            to_print = {k: v for k, v in new_state.items() if k not in ["stderr", "stdout"]}
+            print(f"[TOOL]: NEW STATE", *to_print.items(), sep="\n\t")
+
+
         return new_state
