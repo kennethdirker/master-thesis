@@ -55,8 +55,8 @@ class BaseProcess(ABC):
         if main:
             step_id = None
             parent_process_id = None
-        self.parent_process_id: str = parent_process_id
-        self.step_id: str = step_id
+        self.parent_process_id: str | None = parent_process_id
+        self.step_id: str | None = step_id
 
         # Assign metadata attributes. Override in self.set_metadata().
         self.label: str = "" # Human readable process name.
@@ -182,7 +182,7 @@ class BaseProcess(ABC):
         runtime_context = {}
         input_obj = self._load_yaml(yaml_uri)
 
-        print("Inputs loaded into runtime context:")
+        print("[PROCESS]: Inputs loaded into runtime context:")
         for input_id, input_value in input_obj.items():
             # Input from object is indexed by {Process.id}:{input_id}
             input_value = self.resolve_input_value(input_value)
@@ -265,7 +265,6 @@ class BaseProcess(ABC):
         # 
         # 
         # pass
-        return {}
 
 
     # @abstractmethod
@@ -300,45 +299,7 @@ class BaseProcess(ABC):
         pass
 
 
-    @abstractmethod
-    def execute(self):
-        """
-        TODO Better description
-        """
-        # self.task_graph_ref.compute()
-
-    def __call__(self):
-        """
-        TODO
-        """
-        self.execute()
-
-
-    # def runnable(self) -> bool:
-    #     """
-    #     TODO Better description
-    #     Check whether a process is ready to be executed.
-
-    #     Returns:
-    #         True if the process can be run, False otherwise.
-    #         Additionally, a list of missing inputs is returned.
-    #     """
-    #     # TODO: Currently only checks that all keys are matched. Additions: 
-    #     # - Validate type of inputs.
-    #     # - 
-    #     # # NOTE: Extra checks probably not needed for Minimal Viable Product.
-
-    #     green_light = True
-    #     missing_inputs: list[str] = []
-    #     for input_id, input_dict in self.inputs.items():
-    #         if input_id not in self.runtime_context or \
-    #            isinstance(input_dict, Absent):
-    #             green_light = False
-    #             missing_inputs.append(input_id)
-    #     return green_light, missing_inputs
-
-
-    def build_namespace(self):
+    def build_namespace(self) -> dict[str, Any]:
         """
         Build a local namespace that can be used in eval() calls to evaluate
         expressions that access CWL namespaces, like 'inputs'.
@@ -351,11 +312,12 @@ class BaseProcess(ABC):
         #          accessed in the expression as 'inputs.input_fits'.
         inputs = lambda: None       # Create empty object
         for input_id, input_dict in self.inputs.items():
-            source = self.input_to_source[input_id]
-            value = self.runtime_context[source]
+            # print("[NAMESPACE]", self.global_id(input_id))
+            # print("[NAMESPACE]", *self.runtime_context, sep="\n")
+            # source = self.input_to_source[input_id]
+            value = self.runtime_context[self.global_id(input_id)]
 
             if "file" in input_dict["type"]:
-
                 # Create built-in file properties used in CWL expressions
                 if "[]" in input_dict["type"]:
                     # Array of files
@@ -371,57 +333,49 @@ class BaseProcess(ABC):
             
         namespace["inputs"] = inputs
 
-        # TODO Other CWL namespaces, like 'self', 'runtime', 'env'?
-
+        # TODO Other CWL namespaces, like 'self', 'runtime'?
+        print("[PROCESS] NAMESPACE", *namespace["inputs"].__dict__.items(), sep="\n\t")
         return namespace
+
+
+    @abstractmethod
+    def execute(self):
+        """
+        TODO Better description
+        """
+        # self.task_graph_ref.compute()
+
+    def __call__(self):
+        """
+        TODO
+        """
+        self.execute()
 
 
     def eval(
             self, 
             expression: str,
-            local_vars: dict[str, Any]
+            local_vars: dict[str, Any],
+            verbose: bool = False
         ) -> str:
         """
         Evaluate an expression. The expression may access CWL namespace
         variables, like 'inputs'.
         """
+        # TODO FIXME remove
+        verbose = True
 
+        if type(expression) is not str:
+            raise Exception(f"Expected expression to be a string, but found {type(expression)}")
+        
         if not expression.startswith("$") and not expression.endswith("$"):
             # Expression is a plain string and doesn't need evaluating
+            if verbose: print("[EVAL]:\n\t" + expression + " -> " + expression)
             return expression
-
-        return eval(expression[1:-1], local_vars)
-    
-
-    # def eval(self, s: str):
-    #     """
-    #     TODO Desc
-    #     Evaluate
-    #     """
-    #     if s.startswith("$") and s.endswith("$"):
-    #         source = s[1:-1]
-    #         global_input_id = self.input_to_source[source]
-    #         value = self.runtime_context[global_input_id]
-            
-    #         if isinstance(value, Absent):
-    #             raise Exception("Missing paramter ", global_input_id)
-    #         return value
-    #     return s
-
-        #     if "/" in source:
-        #         # From local step 
-        #         raise NotImplementedError()
-        #     else:
-        #         # From local input
-        #         global_input_id = self.input_to_source[self.global_id(source)]
-        #         value = self.runtime_context[global_input_id]
-        #         if isinstance(value, Absent):
-        #             raise Exception("Missing paramter ", global_input_id)
-        #         else:
-        #             return value
-        # else:
-        #     return s
-
+        
+        s = str(eval(expression[1:-1], local_vars))
+        if verbose: print("[EVAL]:\n\t" + expression + " -> " + s)
+        return s
 
 # class NodeStatus(Enum):
 #     WAITING = 0
@@ -442,7 +396,7 @@ class Node:
             children: Optional[list[str]] = None,   #list[child_ids]
             # internal_dependencies and graph are used in graph optimization 
             is_tool_node: bool = False,
-            internal_dependencies: Optional[dict[str, str]] = None,  #{node_id: node_id}
+            internal_dependencies: Optional[dict[str, str | list[str]]] = None,  #{node_id: node_id}
             graph: Optional['Graph'] = None
         ) -> None:
         """
@@ -471,7 +425,7 @@ class Node:
                     internal_dependencies,
                     processes
                 )
-        self.graph: Graph = graph
+        self.graph: Graph | None = graph
 
 
     def __deepcopy__(self, memo) -> 'Node':
@@ -539,7 +493,7 @@ class Node:
         ) -> 'Node':
         # self.merged = True
         # 
-        NotImplementedError()
+        raise NotImplementedError()
 
     
     def is_leaf(self) -> bool:
@@ -780,9 +734,7 @@ class Graph:
             node_ids = [node_ids]
             
         # Create new_node with id = {short_id0}:{short_id1}:...
-        new_id: str = ":".join(
-            [self.short_id[node_id] for node_id in node_ids]
-        )
+        new_id: str = ":".join([str(self.short_id[node_id]) for node_id in node_ids])
         new_node = Node(new_id, [], is_tool_node = False)
         self.add_node(new_node)
 
