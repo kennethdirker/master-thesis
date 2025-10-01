@@ -5,13 +5,13 @@ import sys
 from abc import abstractmethod
 from concurrent.futures import Future
 from copy import deepcopy
-from dask.distributed import Client
+from dask.distributed import Client, Future
 from pathlib import Path
 from typing import Any, Optional, Tuple, Union
 
 from .commandlinetool import BaseCommandLineTool
 from .process import BaseProcess, Graph, Node
-from .utils import Absent
+from .utils import Absent, FileObject
 
 class BaseWorkflow(BaseProcess):
     def __init__(
@@ -43,7 +43,7 @@ class BaseWorkflow(BaseProcess):
         self.step_id_to_process: dict[str, BaseProcess] = {}
 
         # Must be overridden in set_steps().
-        self.steps: dict[str, dict[str, str]] = {}
+        self.steps: dict[str, dict[str, Any]] = {}
 
         # Digest workflow file
         self.set_metadata()
@@ -61,7 +61,7 @@ class BaseWorkflow(BaseProcess):
             self.register_input_sources()
             # self.bind_default_inputs()
             # self.create_task_graph()
-            self.execute()
+            self.execute(self.runtime_context)
 
 
     @abstractmethod
@@ -103,6 +103,7 @@ class BaseWorkflow(BaseProcess):
 
     def _process_steps(self) -> None:
         """
+        TODO Are the runtime_context keys correct?
         TODO Desc
         """
         for step_id, step_dict in self.steps.items():
@@ -144,7 +145,7 @@ class BaseWorkflow(BaseProcess):
         graph: Graph = self.loading_context["graph"]
 
         # Recursively load all processes from steps
-        print("Loading process files:")
+        print("[WORKFLOW]: Loading process files:")
         for step_id, step_dict in self.steps.items():
             step_process = self._load_process_from_uri(step_dict["run"], step_id)
             processes[step_process.id] = step_process
@@ -272,7 +273,10 @@ class BaseWorkflow(BaseProcess):
                 # standard recursion limit and workflows can be huge. The
                 # recursion limit can be increased, but the user shouldn't be
                 # bothered, so iterative it is.
+                if process.step_id is None:
+                    raise ValueError("process.step_id cannot be None")
                 _step_id: str = process.step_id
+                
                 _process: BaseWorkflow = processes[process.parent_process_id]
                 source = input_id
 
@@ -296,6 +300,8 @@ class BaseWorkflow(BaseProcess):
                             break
 
                         # Move to the parent process
+                        if _process.step_id is None:
+                            raise ValueError("_process.step_id cannot be None")
                         _step_id = _process.step_id
                         _process = processes[_process.parent_process_id]
 
@@ -321,10 +327,62 @@ class BaseWorkflow(BaseProcess):
     #                     source = self.input_to_source[subprocess.global_id(input_id)]
     #                     self.runtime_context[source] = input_dict["default"]
 
+
+    def build_namespace(self) -> dict[str, Any]:
+        """
+        Build a local namespace that can be used in eval() calls to evaluate
+        expressions that access CWL namespaces, like 'inputs'. Apart from 
+        workflow inputs, step inputs are also added to the namespace.
+        """
+        # Add workflow inputs to namespace
+        # BUG FIXME workflow doesnt have input_to_source
+        namespace: dict[str, Any] = super().build_namespace()
+        print("[WORKFLOW]: RUNTIME_CONTEXT", *[f"{k} :::: {v}" for k, v in self.runtime_context.items()], sep="\n\t")
+
+        # Add step inputs to namespace
+        for step_id, step_dict in self.steps.items():
+            step_inputs = lambda: None  # Create empty object
+
+            for input_id, step_input_dict in step_dict["in"].items():
+
+                # source = self.input_to_source[input_id]
+                step_process: BaseProcess = self.step_id_to_process[step_id]
+                source: str = step_process.input_to_source[input_id]
+                print(f"SOURCE for {step_id}/{input_id}: {source}")
+                value = self.runtime_context[source] # May be Absent()
+                if isinstance(value, Absent):
+                    # Input not yet available, skip for now
+                    break
+
+                # Determine input type and create appropriate object in namespace
+                input_dict = step_process.inputs[input_id]
+                if "file" in input_dict["type"]:
+                    # Create built-in file properties used in CWL expressions
+                    if "[]" in input_dict["type"]:
+                        # Array of files
+                        file_objects = [FileObject(p) for p in value]
+                        setattr(step_inputs, input_id, file_objects)
+                    else:
+                        # Single file
+                        setattr(step_inputs, input_id, FileObject(value))
+                elif "string" in input_dict["type"]:
+                    setattr(step_inputs, input_id, value)
+                else:
+                    raise NotImplementedError(f"Input type {input_dict['type']} not supported")
+            setattr(namespace["inputs"], step_id, step_inputs)
+        # print("[WORKFLOW]: NAMESPACE", *namespace["inputs"].__dict__.items(), sep="\n\t")
+        print("[WORKFLOW]: NAMESPACE")
+        for k, v in namespace["inputs"].__dict__.items():
+            print("\t", k)
+            print(*[f"\t\t{i}: {j}" for i, j in v.__dict__.items()], sep="\n")
+        return namespace
+    
+ 
     def execute_workflow_node(
             self,
             workflow_node: Node,
             runtime_context: dict[str, Any],
+            cwl_namespace: dict[str, Any],
             verbose: Optional[bool] = True
         ) -> dict[str, Any]:
             """
@@ -336,6 +394,8 @@ class BaseWorkflow(BaseProcess):
             internal dependency graph.
             """
             graph = workflow_node.graph
+            if graph is None:
+                raise Exception("Node has no graph")
 
             tool_queue: list[Node] = graph.get_nodes(graph.roots)
             finished: list[Node] = []
@@ -362,9 +422,13 @@ class BaseWorkflow(BaseProcess):
                 # This means that outputs have to be registered in the main 
                 # runtime_context.
                 # Nodes at this level contain a single BaseCommandLineTool.
-                tool: BaseCommandLineTool = tool_node.processes[0]
+                process = tool_node.processes[0]
+                if not isinstance(process, BaseCommandLineTool):
+                    raise TypeError(f"Process {process} is not a BaseCommandLineTool")
+                tool: BaseCommandLineTool = process
                 print(f"[NODE]: Executing tool {tool.id}")
                 result = tool.execute(False, verbose)  # BUG tool.runtime_context not updated with parent runtime context
+                runtime_context.update(result)
                 new_runtime_context.update(result)
                 finished.append(tool_node)
             
@@ -373,6 +437,7 @@ class BaseWorkflow(BaseProcess):
 
     def execute(
             self, 
+            runtime_context: dict[str, Any],
             verbose: Optional[bool] = True
         ) -> dict[str, Any]:
         """
@@ -381,7 +446,11 @@ class BaseWorkflow(BaseProcess):
         # TODO turn on verbose boolean
         verbose = False
 
+        # Update runtime context and build namespace
+        self.runtime_context = runtime_context
+        cwl_namespace = self.build_namespace()
 
+        # Initialize queues
         graph: Graph = self.loading_context["graph"]
         nodes = graph.nodes
         runnable_nodes: list[Node] = deepcopy(graph.get_nodes(graph.roots))
@@ -392,15 +461,15 @@ class BaseWorkflow(BaseProcess):
         output: dict[str, Any] = {}
 
         def lprint():
-            s = "\n"
-            print()
-            print(f"waiting:\n{s.join([node_id for node_id in waiting.keys()])}")
-            print()
-            print(f"runnable:\n{s.join([node_id for node_id in runnable.keys()])}")
-            print()
-            print(f"running:\n{s.join([node_id for node_id in running.keys()])}")
-            print()
-            print(f"completed:\n{s.join([node_id for node_id in completed.keys()])}")
+            s = ", "
+            print("[WORKFLOW]: QUEUES")
+            print(f"\twaiting: [{s.join([str(graph.short_id[node_id]) for node_id in waiting.keys()])}]")
+            # print()
+            print(f"\trunnable: [{s.join([str(graph.short_id[node_id]) for node_id in runnable.keys()])}]")
+            # print()
+            print(f"\trunning: [{s.join([str(graph.short_id[node_id]) for node_id in running.keys()])}]")
+            # print()
+            print(f"\tcompleted: [{s.join([str(graph.short_id[node_id]) for node_id in completed.keys()])}]")
             print()
 
         graph.print()
@@ -412,7 +481,7 @@ class BaseWorkflow(BaseProcess):
         # task. The polling loop checks for finished nodes and submits newly
         # executable nodes. Invalid workflows, faulty tools or bad input might
         # result in deadlocks, in which case an exception is raised.
-        print("[WORKFLOW]Executing workflow")
+        print("[WORKFLOW]: Executing workflow")
         while len(runnable) != 0 or len(running) != 0:
             # Check for deadlock
             if len(runnable) == 0 and len(running) == 0 and len(waiting) != 0:
@@ -422,11 +491,12 @@ class BaseWorkflow(BaseProcess):
             # Execute runnable nodes
             for node_id, node in runnable.copy().items():
                 client = Client()
-                print("[WORKFLOW]: Submitting node ", node_id)
+                print("[WORKFLOW]: Submitting node", graph.short_id[node_id])
                 future = client.submit(
                     self.execute_workflow_node, 
                     node, 
                     self.runtime_context.copy(),
+                    cwl_namespace,
                     verbose
                 )
                 running[node_id] = (future, node)
@@ -439,6 +509,7 @@ class BaseWorkflow(BaseProcess):
                 if running_node[0].done():
                     # Add new runtime state from finished node
                     result = running_node[0].result()
+                    print("[WORKFLOW]: RESULTs:\n", *[f"\t{k}: {v}" for k, v in result.items()], sep="\n")
                     output.update(result)
                     self.runtime_context.update(result)
 
@@ -455,19 +526,19 @@ class BaseWorkflow(BaseProcess):
                         if child_id not in waiting:
                             continue
 
-                        print("[CHILD]: ", child_id)
+                        # print("[CHILD]: ", child_id)
 
                         ready = True
                         for childs_parent_id in nodes[child_id].parents:
-                            print(f"[PARENT]: {childs_parent_id}")      # Signals BUG with duplicate parent entries
+                            # print(f"[PARENT]: {childs_parent_id}")      # Signals BUG with duplicate parent entries
                             if childs_parent_id not in completed:
-                                print("[PARENT]: not completed")
+                                print("[WORKFLOW] Parent", {graph.short_id[childs_parent_id]} , "not completed")
                                 ready = False
                                 break
                         if ready:
                             # All parents have finished: Queue up the child
                             runnable[child_id] = waiting.pop(child_id)
-                    print("[WORKFLOW]: Completed node ", running_node[1].id)
+                    print("[WORKFLOW]: Completed node", graph.short_id[running_node[1].id])
                     lprint()
             # time.sleep(0.1)
 
@@ -527,7 +598,7 @@ class BaseWorkflow(BaseProcess):
                 # client = self.client,
                 runtime_context = self.runtime_context,
                 loading_context = self.loading_context,
-                parent_id = self.id,
+                parent_process_id = self.id,
                 step_id = step_id
             )
         raise Exception(f"{uri} does not contain a BaseProcess subclass")
