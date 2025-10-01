@@ -1,2 +1,2 @@
-# url_list: /home/kennethdirker/Leiden/2024-2025/Thesis/transpile/PWF/PWF/example/simple_workflow/links
-url_list: ../links
+input: image_mf_02.fits
+output_file_name: no_noise_image.fits

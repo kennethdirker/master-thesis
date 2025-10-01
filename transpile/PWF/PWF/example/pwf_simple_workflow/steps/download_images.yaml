@@ -1,3 +1,4 @@
 # Both relative and absolute paths work now, I guess
 # url_list: /home/kennethdirker/Leiden/2024-2025/Thesis/transpile/PWF/PWF/example/pwf_simple_workflow/links
-url_list: ../links
+url_list: ../1_link
+# url_list: ../links

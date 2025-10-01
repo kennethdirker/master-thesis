@@ -1,0 +1,23 @@
+DATA=image_mf_02.fits
+OUT=out.png
+NOISE=no_noise_image.fits
+NOISEOUT=no_noise_out.png
+
+# if test -f $DATA; then
+    # rm $DATA
+# fi
+if test -f $OUT; then
+    rm $OUT
+fi
+if test -f $NOISE; then
+    rm $NOISE
+fi
+if test -f $NOISEOUT; then
+    rm $NOISEOUT
+fi
+
+# Execute the tools simulating the workflow in the workflow directory
+# python download_images.py download_images.yaml
+python imageplotter.py imageplotter.yaml
+python noiseremover.py noiseremover.yaml
+python imageplotter.py imageplotter_after.yaml
