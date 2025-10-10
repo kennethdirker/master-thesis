@@ -284,6 +284,7 @@ class BaseCommandLineTool(BaseProcess):
     def run_wrapper(
             self,
             cmd: list[str],
+            cwl_namespace,
             outputs: dict[str, Any]
             # process_id: str,
             # stdin: Optional[TextIO] = None,
@@ -325,7 +326,16 @@ class BaseCommandLineTool(BaseProcess):
                 # Generate an output parameter based on the files produced
                 # by a CommandLineTool.
                 if "glob" in output_dict:
-                    output_file_paths = glob.glob(output_dict["glob"])
+                    glob_string: str = self.eval(output_dict["glob"], cwl_namespace)
+                    output_file_paths = glob.glob(glob_string)
+
+                    if len(output_file_paths) == 0:
+                        raise Exception(f"Output glob {glob_string} (from '{output_dict['glob']}') did not match any files")
+
+                    # output_file_paths = glob.glob(output_dict["glob"])
+                    print("[TOOL] GLOB: ", output_dict["glob"])
+                    print("[TOOL] GLOB STRING: ", glob_string)
+                    print("[TOOL] GLOB OUTPUT FILE PATHS:", output_file_paths)
                     if "[]" in output_type:
                         # Output is an array of objects
                         output[global_output_id] = output_file_paths
@@ -348,19 +358,21 @@ class BaseCommandLineTool(BaseProcess):
     def execute(
             self, 
             use_dask: bool,
-            # runtime_context: dict[str, Any] = None,
+            runtime_context: Optional[dict[str, Any]] = None,
             verbose: Optional[bool] = True
         ) -> dict[str, Any]:
         """
         TODO Desc
         """
         # Update runtime context
-        # self.runtime_context = runtime_context
+        if runtime_context is not None:
+            self.runtime_context = runtime_context
         # print(f"[TOOL]: RUNTIME CONTEXT:\n{self.runtime_context}")
-        cwl_namespace = self.build_namespace()
+        # cwl_namespace = self.build_namespace()
         # print("[TOOL] NAMESPACE", *[f"{k}: {v}" for k, v in cwl_namespace.items()], sep="\n\t")
 
         # Build the command line
+        cwl_namespace = self.build_namespace()
         cmd: list[str] = self.build_commandline(cwl_namespace)
 
         # TODO Evaluate expressions in inputs?
@@ -380,6 +392,7 @@ class BaseCommandLineTool(BaseProcess):
             future = client.submit(
                 self.run_wrapper,
                 cmd,
+                cwl_namespace,
                 self.outputs,
                 # self.id,
                 pure = False
@@ -388,6 +401,7 @@ class BaseCommandLineTool(BaseProcess):
         else:
             new_state = self.run_wrapper(
                 cmd,
+                cwl_namespace,
                 self.outputs,
                 # self.id,
             )
@@ -406,6 +420,7 @@ class BaseCommandLineTool(BaseProcess):
 
             to_print = {k: v for k, v in new_state.items() if k not in ["stderr", "stdout"]}
             print(f"[TOOL]: NEW STATE", *to_print.items(), sep="\n\t")
+            print()
 
 
         return new_state
