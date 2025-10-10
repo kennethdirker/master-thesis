@@ -8,8 +8,12 @@ class Absent:
     Used to indictate the absence of a runtime input. Useful when None is a
     valid value for an argument.
     """
+
+    def __init__(self, string: str = "None") -> None:
+        self.string = string
+
     def __repr__(self) -> str:
-        return "Absent(None)"
+        return f'Absent("{self.string}")'
 
 
 # def get_or_default(d: dict, default_value: Any) -> Any:
@@ -23,7 +27,7 @@ class FileObject:
     """
     Object that stores path properties as strings.
     Available properties: 
-        path     : path/to/file.ext,
+        path     : absolute/path/to/file.ext,
         basename : file.ext,
         dirname  : path/to,
         nameroot : file,
