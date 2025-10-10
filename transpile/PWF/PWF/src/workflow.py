@@ -13,6 +13,11 @@ from .commandlinetool import BaseCommandLineTool
 from .process import BaseProcess, Graph, Node
 from .utils import Absent, FileObject
 
+"""
+NOTE TO SELF: WHERE WE LEFT OFF
+
+"""
+
 class BaseWorkflow(BaseProcess):
     def __init__(
             self,
@@ -52,16 +57,18 @@ class BaseWorkflow(BaseProcess):
         self.set_outputs()
         self.set_requirements()
         self.set_steps()
-        self._process_steps()
+        # self._process_steps()
 
         # Only the main process executes the workflow.
         if main:
             self.create_dependency_graph()
+            self._process_steps()       # BUG Now only handles the main workflow file
             self.optimize_dependency_graph()
             self.register_input_sources()
             # self.bind_default_inputs()
             # self.create_task_graph()
-            self.execute(self.runtime_context)
+            self.execute()
+            # self.execute(self.runtime_context)
 
 
     @abstractmethod
@@ -99,30 +106,6 @@ class BaseWorkflow(BaseProcess):
         #     }
         # }
         pass
-
-
-    def _process_steps(self) -> None:
-        """
-        TODO Are the runtime_context keys correct?
-        TODO Desc
-        """
-        for step_id, step_dict in self.steps.items():
-            # for input_id, input_dict in step_dict["in"].items():
-            #     if "default" in input_dict:
-            #         subprocess_id: str = self.step_id_to_process[step_id]
-            #         subprocess: BaseProcess = self.loading_context["processes"][subprocess_id]
-            #         self.runtime_context[subprocess.global_id(input_id)] = input_dict["default"]
-
-            # Register step outputs as global sources
-            if isinstance(step_dict["out"], list):
-                for out_id in step_dict["out"]:
-                    self.runtime_context[self.global_id(step_id + "/" + out_id)] = Absent()
-            elif isinstance(step_dict["out"], str):
-                self.runtime_context[self.global_id(step_id + "/" + step_dict["out"])] = Absent()
-            else:
-                raise NotImplementedError("Encountered unsupported type", type(step_dict["out"]))
-    
-
 
 
     def set_groups(self) -> None:
@@ -165,6 +148,43 @@ class BaseWorkflow(BaseProcess):
                     parents = get_process_parents(tool),
                     # children = 
                 )
+
+
+
+    def _process_steps(self) -> None:
+        """
+        BUG FIXME Now only handles the main workflow file, should handle all
+                TODO Desc
+        """
+        for process in self.loading_context["processes"].values():
+            if not issubclass(type(process), BaseWorkflow):
+                continue
+
+            for step_id, step_dict in self.steps.items():
+                # for input_id, input_dict in step_dict["in"].items():
+                #     if "default" in input_dict:
+                #         subprocess_id: str = self.step_id_to_process[step_id]
+                #         subprocess: BaseProcess = self.loading_context["processes"][subprocess_id]
+                #         self.runtime_context[subprocess.global_id(input_id)] = input_dict["default"]
+                step_proc: BaseProcess = self.step_id_to_process[step_id]
+                
+                # Register step inputs with expressions as global sources
+                for input_id, input_dict in step_dict["in"].items():
+                    if "valueFrom" in input_dict:
+                        # tool = self.step_id_to_process[step_id]
+                        self.runtime_context[process.global_id(input_id)] = input_dict["valueFrom"]
+
+                # Register step outputs as global sources
+                if isinstance(step_dict["out"], list):
+                    for out_id in step_dict["out"]:
+                        self.runtime_context[step_proc.global_id(out_id)] = Absent()
+                        # self.runtime_context[step_proc.global_id(step_id + "/" + out_id)] = Absent()
+                elif isinstance(step_dict["out"], str):
+                    self.runtime_context[step_proc.global_id(step_dict["out"])] = Absent()
+                    # self.runtime_context[step_proc.global_id(step_id + "/" + step_dict["out"])] = Absent()
+                else:
+                    raise NotImplementedError("Encountered unsupported type", type(step_dict["out"]))
+    
 
 
     def optimize_dependency_graph(self) -> None:
@@ -233,7 +253,14 @@ class BaseWorkflow(BaseProcess):
 
     def register_input_sources(self) -> None:
         """
-        TODO Desc
+        Register the global source of each tool input in the workflow. The
+        source is stored in the tool's input_to_source dictionary. The source
+        is a key in the runtime_context dictionary that contains the actual
+        value of the input. 
+        
+        TODO is this right? -> If the input has no dynamic source, the source is
+        set to the global ID of the input in the parent process, which may be
+        the input object of the main process.
         NOTE: Only called from the main process.
 
         """
@@ -245,11 +272,23 @@ class BaseWorkflow(BaseProcess):
                 step_id: str,
                 in_id: str
             ) -> Tuple[bool, str]:
+            """
+            Returns:
+                (use_default, source)
+                use_default: bool
+                    True if the input has no dynamic source and the default value
+                    should be used.
+                source: str
+                    The source of the input. If use_default is True, this is the
+                    default value of the input. If use_default is False, this is
+                    the source of the input.
+            """
             step_in_dict = process.steps[step_id]["in"][in_id]
             if "source" in step_in_dict:
                 return False, step_in_dict["source"]
             elif "valueFrom" in step_in_dict:
-                return False, step_in_dict["valueFrom"]
+                return True, step_in_dict["valueFrom"]
+                # return False, step_in_dict["valueFrom"]
             elif "default" in step_in_dict:
                 return True, step_in_dict["default"]
             raise NotImplementedError()
@@ -289,8 +328,12 @@ class BaseWorkflow(BaseProcess):
                         break
                     
                     if "/" in source:   # {global_process_id}:{step_id}/{output_id}
+                        # TODO FIXME BUG should be {step_global_process_id}:{output_id}?
                         # A step output is the input source
-                        process.input_to_source[input_id] = _process.global_id(source)
+                        # process.input_to_source[input_id] = _process.global_id(source)
+                        step_id, output_id = source.split("/")
+                        output_process = self.step_id_to_process[step_id]
+                        process.input_to_source[input_id] = output_process.global_id(output_id)
                         break
                     else:               # {global_process_id}:{input_id}
                         # The input of the parent process is the input source
@@ -328,61 +371,99 @@ class BaseWorkflow(BaseProcess):
     #                     self.runtime_context[source] = input_dict["default"]
 
 
-    def build_namespace(self) -> dict[str, Any]:
+    def build_step_namespace(
+            self, 
+            # process: 'BaseWorkflow',
+            tool:  BaseCommandLineTool,
+            runtime_context: dict[str, Any],
+            # step_id: str,
+            # tool_input_id: str,
+        ) -> dict[str, Any]:
         """
-        Build a local namespace that can be used in eval() calls to evaluate
-        expressions that access CWL namespaces, like 'inputs'. Apart from 
-        workflow inputs, step inputs are also added to the namespace.
         """
         # Add workflow inputs to namespace
-        # BUG FIXME workflow doesnt have input_to_source
-        namespace: dict[str, Any] = super().build_namespace()
-        print("[WORKFLOW]: RUNTIME_CONTEXT", *[f"{k} :::: {v}" for k, v in self.runtime_context.items()], sep="\n\t")
+        print("[WORKFLOW]: LOCAL RUNTIME_CONTEXT", *[f"{k} :::: {v}" for k, v in runtime_context.items() if "stderr" not in k],  sep="\n\t")
+        print()
+        print("[WORKFLOW]: TOOL INPUT TO SOURCE", *[f"{k} :::: {v}" for k, v in tool.input_to_source.items()], sep="\n\t")
+        print()
+        # TODO BEGIN Gather process inputs
+        # namespace = process.build_namespace()
+        namespace = {}
+        inputs = lambda: None   # Create empty object
+        namespace["inputs"] = inputs
+        # TODO END
+
+        inputs: object = namespace["inputs"]
 
         # Add step inputs to namespace
-        for step_id, step_dict in self.steps.items():
-            step_inputs = lambda: None  # Create empty object
+        # for input_id, input_step_dict in self.steps[tool.step_id]["in"].items():
+        for input_id in self.steps[tool.step_id]["in"]:
+            # source = self.input_to_source[input_id]
+            # value = self.runtime_context[self.global_id(input_id)]
+            # value = self.runtime_context[source]
+            source = tool.input_to_source[input_id]
+            value = runtime_context[source]
 
-            for input_id, step_input_dict in step_dict["in"].items():
-
-                # source = self.input_to_source[input_id]
-                step_process: BaseProcess = self.step_id_to_process[step_id]
-                source: str = step_process.input_to_source[input_id]
-                print(f"SOURCE for {step_id}/{input_id}: {source}")
-                value = self.runtime_context[source] # May be Absent()
-                if isinstance(value, Absent):
-                    # Input not yet available, skip for now
-                    break
-
-                # Determine input type and create appropriate object in namespace
-                input_dict = step_process.inputs[input_id]
-                if "file" in input_dict["type"]:
-                    # Create built-in file properties used in CWL expressions
-                    if "[]" in input_dict["type"]:
-                        # Array of files
-                        file_objects = [FileObject(p) for p in value]
-                        setattr(step_inputs, input_id, file_objects)
-                    else:
-                        # Single file
-                        setattr(step_inputs, input_id, FileObject(value))
-                elif "string" in input_dict["type"]:
-                    setattr(step_inputs, input_id, value)
+            input_dict = tool.inputs[input_id]
+            if "file" in input_dict["type"]:
+                # Create built-in file properties used in CWL expressions
+                if "[]" in input_dict["type"]:
+                    # Array of files
+                    file_objects = [FileObject(p) for p in value]
+                    setattr(inputs, input_id, file_objects)
                 else:
-                    raise NotImplementedError(f"Input type {input_dict['type']} not supported")
-            setattr(namespace["inputs"], step_id, step_inputs)
-        # print("[WORKFLOW]: NAMESPACE", *namespace["inputs"].__dict__.items(), sep="\n\t")
-        print("[WORKFLOW]: NAMESPACE")
-        for k, v in namespace["inputs"].__dict__.items():
-            print("\t", k)
-            print(*[f"\t\t{i}: {j}" for i, j in v.__dict__.items()], sep="\n")
+                    # Single file
+                    setattr(inputs, input_id, FileObject(value[0]))
+            elif "string" in input_dict["type"]:
+                setattr(inputs, input_id, value)
+            else:
+                raise NotImplementedError(f"Input type {input_dict['type']} not supported")
+        namespace["inputs"] = inputs
+
         return namespace
     
+    def update_sources(
+            self,
+            tool: BaseCommandLineTool, 
+            runtime_context: dict[str, Any]
+        ) -> None:
+        """
+        Update the sources of the tool's inputs by evaluating any valueFrom
+        expressions. The evaluated value is stored in the runtime_context
+        dictionary with the source as key.
+        """
+        if tool.parent_process_id is None or tool.step_id is None:
+            raise ValueError("Tool must have parent_process_id and step_id defined")
+        # parent_process: BaseWorkflow = self.loading_context["processes"][tool.parent_process_id]
+        
+        for input_id in tool.inputs:
+            source = tool.input_to_source[input_id]
+            source_split = source.split(":")
+            source_tail = source_split[-1]          # Get input ID or expression
+
+            if source_tail.startswith("$") and source.endswith("$"):
+                # Input is a valueFrom expression
+                process_id = ":".join(source_split[0:2]) # Get parent workflow ID
+                process: BaseWorkflow = self.loading_context["processes"][process_id]
+                
+                # Build CWL namespace for expression evaluation.
+                cwl_namespace = process.build_step_namespace(tool, runtime_context)
+                # cwl_namespace = process.build_step_namespace(process, tool.step_id, input_id, tool)
+                # cwl_namespace.update(self.build_step_namespace(process_id))
+
+
+                expression = source_tail[1:-1]  # Remove $ symbols
+                value = self.eval(expression, cwl_namespace)
+                # self.input_to_source[input_id] = source
+                runtime_context[source] = value
+
+
  
     def execute_workflow_node(
             self,
             workflow_node: Node,
             runtime_context: dict[str, Any],
-            cwl_namespace: dict[str, Any],
+            # cwl_namespace: dict[str, Any],
             verbose: Optional[bool] = True
         ) -> dict[str, Any]:
             """
@@ -427,7 +508,10 @@ class BaseWorkflow(BaseProcess):
                     raise TypeError(f"Process {process} is not a BaseCommandLineTool")
                 tool: BaseCommandLineTool = process
                 print(f"[NODE]: Executing tool {tool.id}")
-                result = tool.execute(False, verbose)  # BUG tool.runtime_context not updated with parent runtime context
+                # cwl_namespace = self.build_namespace()
+                self.update_sources(tool, runtime_context)
+                result = tool.execute(False, runtime_context, verbose)  # BUG tool.runtime_context not updated with parent runtime context
+                # result = tool.execute(False, cwl_namespace, verbose)  # BUG tool.runtime_context not updated with parent runtime context
                 runtime_context.update(result)
                 new_runtime_context.update(result)
                 finished.append(tool_node)
@@ -437,18 +521,24 @@ class BaseWorkflow(BaseProcess):
 
     def execute(
             self, 
-            runtime_context: dict[str, Any],
+            # runtime_context: dict[str, Any],
             verbose: Optional[bool] = True
         ) -> dict[str, Any]:
         """
-        TODO
+        Execute the workflow as the main process. The workflow is executed by
+        submitting each node of the workflow dependency graph to the Dask
+        scheduler as an asynchronous task. The workflow is executed in a polling
+        loop that checks for finished nodes and submits newly executable nodes.
+        The function returns when all nodes have been executed.
+        NOTE: This function should only be called from the main process.
+        Returns:
+            Dictionary of (output ID, output value) key-value pairs.
         """
-        # TODO turn on verbose boolean
+        # TODO FIXME REMOVE
         verbose = False
 
         # Update runtime context and build namespace
-        self.runtime_context = runtime_context
-        cwl_namespace = self.build_namespace()
+        # self.runtime_context = runtime_context
 
         # Initialize queues
         graph: Graph = self.loading_context["graph"]
@@ -491,12 +581,13 @@ class BaseWorkflow(BaseProcess):
             # Execute runnable nodes
             for node_id, node in runnable.copy().items():
                 client = Client()
+                # cwl_namespace = self.build_namespace()
                 print("[WORKFLOW]: Submitting node", graph.short_id[node_id])
                 future = client.submit(
                     self.execute_workflow_node, 
                     node, 
                     self.runtime_context.copy(),
-                    cwl_namespace,
+                    # cwl_namespace,
                     verbose
                 )
                 running[node_id] = (future, node)
@@ -509,7 +600,8 @@ class BaseWorkflow(BaseProcess):
                 if running_node[0].done():
                     # Add new runtime state from finished node
                     result = running_node[0].result()
-                    print("[WORKFLOW]: RESULTs:\n", *[f"\t{k}: {v}" for k, v in result.items()], sep="\n")
+                    print("[WORKFLOW]: RESULTs:\n", *[f"\t{k}: {v}" for k, v in result.items() if k not in ["stderr", "stdout"]], sep="\n")
+                    print()
                     output.update(result)
                     self.runtime_context.update(result)
 
