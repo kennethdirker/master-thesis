@@ -15,6 +15,8 @@ from .utils import Absent, FileObject
 
 """
 NOTE TO SELF: WHERE WE LEFT OFF
+Default values in workflow steps are not processed correctly.
+I think they might be overwritten by valueFrom expressions.
 
 """
 
@@ -168,8 +170,10 @@ class BaseWorkflow(BaseProcess):
                 #         self.runtime_context[subprocess.global_id(input_id)] = input_dict["default"]
                 step_proc: BaseProcess = self.step_id_to_process[step_id]
                 
-                # Register step inputs with expressions as global sources
+                # Register step inputs with expressions and default values as global sources
                 for input_id, input_dict in step_dict["in"].items():
+                    if "default" in input_dict:
+                        self.runtime_context[step_proc.global_id(input_id)] = input_dict["default"]
                     if "valueFrom" in input_dict:
                         # tool = self.step_id_to_process[step_id]
                         self.runtime_context[process.global_id(input_id)] = input_dict["valueFrom"]
@@ -583,6 +587,8 @@ class BaseWorkflow(BaseProcess):
                 client = Client()
                 # cwl_namespace = self.build_namespace()
                 print("[WORKFLOW]: Submitting node", graph.short_id[node_id])
+                print("[WORKFLOW]: With context:", *[f"\t{k}: {v}" for k, v in self.runtime_context.items() if k not in ["stderr", "stdout"]], sep="\n")
+                print()
                 future = client.submit(
                     self.execute_workflow_node, 
                     node, 
