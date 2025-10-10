@@ -362,13 +362,14 @@ class BaseProcess(ABC):
             expression: str,
             local_vars: dict[str, Any],
             verbose: bool = False
-        ) -> str:
+        ) -> Any:
         """
         Evaluate an expression. The expression may access CWL namespace
         variables, like 'inputs'.
         """
-        # TODO FIXME remove
+        # TODO FIXME REMOVE
         verbose = True
+        # 
 
         if type(expression) is not str:
             raise Exception(f"Expected expression to be a string, but found {type(expression)}")
@@ -377,9 +378,13 @@ class BaseProcess(ABC):
             # Expression is a plain string and doesn't need evaluating
             if verbose: print("[EVAL]:\n\t" + expression + " -> " + expression)
             return expression
-        
-        s = str(eval(expression[1:-1], local_vars))
-        if verbose: print("[EVAL]:\n\t" + expression + " -> " + s)
+
+        # Evaluate expression. Evaluating can return any type        
+        s = eval(expression[1:-1], local_vars)
+        # s = str(eval(expression[1:-1], local_vars))
+
+        # if verbose: print("[EVAL]:\n\t" + expression + " -> " + s)
+        if verbose: print(f"[EVAL]:\n\t{expression} ({type(expression)}) -> {s} ({type(s)})")
         return s
 
 # class NodeStatus(Enum):
