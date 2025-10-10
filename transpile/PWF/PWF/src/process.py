@@ -47,7 +47,7 @@ class BaseProcess(ABC):
         #   "{path/to/process/script/file}:{uuid}"  
         # FIXME: IDs could be made of {uuid} only, but the path adds debugging clarity.
         self.short_id: str = str(uuid.uuid4())
-        self.process_path: str = inspect.getfile(type(self))
+        self.process_path: str = str(Path(inspect.getfile(type(self))).resolve())
         self.id = self.process_path + ":" + self.short_id
 
         # ID of the step and process from which this process is called.
@@ -63,7 +63,7 @@ class BaseProcess(ABC):
         self.doc:   str = "" # Human readable process explaination.
         
         # Assign input/output dictionary attributes.
-        # FIXME: dicts could use classes like CWLTool does, instead of dicts.
+        # FIXME: dicts could use custom types like CWLTool does, instead of dicts.
         self.inputs:  dict = {} # Override in set_inputs()
         self.outputs: dict = {} # Override in set_outputs()
 
@@ -311,11 +311,16 @@ class BaseProcess(ABC):
         # Example: If the process has an input 'input_fits', it can be
         #          accessed in the expression as 'inputs.input_fits'.
         inputs = lambda: None       # Create empty object
+        # print("[WORKFLOW]: RUNTIME_CONTEXT", *[f"{k} :::: {v}" for k, v in self.runtime_context.items() if "stderr" not in k], sep="\n\t")
+        # print()
+        # print("[WORKFLOW]: INPUT_TO_SOURCE", *[f"{k} :::: {v}" for k, v in self.input_to_source.items()], sep="\n\t")
+        # print()
         for input_id, input_dict in self.inputs.items():
             # print("[NAMESPACE]", self.global_id(input_id))
             # print("[NAMESPACE]", *self.runtime_context, sep="\n")
-            # source = self.input_to_source[input_id]
-            value = self.runtime_context[self.global_id(input_id)]
+            source = self.input_to_source[input_id]
+            # value = self.runtime_context[self.global_id(input_id)]
+            value = self.runtime_context[source]
 
             if "file" in input_dict["type"]:
                 # Create built-in file properties used in CWL expressions
@@ -325,7 +330,7 @@ class BaseProcess(ABC):
                     setattr(inputs, input_id, file_objects)
                 else:
                     # Single file
-                    setattr(inputs, input_id, FileObject(value))
+                    setattr(inputs, input_id, FileObject(value[0]))
             elif "string" in input_dict["type"]:
                 setattr(inputs, input_id, value)
             else:
@@ -334,7 +339,7 @@ class BaseProcess(ABC):
         namespace["inputs"] = inputs
 
         # TODO Other CWL namespaces, like 'self', 'runtime'?
-        print("[PROCESS] NAMESPACE", *namespace["inputs"].__dict__.items(), sep="\n\t")
+        # print("[PROCESS] NAMESPACE", *namespace["inputs"].__dict__.items(), sep="\n\t")
         return namespace
 
 
