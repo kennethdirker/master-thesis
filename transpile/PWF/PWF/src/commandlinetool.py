@@ -108,8 +108,13 @@ class BaseCommandLineTool(BaseProcess):
             raise NotImplementedError()
         else:   
             # TODO FIXME Evaluate expressions in array items needed?
+
             global_source_id: str = self.input_to_source[input_id]
-            args = [str(item) for item in self.runtime_context[global_source_id]]
+            value = self.runtime_context[global_source_id]
+            if isinstance(value, list):
+                args = [str(item) for item in value]
+            else:
+                args = [str(value)]
         return args
 
 
@@ -128,8 +133,9 @@ class BaseCommandLineTool(BaseProcess):
         """
         array_arg: list[str] = []
         input_type: str = input_dict["type"]
+        print("[TOOL] COMPOSE_ARRAY_ARG", f"{input_id}: {input_type}")
 
-        # Set default properties
+        # Set default properties as per CWL spec
         prefix: str = ""
         separate: bool = True
         itemSeparator: str | None = None
@@ -146,7 +152,7 @@ class BaseCommandLineTool(BaseProcess):
         # Convert array items to strings
         items: list[str] = []
         items = self.load_runtime_arg_array(input_id, input_type, cwl_namespace)
-
+        print("[TOOL] ARRAY ITEMS: ", items, f"({type(items)})")
         if "null" in input_type:
             return []
         elif "bool" in input_type:
@@ -186,9 +192,14 @@ class BaseCommandLineTool(BaseProcess):
         TODO
         """
         global_source_id: str = self.input_to_source[input_id]
-        value = self.eval(str(self.runtime_context[global_source_id]), cwl_namespace)
+        value = self.runtime_context[global_source_id]
+        if isinstance(value, str):
+            value = self.eval(value, cwl_namespace)
+        if isinstance(value, list):
+            # If dealing with array data, just take the first item for now FIXME
+            value = value[0]
         print("[TOOL] LOAD_RUNTIME_ARG\n\t", f"{input_id}: {value}")
-        return value
+        return str(value)
         # return str(self.runtime_context[global_source_id])
 
 
@@ -206,6 +217,7 @@ class BaseCommandLineTool(BaseProcess):
         TODO Support for bool type
         """
         args: list[str] = []
+        # Set default properties as per CWL spec
         prefix: str = ""
         separate: bool = True
         arg_type: str = input_dict["type"]
@@ -299,6 +311,7 @@ class BaseCommandLineTool(BaseProcess):
             A dictionary containing all newly added runtime output state.
         """
         # Execute tool
+        print("[TOOL]: EXECUTING", " ".join(cmd))
         completed: CompletedProcess = run(
             cmd,
             # stdin=stdin,
@@ -330,12 +343,9 @@ class BaseCommandLineTool(BaseProcess):
                     output_file_paths = glob.glob(glob_string)
 
                     if len(output_file_paths) == 0:
-                        raise Exception(f"Output glob {glob_string} (from '{output_dict['glob']}') did not match any files")
+                        raise Exception(f"Output glob {glob_string} (from '{output_dict['glob'][1:-1]}') did not match any files")
 
                     # output_file_paths = glob.glob(output_dict["glob"])
-                    print("[TOOL] GLOB: ", output_dict["glob"])
-                    print("[TOOL] GLOB STRING: ", glob_string)
-                    print("[TOOL] GLOB OUTPUT FILE PATHS:", output_file_paths)
                     if "[]" in output_type:
                         # Output is an array of objects
                         output[global_output_id] = output_file_paths
