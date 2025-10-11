@@ -369,7 +369,8 @@ class BaseCommandLineTool(BaseProcess):
             self, 
             use_dask: bool,
             runtime_context: Optional[dict[str, Any]] = None,
-            verbose: Optional[bool] = True
+            verbose: Optional[bool] = True,
+            client: Optional[Client] = None,
         ) -> dict[str, Any]:
         """
         TODO Desc
@@ -398,7 +399,9 @@ class BaseCommandLineTool(BaseProcess):
         # Submit and execute tool and gather output
         new_state: dict[str, Any] = {}
         if use_dask:
-            client = Client()
+            if client is None:
+                client = Client()
+            
             future = client.submit(
                 self.run_wrapper,
                 cmd,

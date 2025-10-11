@@ -163,29 +163,23 @@ class BaseWorkflow(BaseProcess):
                 continue
 
             for step_id, step_dict in self.steps.items():
-                # for input_id, input_dict in step_dict["in"].items():
-                #     if "default" in input_dict:
-                #         subprocess_id: str = self.step_id_to_process[step_id]
-                #         subprocess: BaseProcess = self.loading_context["processes"][subprocess_id]
-                #         self.runtime_context[subprocess.global_id(input_id)] = input_dict["default"]
                 step_proc: BaseProcess = self.step_id_to_process[step_id]
                 
                 # Register step inputs with expressions and default values as global sources
-                for input_id, input_dict in step_dict["in"].items():
-                    if "default" in input_dict:
-                        self.runtime_context[step_proc.global_id(input_id)] = input_dict["default"]
-                    if "valueFrom" in input_dict:
-                        # tool = self.step_id_to_process[step_id]
-                        self.runtime_context[process.global_id(input_id)] = input_dict["valueFrom"]
+                # TODO FIXME Uncomment if needed
+                # for input_id, input_dict in step_dict["in"].items():
+                #     if "default" in input_dict:
+                #         self.runtime_context[step_proc.global_id(input_id)] = input_dict["default"]
+                #     if "valueFrom" in input_dict:
+                #         # tool = self.step_id_to_process[step_id]
+                #         self.runtime_context[process.global_id(input_id)] = input_dict["valueFrom"]
 
                 # Register step outputs as global sources
                 if isinstance(step_dict["out"], list):
                     for out_id in step_dict["out"]:
                         self.runtime_context[step_proc.global_id(out_id)] = Absent()
-                        # self.runtime_context[step_proc.global_id(step_id + "/" + out_id)] = Absent()
                 elif isinstance(step_dict["out"], str):
                     self.runtime_context[step_proc.global_id(step_dict["out"])] = Absent()
-                    # self.runtime_context[step_proc.global_id(step_id + "/" + step_dict["out"])] = Absent()
                 else:
                     raise NotImplementedError("Encountered unsupported type", type(step_dict["out"]))
     
@@ -278,13 +272,13 @@ class BaseWorkflow(BaseProcess):
             ) -> Tuple[bool, str]:
             """
             Returns:
-                (use_default, source)
-                use_default: bool
+                (is_static, source)
+                is_static: bool
                     True if the input has no dynamic source and the default value
                     should be used.
                 source: str
-                    The source of the input. If use_default is True, this is the
-                    default value of the input. If use_default is False, this is
+                    The source of the input. If is_static is True, this is the
+                    default value of the input. If is_static is False, this is
                     the source of the input.
             """
             step_in_dict = process.steps[step_id]["in"][in_id]
@@ -324,11 +318,12 @@ class BaseWorkflow(BaseProcess):
                 source = input_id
 
                 while True:
-                    use_default, source = get_source_from_step_in(_process, _step_id, source)
-                    if use_default:
+                    is_static, source = get_source_from_step_in(_process, _step_id, source)
+                    if is_static:
                         # Input has no dynamic source: Use default value
-                        process.input_to_source[input_id] = _process.global_id(input_id)
-                        self.runtime_context[_process.global_id(input_id)] = source
+                        process.input_to_source[input_id] = _process.global_id(_step_id + "/" + input_id)
+                        print(f"[ASSIGN] {source} -> {process.input_to_source[input_id]}")
+                        self.runtime_context[process.input_to_source[input_id]] = source
                         break
                     
                     if "/" in source:   # {global_process_id}:{step_id}/{output_id}
@@ -426,6 +421,7 @@ class BaseWorkflow(BaseProcess):
 
         return namespace
     
+
     def update_sources(
             self,
             tool: BaseCommandLineTool, 
@@ -526,7 +522,8 @@ class BaseWorkflow(BaseProcess):
     def execute(
             self, 
             # runtime_context: dict[str, Any],
-            verbose: Optional[bool] = True
+            verbose: Optional[bool] = True,
+            client: Optional[Client] = None
         ) -> dict[str, Any]:
         """
         Execute the workflow as the main process. The workflow is executed by
@@ -543,6 +540,9 @@ class BaseWorkflow(BaseProcess):
 
         # Update runtime context and build namespace
         # self.runtime_context = runtime_context
+
+        if client is None:
+            client = Client()
 
         # Initialize queues
         graph: Graph = self.loading_context["graph"]
@@ -584,7 +584,7 @@ class BaseWorkflow(BaseProcess):
 
             # Execute runnable nodes
             for node_id, node in runnable.copy().items():
-                client = Client()
+                # client = Client()
                 # cwl_namespace = self.build_namespace()
                 print("[WORKFLOW]: Submitting node", graph.short_id[node_id])
                 print("[WORKFLOW]: With context:", *[f"\t{k}: {v}" for k, v in self.runtime_context.items() if k not in ["stderr", "stdout"]], sep="\n")
