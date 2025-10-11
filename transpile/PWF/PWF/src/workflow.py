@@ -24,7 +24,6 @@ class BaseWorkflow(BaseProcess):
     def __init__(
             self,
             main: bool = False,
-            # client: Optional[Client] = None,
             runtime_context: Optional[dict] = None,
             loading_context: Optional[dict[str, str]] = None,
             parent_process_id: Optional[str] = None,
@@ -36,7 +35,6 @@ class BaseWorkflow(BaseProcess):
         """
         super().__init__(
             main = main,
-            # client = client,
             runtime_context = runtime_context,
             loading_context = loading_context,
             parent_process_id = parent_process_id,
@@ -55,11 +53,9 @@ class BaseWorkflow(BaseProcess):
         # Digest workflow file
         self.set_metadata()
         self.set_inputs()
-        # self._process_inputs()
         self.set_outputs()
         self.set_requirements()
         self.set_steps()
-        # self._process_steps()
 
         # Only the main process executes the workflow.
         if main:
@@ -67,10 +63,7 @@ class BaseWorkflow(BaseProcess):
             self._process_steps()       # BUG Now only handles the main workflow file
             self.optimize_dependency_graph()
             self.register_input_sources()
-            # self.bind_default_inputs()
-            # self.create_task_graph()
             self.execute()
-            # self.execute(self.runtime_context)
 
 
     @abstractmethod
@@ -148,9 +141,7 @@ class BaseWorkflow(BaseProcess):
                 graph.connect_node(
                     node_id = tool.id,
                     parents = get_process_parents(tool),
-                    # children = 
                 )
-
 
 
     def _process_steps(self) -> None:
@@ -192,73 +183,12 @@ class BaseWorkflow(BaseProcess):
         pass
 
 
-    # def create_task_graph(self) -> None:
-    #     """
-    #     TODO Description
-    #     """
-    #     graph: Graph = self.loading_context["graph"]
-        
-    #     # 
-    #     id_to_delayed: dict[str, Delayed] = {}
-    #     visited: list[str] = []
-    #     frontier: list[str] = deepcopy(graph.roots)
-    #     while len(frontier) != 0:
-    #         node_id = frontier.pop(0)
-    #         node = graph.nodes[node_id]
-
-    #         # Check if parents have been visited
-    #         good = True
-    #         for parent in node.parents:
-    #             # If not all parents have been visited, revisit later
-    #             if parent not in visited:
-    #                 good = False
-    #                 frontier.append(node.id)
-    #                 break
-    #         if not good: 
-    #             continue
-
-    #         parents: list[Delayed] = []
-    #         for parent_node_id in node.parents:
-    #             parents.append(id_to_delayed[parent_node_id])
-
-    #         # Create and register dask.Delayed tool wrapper
-    #         # FIXME This works only for nodes with a single process
-    #         node.processes[0].create_task_graph(*parents)
-    #         id_to_delayed[node_id] = node.processes[0].task_graph_ref
-    #         visited.append(node_id)
-
-    #         # Add children to frontier
-    #         for child_node_id in node.children:
-    #             if child_node_id not in frontier:
-    #                 frontier.append(child_node_id)
-
-    #     if len(visited) != graph.size:
-    #         raise Exception("Dangling nodes: Not all nodes have been visited")
-
-    #     def knot(*parents):
-    #         """ Tie together all leaves to ensure they are executed """
-    #         # print("Finished executing task tree")
-    #         pass
-
-    #     leaves: list[Delayed] = []
-    #     for node_id in graph.leaves:
-    #         # FIXME This works only for nodes with a single process
-    #         leaves.append(graph.nodes[node_id].processes[0].task_graph_ref)
-
-    #     self.task_graph_ref = dask.delayed(knot)(leaves)
-    #     self.task_graph_ref.visualize(filename="graph.svg")
-
-
     def register_input_sources(self) -> None:
         """
         Register the global source of each tool input in the workflow. The
         source is stored in the tool's input_to_source dictionary. The source
         is a key in the runtime_context dictionary that contains the actual
         value of the input. 
-        
-        TODO is this right? -> If the input has no dynamic source, the source is
-        set to the global ID of the input in the parent process, which may be
-        the input object of the main process.
         NOTE: Only called from the main process.
 
         """
@@ -327,9 +257,7 @@ class BaseWorkflow(BaseProcess):
                         break
                     
                     if "/" in source:   # {global_process_id}:{step_id}/{output_id}
-                        # TODO FIXME BUG should be {step_global_process_id}:{output_id}?
                         # A step output is the input source
-                        # process.input_to_source[input_id] = _process.global_id(source)
                         step_id, output_id = source.split("/")
                         output_process = self.step_id_to_process[step_id]
                         process.input_to_source[input_id] = output_process.global_id(output_id)
@@ -337,7 +265,7 @@ class BaseWorkflow(BaseProcess):
                     else:               # {global_process_id}:{input_id}
                         # The input of the parent process is the input source
                         if _process.is_main:
-                            # Reached the main process: # Input source is the input object
+                            # Reached the main process: Input source is the input object
                             process.input_to_source[input_id] = _process.global_id(source)
                             break
 
@@ -348,44 +276,16 @@ class BaseWorkflow(BaseProcess):
                         _process = processes[_process.parent_process_id]
 
     
-    # def bind_default_inputs(self) -> None:
-    #     """
-    #     TODO Desc
-    #     NOTE: should this be moved somewhere else?
-    #     NOTE: Probably shouldn't be used at all
-    #     """
-    #     for process in self.loading_context["processes"].values():
-    #         # Look for defaults in process input
-    #         for input_id, input_dict in self.inputs.items():
-    #             if "default" in input_dict:
-    #                 # self.runtime_context[self.gl] = input_dict["default"]
-    #                 raise NotImplementedError()
-            
-    #         # Look for default in step input
-    #         for step_id, step_dict in self.steps.items():
-    #             for input_id, input_dict in step_dict["in"].items():
-    #                 if "default" in input_dict:
-    #                     subprocess: BaseProcess = self.step_id_to_process[step_id]
-    #                     source = self.input_to_source[subprocess.global_id(input_id)]
-    #                     self.runtime_context[source] = input_dict["default"]
-
-
     def build_step_namespace(
             self, 
-            # process: 'BaseWorkflow',
             tool:  BaseCommandLineTool,
             runtime_context: dict[str, Any],
-            # step_id: str,
-            # tool_input_id: str,
         ) -> dict[str, Any]:
         """
         """
         # Add workflow inputs to namespace
-        print("[WORKFLOW]: LOCAL RUNTIME_CONTEXT", *[f"{k} :::: {v}" for k, v in runtime_context.items() if "stderr" not in k],  sep="\n\t")
-        print()
-        print("[WORKFLOW]: TOOL INPUT TO SOURCE", *[f"{k} :::: {v}" for k, v in tool.input_to_source.items()], sep="\n\t")
-        print()
-        # TODO BEGIN Gather process inputs
+
+        # TODO FIXME BEGIN Gather process inputs
         # namespace = process.build_namespace()
         namespace = {}
         inputs = lambda: None   # Create empty object
@@ -397,9 +297,6 @@ class BaseWorkflow(BaseProcess):
         # Add step inputs to namespace
         # for input_id, input_step_dict in self.steps[tool.step_id]["in"].items():
         for input_id in self.steps[tool.step_id]["in"]:
-            # source = self.input_to_source[input_id]
-            # value = self.runtime_context[self.global_id(input_id)]
-            # value = self.runtime_context[source]
             source = tool.input_to_source[input_id]
             value = runtime_context[source]
 
@@ -446,15 +343,10 @@ class BaseWorkflow(BaseProcess):
                 process_id = ":".join(source_split[0:2]) # Get parent workflow ID
                 process: BaseWorkflow = self.loading_context["processes"][process_id]
                 
-                # Build CWL namespace for expression evaluation.
+                # Build CWL namespace for expression evaluation and evaluate
                 cwl_namespace = process.build_step_namespace(tool, runtime_context)
-                # cwl_namespace = process.build_step_namespace(process, tool.step_id, input_id, tool)
-                # cwl_namespace.update(self.build_step_namespace(process_id))
-
-
-                expression = source_tail[1:-1]  # Remove $ symbols
+                expression = source_tail[1:-1]  # Removes the $ symbols
                 value = self.eval(expression, cwl_namespace)
-                # self.input_to_source[input_id] = source
                 runtime_context[source] = value
 
 
@@ -463,7 +355,6 @@ class BaseWorkflow(BaseProcess):
             self,
             workflow_node: Node,
             runtime_context: dict[str, Any],
-            # cwl_namespace: dict[str, Any],
             verbose: Optional[bool] = True
         ) -> dict[str, Any]:
             """
@@ -521,7 +412,6 @@ class BaseWorkflow(BaseProcess):
 
     def execute(
             self, 
-            # runtime_context: dict[str, Any],
             verbose: Optional[bool] = True,
             client: Optional[Client] = None
         ) -> dict[str, Any]:
@@ -535,12 +425,6 @@ class BaseWorkflow(BaseProcess):
         Returns:
             Dictionary of (output ID, output value) key-value pairs.
         """
-        # TODO FIXME REMOVE
-        verbose = False
-
-        # Update runtime context and build namespace
-        # self.runtime_context = runtime_context
-
         if client is None:
             client = Client()
 
@@ -558,17 +442,15 @@ class BaseWorkflow(BaseProcess):
             s = ", "
             print("[WORKFLOW]: QUEUES")
             print(f"\twaiting: [{s.join([str(graph.short_id[node_id]) for node_id in waiting.keys()])}]")
-            # print()
             print(f"\trunnable: [{s.join([str(graph.short_id[node_id]) for node_id in runnable.keys()])}]")
-            # print()
             print(f"\trunning: [{s.join([str(graph.short_id[node_id]) for node_id in running.keys()])}]")
-            # print()
             print(f"\tcompleted: [{s.join([str(graph.short_id[node_id]) for node_id in completed.keys()])}]")
             print()
 
-        graph.print()
-        print("\n".join([f"{short}: {id}" for id, short in graph.short_id.items()]))
-        lprint()
+        if verbose:
+            graph.print()
+            print("\n".join([f"{short}: {id}" for id, short in graph.short_id.items()]))
+            lprint()
 
         # Polling loop that runs until all graph nodes have been executed.
         # Each node execution is submitted to the Dask scheduler as an async
@@ -584,16 +466,11 @@ class BaseWorkflow(BaseProcess):
 
             # Execute runnable nodes
             for node_id, node in runnable.copy().items():
-                # client = Client()
-                # cwl_namespace = self.build_namespace()
-                print("[WORKFLOW]: Submitting node", graph.short_id[node_id])
-                print("[WORKFLOW]: With context:", *[f"\t{k}: {v}" for k, v in self.runtime_context.items() if k not in ["stderr", "stdout"]], sep="\n")
-                print()
+                if verbose: print("[WORKFLOW]: Submitting node", graph.short_id[node_id])
                 future = client.submit(
                     self.execute_workflow_node, 
                     node, 
                     self.runtime_context.copy(),
-                    # cwl_namespace,
                     verbose
                 )
                 running[node_id] = (future, node)
@@ -606,8 +483,6 @@ class BaseWorkflow(BaseProcess):
                 if running_node[0].done():
                     # Add new runtime state from finished node
                     result = running_node[0].result()
-                    print("[WORKFLOW]: RESULTs:\n", *[f"\t{k}: {v}" for k, v in result.items() if k not in ["stderr", "stdout"]], sep="\n")
-                    print()
                     output.update(result)
                     self.runtime_context.update(result)
 
@@ -624,11 +499,8 @@ class BaseWorkflow(BaseProcess):
                         if child_id not in waiting:
                             continue
 
-                        # print("[CHILD]: ", child_id)
-
                         ready = True
                         for childs_parent_id in nodes[child_id].parents:
-                            # print(f"[PARENT]: {childs_parent_id}")      # Signals BUG with duplicate parent entries
                             if childs_parent_id not in completed:
                                 print("[WORKFLOW] Parent", {graph.short_id[childs_parent_id]} , "not completed")
                                 ready = False
@@ -636,15 +508,10 @@ class BaseWorkflow(BaseProcess):
                         if ready:
                             # All parents have finished: Queue up the child
                             runnable[child_id] = waiting.pop(child_id)
-                    print("[WORKFLOW]: Completed node", graph.short_id[running_node[1].id])
-                    lprint()
+                    if verbose:
+                        print("[WORKFLOW]: Completed node", graph.short_id[running_node[1].id])
+                        lprint()
             # time.sleep(0.1)
-
-        # TODO Return new runtime state
-        # if "stderr" in output:
-            # print(output["stderr"], file=sys.stderr)
-        # if "stdout" in output:
-            # print(output["stdout"], file=sys.stdout)
         return output
 
 
@@ -693,7 +560,6 @@ class BaseWorkflow(BaseProcess):
             print(f"\tFound process at {uri}")
             return obj(
                 main = False,
-                # client = self.client,
                 runtime_context = self.runtime_context,
                 loading_context = self.loading_context,
                 parent_process_id = self.id,
@@ -721,16 +587,12 @@ def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
             input_id    
         )-> Tuple[bool, Optional[str]]:
         """
-        NOTE: How to implement optional args?        
+        TODO: How to implement optional args?        
         """
         if "source" in step_dict["in"][input_id]:
             return False, step_dict["in"][input_id]["source"]
-        # elif "default" in step_dict["in"][input_id]:
-        #     return True, None
         elif "valueFrom" in step_dict["in"][input_id]:
             return True, None
-            # return True, step_dict["in"][input_id]["valueFrom"]
-            # return True, tool.eval(step_dict["in"][input_id]["valueFrom"])
         elif "default" in step_dict["in"][input_id]:
             return True, None
         raise NotImplementedError(step_dict["in"][input_id])

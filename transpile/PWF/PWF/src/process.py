@@ -104,19 +104,6 @@ class BaseProcess(ABC):
         if main:
             self.main_path = os.getcwd()
 
-        # Prepare Dask client
-        # BUG Adding the client causes a serialization bug when Dask wants to
-        #     pack and send this class to an execution node.
-        #     FIX: Instead of passing a single client, initialize it in local
-        #          function context when needed.  
-        # NOTE Can easilty be replaced by other Dask clients
-        # if client is None:
-        #     client = Client()
-        # self.client: Client = client
-
-        # Used in create_task_graph()
-        # self.task_graph_ref: Union[Delayed, None] = None
-    
 
     def global_id(self, s: str) -> str:
         """
@@ -219,23 +206,6 @@ class BaseProcess(ABC):
         pass
     
     
-    # def _process_inputs(self) -> None:
-    #     """
-    #     TODO Better description
-    #     """
-    #     # NOTE: This is needed for dynamic I/O
-    #     # FIXME: Find a better way to support dynamic I/O?
-    #     # Create an entry in the runtime_context dict for each input argument.
-    #     # The process ID is prepended to the input ID to ensure global
-    #     # uniqueness of input IDs.
-    #     for input_id, input_dict in self.inputs.items():
-    #         if self.global_id(input_id) not in self.runtime_context:
-    #             value = Absent()
-    #             if "default" in input_dict:
-    #                 value = input_dict["default"]
-    #             self.runtime_context[self.global_id(input_id)] = value
-    
-
     @abstractmethod
     def set_outputs(self) -> None:
         """
@@ -267,30 +237,6 @@ class BaseProcess(ABC):
         # pass
 
 
-    # @abstractmethod
-    # def create_dependency_graph(self) -> None:
-    #     """ 
-    #     TODO Better description
-    #     FIXME This is not accurate anymore, rewrite!
-    #     This function must be overridden to implement building the Dask Task
-    #     Graph. The function must assign the final graph node to 
-    #     'self.task_graph_ref', which is executed by 'self.execute()'.
-    #     """
-    #     # Example:
-    #     # 
-    #     # 
-    #     # 
-    #     pass
-
-
-    # @abstractmethod
-    # def create_task_graph(self) -> None:
-    #     """
-    #     TODO Desc
-    #     """
-    #     pass
-
-
     @abstractmethod
     def register_input_sources(self) -> None:
         """
@@ -311,15 +257,8 @@ class BaseProcess(ABC):
         # Example: If the process has an input 'input_fits', it can be
         #          accessed in the expression as 'inputs.input_fits'.
         inputs = lambda: None       # Create empty object
-        # print("[WORKFLOW]: RUNTIME_CONTEXT", *[f"{k} :::: {v}" for k, v in self.runtime_context.items() if "stderr" not in k], sep="\n\t")
-        # print()
-        # print("[WORKFLOW]: INPUT_TO_SOURCE", *[f"{k} :::: {v}" for k, v in self.input_to_source.items()], sep="\n\t")
-        # print()
         for input_id, input_dict in self.inputs.items():
-            # print("[NAMESPACE]", self.global_id(input_id))
-            # print("[NAMESPACE]", *self.runtime_context, sep="\n")
             source = self.input_to_source[input_id]
-            # value = self.runtime_context[self.global_id(input_id)]
             value = self.runtime_context[source]
 
             if "file" in input_dict["type"]:
@@ -339,7 +278,6 @@ class BaseProcess(ABC):
         namespace["inputs"] = inputs
 
         # TODO Other CWL namespaces, like 'self', 'runtime'?
-        # print("[PROCESS] NAMESPACE", *namespace["inputs"].__dict__.items(), sep="\n\t")
         return namespace
 
 
@@ -348,7 +286,6 @@ class BaseProcess(ABC):
         """
         TODO Better description
         """
-        # self.task_graph_ref.compute()
 
     def __call__(self):
         """
@@ -367,9 +304,6 @@ class BaseProcess(ABC):
         Evaluate an expression. The expression may access CWL namespace
         variables, like 'inputs'.
         """
-        # TODO FIXME REMOVE
-        verbose = True
-        # 
 
         if type(expression) is not str:
             raise Exception(f"Expected expression to be a string, but found {type(expression)}")
@@ -381,17 +315,9 @@ class BaseProcess(ABC):
 
         # Evaluate expression. Evaluating can return any type        
         s = eval(expression[1:-1], local_vars)
-        # s = str(eval(expression[1:-1], local_vars))
-
-        # if verbose: print("[EVAL]:\n\t" + expression + " -> " + s)
         if verbose: print(f"[EVAL]:\n\t{expression} ({type(expression)}) -> {s} ({type(s)})")
         return s
 
-# class NodeStatus(Enum):
-#     WAITING = 0
-#     RUNNABLE = 1
-#     RUNNING = 2
-#     COMPLETED = 3
 
 
 #########################################

@@ -18,7 +18,6 @@ class BaseCommandLineTool(BaseProcess):
     def __init__(
             self,
             main: bool = False, #TODO Change default main to True
-            # client: Optional[Client] = None,
             runtime_context: Optional[dict] = None,
             loading_context: Optional[dict[str, str]] = None,
             parent_process_id: Optional[str] = None,
@@ -28,7 +27,6 @@ class BaseCommandLineTool(BaseProcess):
         """ TODO: class description """
         super().__init__(
             main = main,
-            # client = client,
             runtime_context = runtime_context,
             loading_context = loading_context,
             parent_process_id = parent_process_id,
@@ -198,9 +196,7 @@ class BaseCommandLineTool(BaseProcess):
         if isinstance(value, list):
             # If dealing with array data, just take the first item for now FIXME
             value = value[0]
-        print("[TOOL] LOAD_RUNTIME_ARG\n\t", f"{input_id}: {value}")
         return str(value)
-        # return str(self.runtime_context[global_source_id])
 
 
     def compose_arg(
@@ -298,10 +294,6 @@ class BaseCommandLineTool(BaseProcess):
             cmd: list[str],
             cwl_namespace,
             outputs: dict[str, Any]
-            # process_id: str,
-            # stdin: Optional[TextIO] = None,
-            # stdout: Optional[TextIO] = None,
-            # stderr: Optional[TextIO] = None,
         ) -> dict[str, Any]:
         """
         Wrapper for subprocess.run(). Executes the command line tool and
@@ -314,10 +306,6 @@ class BaseCommandLineTool(BaseProcess):
         print("[TOOL]: EXECUTING", " ".join(cmd))
         completed: CompletedProcess = run(
             cmd,
-            # stdin=stdin,
-            # stdout=stdout,
-            # stderr=stderr,
-            # check=True,   # Probably shouldnt be used
             capture_output=True
         )
 
@@ -373,21 +361,15 @@ class BaseCommandLineTool(BaseProcess):
             client: Optional[Client] = None,
         ) -> dict[str, Any]:
         """
-        TODO Desc
+        TODO Description
         """
         # Update runtime context
         if runtime_context is not None:
             self.runtime_context = runtime_context
-        # print(f"[TOOL]: RUNTIME CONTEXT:\n{self.runtime_context}")
-        # cwl_namespace = self.build_namespace()
-        # print("[TOOL] NAMESPACE", *[f"{k}: {v}" for k, v in cwl_namespace.items()], sep="\n\t")
 
         # Build the command line
         cwl_namespace = self.build_namespace()
         cmd: list[str] = self.build_commandline(cwl_namespace)
-
-        # TODO Evaluate expressions in inputs?
-        #      Or does this already somewhere else?
 
         # Evaluate expressions in outputs. This has to be done before wrapper 
         # execution, FIXME but I cant remember why.
@@ -407,7 +389,6 @@ class BaseCommandLineTool(BaseProcess):
                 cmd,
                 cwl_namespace,
                 self.outputs,
-                # self.id,
                 pure = False
             )
             new_state = future.result()
@@ -416,24 +397,16 @@ class BaseCommandLineTool(BaseProcess):
                 cmd,
                 cwl_namespace,
                 self.outputs,
-                # self.id,
             )
 
         # TODO Check if all outputs are present
         
         # Print stderr/stdout
         # FIXME Check if this works
-        # TODO IF THIS CODE STAYS IN: "stderr" and "stdout" cannot be used as output ID
-        # NOTE I dont think this is a problem, because output dict keys are prefixed with process ID
         if verbose:
-            # if "stderr" in new_state:
-            #     print(new_state["stderr"], file=sys.stderr)
-            # if "stdout" in new_state:
-            #     print(new_state["stdout"], file=sys.stdout)
-
-            to_print = {k: v for k, v in new_state.items() if k not in ["stderr", "stdout"]}
-            print(f"[TOOL]: NEW STATE", *to_print.items(), sep="\n\t")
-            print()
-
+            if "stdout" in new_state:
+                print(new_state["stdout"], file=sys.stdout)
+            if "stderr" in new_state:
+                print(new_state["stderr"], file=sys.stderr)
 
         return new_state
