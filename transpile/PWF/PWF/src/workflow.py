@@ -23,7 +23,7 @@ I think they might be overwritten by valueFrom expressions.
 class BaseWorkflow(BaseProcess):
     def __init__(
             self,
-            main: bool = False,
+            main: bool = True,
             runtime_context: Optional[dict] = None,
             loading_context: Optional[dict[str, str]] = None,
             parent_process_id: Optional[str] = None,

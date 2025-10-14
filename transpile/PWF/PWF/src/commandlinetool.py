@@ -17,7 +17,7 @@ class BaseCommandLineTool(BaseProcess):
 
     def __init__(
             self,
-            main: bool = False, #TODO Change default main to True
+            main: bool = True,
             runtime_context: Optional[dict] = None,
             loading_context: Optional[dict[str, str]] = None,
             parent_process_id: Optional[str] = None,

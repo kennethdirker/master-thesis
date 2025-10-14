@@ -301,7 +301,8 @@ def parse_suffix(
     lines.append('if __name__ == "__main__":')
     # Add newlines to each string
     lines = [line + "\n" for line in lines]
-    lines.append(f"\t{class_name}(main=True)")
+    lines.append(f"\t{class_name}()")
+    # lines.append(f"\t{class_name}(main=True)")
     out_file.writelines(lines)
 
 def parse_cwl(

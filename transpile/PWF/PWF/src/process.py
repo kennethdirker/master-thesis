@@ -20,7 +20,7 @@ from .utils import Absent, FileObject
 class BaseProcess(ABC):
     def __init__(
             self,
-            main: bool = False,
+            main: bool = True,
             # client: Optional[Client] = None,
             runtime_context: Optional[dict[str, Any]] = None,
             loading_context: Optional[dict[str, Any]] = None,
