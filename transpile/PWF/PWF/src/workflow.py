@@ -13,12 +13,6 @@ from .commandlinetool import BaseCommandLineTool
 from .process import BaseProcess, Graph, Node
 from .utils import Absent, FileObject
 
-"""
-NOTE TO SELF: WHERE WE LEFT OFF
-Default values in workflow steps are not processed correctly.
-I think they might be overwritten by valueFrom expressions.
-
-"""
 
 class BaseWorkflow(BaseProcess):
     def __init__(
@@ -288,11 +282,12 @@ class BaseWorkflow(BaseProcess):
         # TODO FIXME BEGIN Gather process inputs
         # namespace = process.build_namespace()
         namespace = {}
-        inputs = lambda: None   # Create empty object
-        namespace["inputs"] = inputs
+        # inputs = lambda: None   # Create empty object
+        # namespace["inputs"] = inputs
+        namespace["inputs"] = {}
         # TODO END
 
-        inputs: object = namespace["inputs"]
+        # inputs: object = namespace["inputs"]
 
         # Add step inputs to namespace
         # for input_id, input_step_dict in self.steps[tool.step_id]["in"].items():
@@ -306,15 +301,19 @@ class BaseWorkflow(BaseProcess):
                 if "[]" in input_dict["type"]:
                     # Array of files
                     file_objects = [FileObject(p) for p in value]
-                    setattr(inputs, input_id, file_objects)
+                    # setattr(inputs, input_id, file_objects)
+                    namespace["inputs"][input_id] = file_objects
                 else:
                     # Single file
-                    setattr(inputs, input_id, FileObject(value[0]))
+                    # NOTE: why is value[0] used here, instead of value?
+                    # setattr(inputs, input_id, FileObject(value[0]))
+                    namespace["inputs"][input_id] = FileObject(value[0])
             elif "string" in input_dict["type"]:
-                setattr(inputs, input_id, value)
+                # setattr(inputs, input_id, value)
+                namespace["inputs"][input_id] = value
             else:
                 raise NotImplementedError(f"Input type {input_dict['type']} not supported")
-        namespace["inputs"] = inputs
+        # namespace["inputs"] = inputs
 
         return namespace
     
@@ -337,17 +336,18 @@ class BaseWorkflow(BaseProcess):
             source = tool.input_to_source[input_id]
             source_split = source.split(":")
             source_tail = source_split[-1]          # Get input ID or expression
-
-            if source_tail.startswith("$") and source.endswith("$"):
+            
+            if source_tail.startswith(("$", "$(")) and source.endswith("$"):
                 # Input is a valueFrom expression
                 process_id = ":".join(source_split[0:2]) # Get parent workflow ID
                 process: BaseWorkflow = self.loading_context["processes"][process_id]
                 
                 # Build CWL namespace for expression evaluation and evaluate
                 cwl_namespace = process.build_step_namespace(tool, runtime_context)
-                expression = source_tail[1:-1]  # Removes the $ symbols
-                value = self.eval(expression, cwl_namespace)
+                # expression = source_tail[1:-1]  # Removes the $ symbols
+                value = self.eval(source_tail, cwl_namespace)
                 runtime_context[source] = value
+                # runtime_context[source] = self.eval(source_tail, cwl_namespace)
 
 
  
@@ -393,6 +393,7 @@ class BaseWorkflow(BaseProcess):
                 # Dask sends a copy of runtime_context to the cluster node. 
                 # This means that outputs have to be registered in the main 
                 # runtime_context.
+                # 
                 # Nodes at this level contain a single BaseCommandLineTool.
                 process = tool_node.processes[0]
                 if not isinstance(process, BaseCommandLineTool):

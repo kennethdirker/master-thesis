@@ -1,6 +1,7 @@
 import copy
 # import dask.delayed
 import inspect
+import js2py
 import os
 import sys
 import uuid
@@ -14,7 +15,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from .utils import Absent, FileObject
+from .utils import Absent, FileObject, dict_to_obj
 
 
 class BaseProcess(ABC):
@@ -297,26 +298,45 @@ class BaseProcess(ABC):
     def eval(
             self, 
             expression: str,
-            local_vars: dict[str, Any],
+            local_vars: dict[str, dict[str, Any]],
             verbose: bool = False
         ) -> Any:
         """
-        Evaluate an expression. The expression may access CWL namespace
-        variables, like 'inputs'.
+        Evaluate an expression. Expressions are strings that come in 3 forms:
+            1. String literal: "some string". Not evaluated.
+            2. Javascript expression: "$( JS expression )". Evaluated with JS engine.
+            3. Python expression: "$ Python expression $". Evaluated with Python eval().
+        
+        The expression may access CWL namespace variables, like 'inputs'.
         """
 
         if type(expression) is not str:
             raise Exception(f"Expected expression to be a string, but found {type(expression)}")
         
-        if not expression.startswith("$") and not expression.endswith("$"):
+        # Evaluate expression. Evaluating can return any type     
+        if expression.startswith("$(") and expression.endswith(")"):
+            # Expression is a Javascript expression
+            # TODO JS evaluation
+            js_context = js2py.EvalJs(local_vars)
+            # js_context.inputs = local_vars["inputs"]
+            ret = js_context.eval(expression[2:-1])
+            if verbose: 
+                print(f"[EVAL]:\n\t{expression} ({type(expression)}) -> {ret} ({type(ret)})")
+        elif expression.startswith("$") and expression.endswith("$"):
+            # Expression is a Python expression
+            context = {}
+            context["inputs"] = dict_to_obj(local_vars["inputs"])
+            # context["self"] = ... # TODO Other CWL namespaces
+            ret = eval(expression[1:-1], context)
+            if verbose: 
+                print(f"[EVAL]:\n\t{expression} ({type(expression)}) -> {ret} ({type(ret)})")
+        else:
             # Expression is a plain string and doesn't need evaluating
-            if verbose: print("[EVAL]:\n\t" + expression + " -> " + expression)
-            return expression
+            ret = expression
+            if verbose: 
+                print("[EVAL]:\n\t" + expression + " -> " + ret)
 
-        # Evaluate expression. Evaluating can return any type        
-        s = eval(expression[1:-1], local_vars)
-        if verbose: print(f"[EVAL]:\n\t{expression} ({type(expression)}) -> {s} ({type(s)})")
-        return s
+        return ret
 
 
 

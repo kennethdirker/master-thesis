@@ -22,6 +22,37 @@ class Absent:
 #     if default_value in d:
 #         return d[default_value]
 #     return default_value
+class NestedObject:
+    pass
+
+def dict_to_obj(d: dict) -> Any:
+    """
+    Convert a dictionary to an object with attributes.
+    """
+    def do_stuff(obj, d: dict):
+        for key, value in d.items():
+            if type(value) is dict:
+                setattr(obj, key, NestedObject())
+                do_stuff(getattr(obj, key), value)
+            else:
+                setattr(obj, key, value)
+
+    obj = NestedObject()
+    do_stuff(obj, d)
+    return obj
+
+def print_obj(obj, indent: int = 0):
+    """
+    Pretty print an object recursively.
+    """
+    for key in dir(obj):
+        if not key.startswith("__"):
+            value = getattr(obj, key)
+            if type(value) is NestedObject:
+                print("\t" * indent, f"{key}:")
+                print_obj(value, indent + 1)
+            else:
+                print("\t" * indent, f"{key}: {value}")
 
 class FileObject:
     """
