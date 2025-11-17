@@ -145,6 +145,7 @@ def get_glob(glob: str) -> str:
     """
     
     """
+    # FIXME JS should not be transformed
     s = glob
     if "$(" in glob and ")" in glob:
         s = glob[2:-1].split(".")
@@ -182,8 +183,8 @@ def parse_outputs(
             if hasattr(output, "outputBinding"):
                 binding = output.outputBinding
                 if hasattr(binding, "glob"):
-                    glob = get_glob(binding.glob)
-                    lines.append(indent(f'"glob": "{glob}",', 4))
+                    # glob = get_glob(binding.glob)   # FIXME JS should not be transformed
+                    lines.append(indent(f'"glob": "{binding.glob}",', 4))
 
             lines.append(indent("},", 3))
     lines.append(indent("}", 2))
@@ -230,6 +231,7 @@ def resolve_run_uri(run_script_uri: str, step_id: str) -> str:
     return f"{rel_path / run_script_filename}"
 
 def resolve_valueFrom(valueFrom: str) -> str:
+    # FIXME JS should not be transformed
     return "$" + valueFrom[2:-1] + "$"
 
 
@@ -264,8 +266,8 @@ def parse_steps(
             if hasattr(i, "default") and i.default is not None:
                 lines.append(indent(f'"default": "{i.default}",', 6))
             if hasattr(i, "valueFrom") and i.valueFrom is not None:
-                valueFrom = resolve_valueFrom(i.valueFrom)
-                lines.append(indent(f'"valueFrom": "{valueFrom}"', 6))
+                # valueFrom = resolve_valueFrom(i.valueFrom)  # FIXME JS should not be transformed
+                lines.append(indent(f'"valueFrom": "{i.valueFrom}"', 6))
             lines.append(indent('},', 5))
         lines.append(indent('},', 4))
 
