@@ -255,13 +255,20 @@ def parse_steps(
         for i in step.in_:
             lines.append(indent(f'"{i.id.split("/")[-1]}": {{', 5))
             if hasattr(i, "source") and i.source is not None:
-                if isinstance(i.source, str):
+                if (isinstance(i.source, str)):
+                    # Single source
                     lines.append(indent(f'"source": "{resolve_source(i.source)}",', 6))
-                else:   # array
-                    lines.append(indent(f'"source": [', 6))
-                    for s in i.source:
-                        lines.append(indent(f'"{resolve_source(s)}",', 7))
-                    lines.append(indent(f'],', 6))
+                else:   
+                    # array
+                    if len(i.source) == 1:
+                        # Single source
+                        lines.append(indent(f'"source": "{resolve_source(i.source[0])}",', 6))
+                    else:
+                        # Multiple sources
+                        lines.append(indent(f'"source": [', 6))
+                        for s in i.source:
+                            lines.append(indent(f'"{resolve_source(s)}",', 7))
+                        lines.append(indent(f'],', 6))
 
             if hasattr(i, "default") and i.default is not None:
                 lines.append(indent(f'"default": "{i.default}",', 6))
