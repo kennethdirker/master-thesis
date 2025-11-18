@@ -133,22 +133,41 @@ class BaseProcess(ABC):
         """
         Extract a value from a key-value entry. This is needed because CWL
         input objects may contain key-value pairs that are more complicated
-        than needed... Below is an example, where we need to extract the path.
+        than needed... Below is an example where we need to extract the path.
 
-        # Example 
-        # id:
-        #     class: file
-        #     path: path/to/some/file
+        Examples of special cases:
+        input_file:
+            class: file
+            path: path/to/file
+
+        input_files: 
+            - {class: file, path: path/to/file1} 
+            - {class: file, path: path/to/file2}
 
         Arguments:
-            input_value: A YAML entry.
+            input_value: An object value from the primary key-value YAML layer.
 
-        Returns
+        Returns:
+            The extracted value.
         """
         if isinstance(input_value, str):
             return input_value
         elif isinstance(input_value, list):
-            return input_value
+            # Because file lists are represented as lists of dicts, we need to
+            # check if a list contains files and extract their paths.
+            # If the list is a regular list, we just return it.
+            return_list = []
+            if len(input_value) > 0:
+                for item in input_value:
+                    if (isinstance(item, dict) 
+                        and "class" in item
+                        and "file" in item["class"]):
+                        # List contains a file, now check if all items are
+                        # files. If not, return the original list.
+                        return_list.append(item["path"])
+                    else:
+                        return input_value
+            return return_list
         elif isinstance(input_value, dict):
             arg_type = input_value["class"]
             if "file" in arg_type:
@@ -172,7 +191,7 @@ class BaseProcess(ABC):
 
         print("[PROCESS]: Inputs loaded into runtime context:")
         for input_id, input_value in input_obj.items():
-            # Input from object is indexed by {Process.id}:{input_id}
+            # Input from object is indexed by '{Process.id}:{input_id}'
             input_value = self.resolve_input_value(input_value)
             runtime_context[self.global_id(input_id)] = input_value
             print("\t-", input_id, ":", input_value)
@@ -257,7 +276,11 @@ class BaseProcess(ABC):
         # is used in the eval() call.
         # Example: If the process has an input 'input_fits', it can be
         #          accessed in the expression as 'inputs.input_fits'.
-        inputs = lambda: None       # Create empty object
+        # inputs = lambda: None       # Create empty object
+
+        # TODO Other CWL namespaces, like 'self', 'runtime'?
+        namespace["inputs"] = {}
+
         for input_id, input_dict in self.inputs.items():
             source = self.input_to_source[input_id]
             value = self.runtime_context[source]
@@ -267,18 +290,21 @@ class BaseProcess(ABC):
                 if "[]" in input_dict["type"]:
                     # Array of files
                     file_objects = [FileObject(p) for p in value]
-                    setattr(inputs, input_id, file_objects)
+                    # setattr(inputs, input_id, file_objects)
+                    namespace["inputs"][input_id] = file_objects
                 else:
                     # Single file
-                    setattr(inputs, input_id, FileObject(value[0]))
+                    # setattr(inputs, input_id, FileObject(value[0]))
+                    # NOTE: why is value[0] used here, instead of value?
+                    namespace["inputs"][input_id] = FileObject(value[0])
             elif "string" in input_dict["type"]:
-                setattr(inputs, input_id, value)
+                # setattr(inputs, input_id, value)
+                namespace["inputs"][input_id] = value
             else:
                 raise NotImplementedError(f"Input type {input_dict['type']} not supported")
             
-        namespace["inputs"] = inputs
+        # namespace["inputs"] = inputs
 
-        # TODO Other CWL namespaces, like 'self', 'runtime'?
         return namespace
 
 
@@ -298,7 +324,7 @@ class BaseProcess(ABC):
     def eval(
             self, 
             expression: str,
-            local_vars: dict[str, dict[str, Any]],
+            local_vars: dict[str, Any],
             verbose: bool = False
         ) -> Any:
         """
@@ -310,31 +336,39 @@ class BaseProcess(ABC):
         The expression may access CWL namespace variables, like 'inputs'.
         """
 
+        # TODO FIXME remove
+        # verbose = True
+
         if type(expression) is not str:
             raise Exception(f"Expected expression to be a string, but found {type(expression)}")
         
         # Evaluate expression. Evaluating can return any type     
         if expression.startswith("$(") and expression.endswith(")"):
             # Expression is a Javascript expression
-            # TODO JS evaluation
+            # Build JS context with CWL namespaces
             js_context = js2py.EvalJs(local_vars)
-            # js_context.inputs = local_vars["inputs"]
+            # context["self"] = ... # TODO Other CWL namespaces
+
+            # Evaluate expression with JS engine
             ret = js_context.eval(expression[2:-1])
             if verbose: 
-                print(f"[EVAL]:\n\t{expression} ({type(expression)}) -> {ret} ({type(ret)})")
+                print(f"[EVAL]: '{expression}' ({type(expression)}) -> '{ret}' ({type(ret)})")
         elif expression.startswith("$") and expression.endswith("$"):
             # Expression is a Python expression
-            context = {}
-            context["inputs"] = dict_to_obj(local_vars["inputs"])
+            # Build context dictionary with CWL namespaces
+            py_context = local_vars.copy()
+            py_context["inputs"] = dict_to_obj(local_vars["inputs"])
             # context["self"] = ... # TODO Other CWL namespaces
-            ret = eval(expression[1:-1], context)
+
+            # Evaluate expression with Python eval()
+            ret = eval(expression[1:-1], py_context)
             if verbose: 
-                print(f"[EVAL]:\n\t{expression} ({type(expression)}) -> {ret} ({type(ret)})")
+                print(f"[EVAL]: '{expression}' ({type(expression)}) -> '{ret}' ({type(ret)})")
         else:
             # Expression is a plain string and doesn't need evaluating
             ret = expression
             if verbose: 
-                print("[EVAL]:\n\t" + expression + " -> " + ret)
+                print(f"[EVAL]: '{expression}' ({type(expression)}) -> '{ret}' ({type(ret)})")
 
         return ret
 
