@@ -45,7 +45,7 @@ class process_images(BaseWorkflow):
 						"source": "download_images/output",
 					},
 					"output_file_name": {
-						"valueFrom": "$'no_noise' + inputs.input.basename$"
+						"valueFrom": "$('no_noise' + inputs.input.basename)"
 					},
 				},
 				"out": [
@@ -84,4 +84,4 @@ class process_images(BaseWorkflow):
 		}
 
 if __name__ == "__main__":
-	process_images(main=True)
+	process_images()

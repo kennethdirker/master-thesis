@@ -28,4 +28,4 @@ class download_images(BaseCommandLineTool):
 		]
 
 if __name__ == "__main__":
-	download_images(main=True)
+	download_images()

@@ -21,7 +21,7 @@ class noiseremover(BaseCommandLineTool):
 		self.outputs = {
 			"output": {
 				"type": "file",
-				"glob": "$inputs.output_file_name$",
+				"glob": "$(inputs.output_file_name)",
 			},
 		}
 
@@ -32,4 +32,4 @@ class noiseremover(BaseCommandLineTool):
 		]
 
 if __name__ == "__main__":
-	noiseremover(main=True)
+	noiseremover()

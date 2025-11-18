@@ -21,8 +21,7 @@ class imageplotter(BaseCommandLineTool):
 		self.outputs = {
 			"output": {
 				"type": "file",
-				"glob": "$inputs.output_image$",
-				# "glob": "$output_image$",
+				"glob": "$(inputs.output_image)",
 			},
 		}
 
@@ -33,4 +32,4 @@ class imageplotter(BaseCommandLineTool):
 		]
 
 if __name__ == "__main__":
-	imageplotter(main=True)
+	imageplotter()
