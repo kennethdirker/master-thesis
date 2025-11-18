@@ -197,10 +197,10 @@ class BaseWorkflow(BaseProcess):
             """
             Returns:
                 (is_static, source)
-                is_static: bool
-                    True if the input has no dynamic source and the default value
-                    should be used.
-                source: str
+                is_static (bool):
+                    True if the input source is not dynamic source and the
+                    default value should be used.
+                source (str):
                     The source of the input. If is_static is True, this is the
                     default value of the input. If is_static is False, this is
                     the source of the input.
@@ -278,19 +278,10 @@ class BaseWorkflow(BaseProcess):
         """
         """
         # Add workflow inputs to namespace
-
-        # TODO FIXME BEGIN Gather process inputs
-        # namespace = process.build_namespace()
         namespace = {}
-        # inputs = lambda: None   # Create empty object
-        # namespace["inputs"] = inputs
-        namespace["inputs"] = {}
-        # TODO END
-
-        # inputs: object = namespace["inputs"]
 
         # Add step inputs to namespace
-        # for input_id, input_step_dict in self.steps[tool.step_id]["in"].items():
+        namespace["inputs"] = {}
         for input_id in self.steps[tool.step_id]["in"]:
             source = tool.input_to_source[input_id]
             value = runtime_context[source]
@@ -301,19 +292,17 @@ class BaseWorkflow(BaseProcess):
                 if "[]" in input_dict["type"]:
                     # Array of files
                     file_objects = [FileObject(p) for p in value]
-                    # setattr(inputs, input_id, file_objects)
                     namespace["inputs"][input_id] = file_objects
                 else:
                     # Single file
                     # NOTE: why is value[0] used here, instead of value?
-                    # setattr(inputs, input_id, FileObject(value[0]))
                     namespace["inputs"][input_id] = FileObject(value[0])
             elif "string" in input_dict["type"]:
-                # setattr(inputs, input_id, value)
                 namespace["inputs"][input_id] = value
             else:
                 raise NotImplementedError(f"Input type {input_dict['type']} not supported")
-        # namespace["inputs"] = inputs
+
+        # TODO Other CWL namespaces, like 'self', 'runtime'?
 
         return namespace
     
