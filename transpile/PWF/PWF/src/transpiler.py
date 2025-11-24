@@ -9,20 +9,32 @@ from cwl_utils.parser import load_document_by_uri
 from cwl_utils.parser.cwl_v1_2 import (
     CommandOutputArraySchema, 
     CommandInputArraySchema,
-    WorkflowStepOutput
+    WorkflowStepOutput,
 )
 
-def indent(str, n) -> str:
-    return "\t" * n + str
+from cwl_utils.parser import (
+    Process,
+    CommandLineTool,
+    Workflow
+)
+
+def indent(string: str, tab_amount: int) -> str:
+    """
+    Apply a number of tabs to a string and return it.
+    """
+    return "\t" * tab_amount + string
 
 def parse_prefix(
-        cwl: dict[str, Any],
+        cwl: Process,
         class_name: str,
         out_file: TextIO
     ) -> None:
     """
     
     """
+    # if not hasattr(cwl, "class_"):
+        # raise ValueError("CWL file has no 'class' attribute")
+
     lines: list[str] = []
 
     if "CommandLineTool" in cwl.class_:
@@ -39,7 +51,7 @@ def parse_prefix(
 
 
 def parse_metadata(
-        cwl,
+        cwl: Process,
         out_file: TextIO
     ) -> None:
     """
@@ -64,7 +76,7 @@ def parse_metadata(
         lines.append(indent(")", 2))
 
     # Insert 'pass' when the file has no label or doc
-    if len(lines) == 1:
+    if len(lines) == 2:
         lines.append(indent("pass", 2))
 
     # Add newlines to each string
@@ -82,6 +94,17 @@ def get_input_type(type_: Any) -> list[str]:
         lines.append(indent(f'"type": "{type_.items.lower()}[]",', 4))
     elif isinstance(type_, str):
         lines.append(indent(f'"type": "{type_.lower()}",', 4))
+    elif isinstance(type_, list):
+        # Union of types, can also be optional
+        types = type_.copy()
+
+        if "null" in types:
+            # Put 'null' at the end to indicate optional type
+            types.remove("null")
+            types.append("null")
+
+        line = '"type": [' + ", ".join([f'"{t}"' for t in types]) + "],"
+        lines.append(indent(line, 4))
     else:
         raise NotImplementedError(f"Found unsupported type {type(type_)}")
 
@@ -89,7 +112,7 @@ def get_input_type(type_: Any) -> list[str]:
 
 
 def parse_inputs(
-        cwl,
+        cwl: Process,
         out_file: TextIO
     ) -> None:
     """
@@ -160,7 +183,7 @@ def get_glob(glob: str) -> str:
 
 
 def parse_outputs(
-        cwl,
+        cwl: Process,
         out_file: TextIO
     ) -> None:
     """
@@ -195,7 +218,7 @@ def parse_outputs(
 
 
 def parse_base_command(
-        cwl,
+        cwl: CommandLineTool,
         out_file: TextIO
     ) -> None:
     """
@@ -218,6 +241,71 @@ def parse_base_command(
     out_file.writelines(lines)
 
 
+def parse_tool_requirements(
+        cwl: CommandLineTool,
+        out_file: TextIO
+    ) -> None:
+    """
+    
+    """
+    if not hasattr(cwl, "requirements") or cwl.requirements is None:
+        return
+    
+    def quote(value: Any) -> str:
+        """ Encase strings and expressions in quotes. """
+        if isinstance(value, str):
+            return f'"{value}"'
+        else:
+            return str(value)
+
+    lines: list[str] = [""]
+    lines.append(indent("def set_requirements(self):", 1))
+    lines.append(indent("self.requirements = {", 2))
+
+    for req in cwl.requirements:
+        match req.class_:
+            case "InlineJavascriptRequirement":
+                # We do not need to handle this requirement
+                pass
+            case "DockerRequirement":
+                # TODO
+                print("DockerRequirement not yet supported")
+            case "InitialWorkDirRequirement":
+                # TODO
+                print("InitialWorkDirRequirement not yet supported")
+            case "EnvVarRequirement":
+                lines.append(indent('"EnvVarRequirement": {', 3))
+                for var in req.envDef:
+                    lines.append(indent(f'"{var.envName}": "{var.envValue}",', 4))
+                lines.append(indent("},", 3))
+            case "InplaceUpdateRequirement":
+                lines.append(indent(f'"InplaceUpdateRequirement": {req.inplaceUpdate},', 3))
+            case "ResourceRequirement":
+                lines.append(indent('"ResourceRequirement": {', 3))
+                if hasattr(req, "coresMax") and req.coresMax is not None:
+                    lines.append(indent(f'"coresMax": {quote(req.coresMax)},', 4))
+                if hasattr(req, "coresMin") and req.coresMin is not None:
+                    lines.append(indent(f'"coresMin": {quote(req.coresMin)},', 4))
+                if hasattr(req, "ramMin") and req.ramMin is not None:
+                    lines.append(indent(f'"ramMin": {quote(req.ramMin)},', 4))
+                if hasattr(req, "ramMax") and req.ramMax is not None:
+                    lines.append(indent(f'"ramMax": {quote(req.ramMax)},', 4))
+                if hasattr(req, "tmpdirMin") and req.tmpdirMin is not None:
+                    lines.append(indent(f'"tmpdirMin": {quote(req.tmpdirMin)},', 4))
+                if hasattr(req, "outdirMin") and req.tmpdirMax is not None:
+                    lines.append(indent(f'"outdirMin": {quote(req.outdirMin)},', 4))
+                lines.append(indent("},", 3))
+            case _:
+                raise NotImplementedError(f"Found unsupported requirement {req.class_}")
+
+
+    lines.append(indent("}", 2))
+
+    # Add newlines to each string
+    lines = [line + "\n" for line in lines]
+    out_file.writelines(lines)
+
+
 def resolve_source(source: str) -> str:
     return "/".join(source.split("#")[-1].split("/")[1:])
 
@@ -230,17 +318,18 @@ def resolve_run_uri(run_script_uri: str, step_id: str) -> str:
     rel_path = Path(os.path.relpath(run_script_path.parent, file_path.parent))
     return f"{rel_path / run_script_filename}"
 
+
 def resolve_valueFrom(valueFrom: str) -> str:
     # FIXME JS should not be transformed
     return "$" + valueFrom[2:-1] + "$"
 
 
 def parse_steps(
-        cwl,
+        cwl: Workflow,
         out_file: TextIO
     ) -> None:
     """
-    
+    Parse workflow steps and write to file.
     """
     lines: list[str] = [""]
     lines.append(indent("def set_steps(self):", 1))
@@ -294,7 +383,23 @@ def parse_steps(
         lines.append(indent("},", 3))
     lines.append(indent("}", 2))
 
-    # Add newlines to each string
+    # Add newlines to each string and write to file
+    lines = [line + "\n" for line in lines]
+    out_file.writelines(lines)
+
+
+def parse_workflow_requirements(
+        cwl: Workflow,
+        out_file: TextIO
+    ) -> None:
+    """
+    
+    """
+    lines: list[str] = [""]
+
+    # TODO: implement workflow requirements parsing
+
+    # Add newlines to each string and write to file
     lines = [line + "\n" for line in lines]
     out_file.writelines(lines)
 
@@ -304,18 +409,19 @@ def parse_suffix(
         out_file: TextIO
     ) -> None:
     """
-    
+    Add the execution block to the end of the file.
     """
     lines: list[str] = [""]
     lines.append('if __name__ == "__main__":')
-    # Add newlines to each string
+
+    # Add newlines to each string and write to file
     lines = [line + "\n" for line in lines]
     lines.append(f"\t{class_name}()")
-    # lines.append(f"\t{class_name}(main=True)")
     out_file.writelines(lines)
 
+
 def parse_cwl(
-        cwl: dict[str, Any], 
+        cwl: Process, 
         output_path: Path
     ) -> None:
     """
@@ -329,8 +435,10 @@ def parse_cwl(
         parse_outputs(cwl, f)
         if "CommandLineTool" in cwl.class_:
             parse_base_command(cwl, f)
+            parse_tool_requirements(cwl, f)
         elif "Workflow" in cwl.class_:
             parse_steps(cwl, f)
+            parse_workflow_requirements(cwl, f)
         parse_suffix(class_name, f)
 
 
