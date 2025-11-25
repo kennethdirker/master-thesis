@@ -15,7 +15,8 @@ from cwl_utils.parser.cwl_v1_2 import (
 from cwl_utils.parser import (
     Process,
     CommandLineTool,
-    Workflow
+    Workflow,
+    ExpressionTool
 )
 
 def indent(string: str, tab_amount: int) -> str:
@@ -99,7 +100,7 @@ def get_input_type(type_: Any) -> list[str]:
         types = type_.copy()
 
         if "null" in types:
-            # Put 'null' at the end to indicate optional type
+            # Input is optional. Put 'null' at the end for clarity.
             types.remove("null")
             types.append("null")
 
@@ -428,39 +429,46 @@ def parse_cwl(
     
     """
     class_name = str(output_path.stem)
+
+    # Expression tools are extracted as normal tools
+    if isinstance(cwl, ExpressionTool):
+        raise NotImplementedError("ExpressionTool transpilation is not supported")
+
     with open(output_path, "w") as f:
         parse_prefix(cwl, class_name, f)
         parse_metadata(cwl, f)
         parse_inputs(cwl, f)
         parse_outputs(cwl, f)
-        if "CommandLineTool" in cwl.class_:
+        # if "CommandLineTool" in cwl.class_:
+        if isinstance(cwl, CommandLineTool):
             parse_base_command(cwl, f)
             parse_tool_requirements(cwl, f)
-        elif "Workflow" in cwl.class_:
+        # elif "Workflow" in cwl.class_:
+        elif isinstance(cwl, Workflow):
             parse_steps(cwl, f)
             parse_workflow_requirements(cwl, f)
         parse_suffix(class_name, f)
 
 
 def transpile_file(
-        cwl_file_path: Union[str, Path],
-        output_file_path: Optional[Union[str, Path]] = None
+        cwl_file_path_string: str,
+        output_file_path_string: Optional[str] = None
     ) -> None:
     """
     
     """
     # Create path for the CWL input file
-    if isinstance(cwl_file_path, str):
-        cwl_file_path = Path(cwl_file_path)
-    elif not isinstance(cwl_file_path, Path):
-        raise TypeError(f"Expected 'str' or 'Path', but got {type(cwl_file_path)}")
+    # if isinstance(cwl_file_path, str):
+    cwl_file_path: Path = Path(cwl_file_path_string)
+    # elif not isinstance(cwl_file_path, Path):
+        # raise TypeError(f"Expected 'str' or 'Path', but got {type(cwl_file_path)}")
     
     # Get path for the PWF output file
-    if output_file_path:
-        if isinstance(output_file_path, str):
-            output_file_path = Path(output_file_path)
-        elif not isinstance(output_file_path, Path):
-            raise TypeError(f"Expected 'str' or 'Path', but got {type(output_file_path)}")
+    if output_file_path_string is not None:
+        # if isinstance(output_file_path, str):
+        output_file_path = Path(output_file_path_string)
+        # elif not isinstance(output_file_path, Path):
+            # raise TypeError(f"Expected 'str' or 'Path', but got {type(output_file_path)}")
     else:
         # Use cwl_file_path basename for the output file
         basename = str(cwl_file_path.stem)
@@ -472,14 +480,14 @@ def transpile_file(
 
 
 def transpile_files(
-        cwl_file_paths: list[Union[str, Path]],
-        output_file_paths: Optional[list[Union[str, Path]]] = None
+        cwl_file_paths: list[str],
+        output_file_paths: Optional[list[str]] = None
     ) -> None:
     """
     
     """
     if output_file_paths is None:
-        output_file_paths = [None] * len(cwl_file_paths)
+        output_file_paths = [""] * len(cwl_file_paths)
     for in_path, out_path in zip(cwl_file_paths, output_file_paths):
         transpile_file(in_path, out_path)
         
