@@ -277,10 +277,10 @@ def parse_tool_requirements(
                 pass
             case "DockerRequirement":
                 # TODO
-                print("DockerRequirement not yet supported")
+                print("\t[INFO] DockerRequirement not yet supported")
             case "InitialWorkDirRequirement":
                 # TODO
-                print("InitialWorkDirRequirement not yet supported")
+                print("\t[INFO] InitialWorkDirRequirement not yet supported")
             case "EnvVarRequirement":
                 lines.append(indent('"EnvVarRequirement": {', 3))
                 for var in req.envDef:
@@ -451,28 +451,28 @@ def parse_cwl(
 
 
 def transpile_file(
-        cwl_file_path_string: str,
-        output_file_path_string: Optional[str] = None
+        cwl_file_path: Path,
+        output_file_path: Path
     ) -> None:
     """
-    Transpile a single CWL file to a PWF file. If no output path is given, use the input path's basename with .py extension.
+    Transpile a single CWL file to a PWF file.
     """
     # Create path for the CWL input file
     # if isinstance(cwl_file_path, str):
-    cwl_file_path: Path = Path(cwl_file_path_string)
+    # cwl_file_path: Path = Path(cwl_file_path_string)
     # elif not isinstance(cwl_file_path, Path):
         # raise TypeError(f"Expected 'str' or 'Path', but got {type(cwl_file_path)}")
     
     # Get path for the PWF output file
-    if output_file_path_string is not None:
-        # if isinstance(output_file_path, str):
-        output_file_path = Path(output_file_path_string)
-        # elif not isinstance(output_file_path, Path):
-            # raise TypeError(f"Expected 'str' or 'Path', but got {type(output_file_path)}")
-    else:
-        # Use cwl_file_path basename for the output file
-        basename = str(cwl_file_path.stem)
-        output_file_path = Path(basename + ".py")
+    # if output_file_path is not None:
+    #     # if isinstance(output_file_path, str):
+    #     output_file_path = Path(output_file_path_string)
+    #     # elif not isinstance(output_file_path, Path):
+    #         # raise TypeError(f"Expected 'str' or 'Path', but got {type(output_file_path)}")
+    # else:
+    #     # Use cwl_file_path basename for the output file
+    #     basename = str(cwl_file_path.stem)
+    #     output_file_path = Path(basename + ".py")
 
     cwl_dict = load_document_by_uri(cwl_file_path)
     parse_cwl(cwl_dict, output_file_path)
@@ -480,44 +480,109 @@ def transpile_file(
 
 
 def transpile_files(
-        cwl_file_paths: list[str],
-        output_file_path_strings: Optional[list[str]] = None
+        cwl_file_paths: list[Path],
+        output_file_paths: list[Path]
     ) -> None:
     """
-    Transpile multiple CWL files to PWF files. If no output paths are given, use the input paths' basenames with .py extension.
+    Transpile multiple CWL files to PWF files.
     """
-    if output_file_path_strings is None:
-        output_file_paths = [None] * len(cwl_file_paths)
     for in_path, out_path in zip(cwl_file_paths, output_file_paths):
+        print(f"Transpiling '{in_path}' to '{out_path}'...")
         transpile_file(in_path, out_path)
         
 
+def create_parser() -> argparse.ArgumentParser:
+    """
+    Create and return the argument parser for the transpiler CLI.
 
-def main():
+    -i, --input INPUT [INPUT ...]
+        One or more CWL files to transpile. (required)
+
+    Usage schema (mutually exclusive, -d is default if none given):
+      -o OUT [OUT ...]  Specify one or more explicit output paths (one per input cwl file).
+      -s                Write outputs to the same directory as their respective input files.
+      -d DIRECTORY      Write outputs into the given DIRECTORY for all inputs.
+
+    Returns:
+        Configured argparse.ArgumentParser
+    """
+
     arg_parser = argparse.ArgumentParser(
         prog="progname",
         description=""
     )
-    arg_parser.add_argument("input", nargs="+")
-    arg_parser.add_argument("-o", "--output", nargs="*")
+    arg_parser.add_argument(
+        "-i", "--input",
+        required=True,
+        nargs="+",
+        help="One or more CWL files to transpile."
+    )
+
+    # Optional mutually exclusive schema: -o [str1 str2 ...] | -c | -d str
+    group = arg_parser.add_argument_group(
+        title = "Output options",
+        description = "Specify one of the output options below. If None is given, '-d .' is used by default."
+    )
+    subgroup = group.add_mutually_exclusive_group()
+    subgroup.add_argument(
+        "-o", "--output",
+        nargs="+",
+        help="One or more output paths (one per input when multiple inputs.)",
+        metavar="OUT"
+    )
+    subgroup.add_argument(
+        "-d", "--directory",
+        type=str,
+        metavar="DIRECTORY",
+        help="Write all outputs into the given directory.",
+        default="."
+    )
+    subgroup.add_argument(
+        "-s", 
+        action="store_true",
+        help="Write the output of each input file to the same directory as the input file."
+    )
+    return arg_parser
+
+
+def main():
+    arg_parser = create_parser()
     args = arg_parser.parse_args()
 
+    input_paths = []
+    output_paths = []
 
-    in_len: int = len(args.input)
-    if len(args.input) > 1:
-        # Multiple CWL files to transpile
-        if args.output and isinstance(args.output, list):
-            if in_len != len(args.output):
-                raise Exception(f"Input and output files not equal ({in_len} != {len(args.output)})")
-        transpile_files(args.input, args.output)
+    # Check if all input paths are valid
+    for input_path in args.input:
+        input_path_obj = Path(input_path)
+        if not input_path_obj.is_file():
+            raise FileNotFoundError(f"Input file '{input_path}' does not exist or is not a file")
+        input_paths.append(input_path_obj)
+    
+    # Determine output paths based on specified method
+    if args.s:
+        # Output to same directory as the respective input files
+        for input_path in input_paths:
+            input_path_obj = Path(input_path)
+            output_paths.append(input_path_obj.parent / (input_path_obj.stem + ".py"))
+    elif args.output:
+        # Output paths given directly
+        if len(args.input) != len(args.output):
+            raise Exception(f"Input and output lengths don't match ({len(args.input)} != {len(args.output)})")
+        output_paths = args.output
+    elif args.directory:
+        # Output directory given, generate output paths for each input.
+        # If no other method was specified, this is the default.
+        output_dir = Path(args.directory)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for input_path in input_paths:
+            input_path_obj = Path(input_path)
+            output_paths.append(output_dir / (input_path_obj.stem + ".py"))
     else:
-        # Single CWL file to transpile
-        output = args.output
-        if args.output:
-            if len(args.output) > 1:
-                raise Exception(f"Multiple output files were given for a single input file")
-            output = output[0]
-        transpile_file(args.input[0], output)
+        # Should be guarded against by mutually exclusive group with -d default
+        raise Exception("No output method specified")
+
+    transpile_files(input_paths, output_paths)
 
 
 if __name__ == "__main__":
