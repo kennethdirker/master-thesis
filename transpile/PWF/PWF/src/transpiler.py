@@ -12,6 +12,7 @@ from cwl_utils.parser.cwl_v1_2 import (
     WorkflowStepOutput,
 )
 
+# Import CWL Process types
 from cwl_utils.parser import (
     Process,
     CommandLineTool,
@@ -31,7 +32,7 @@ def parse_prefix(
         out_file: TextIO
     ) -> None:
     """
-    
+    Parse the prefix (class definition) and write to PWF file.
     """
     # if not hasattr(cwl, "class_"):
         # raise ValueError("CWL file has no 'class' attribute")
@@ -56,7 +57,7 @@ def parse_metadata(
         out_file: TextIO
     ) -> None:
     """
-    
+    Parse metadata and write to PWF file.
     """
     lines: list[str] = [""]
     lines.append(indent("def set_metadata(self):", 1))
@@ -87,7 +88,9 @@ def parse_metadata(
 
 def get_input_type(type_: Any) -> list[str]:
     """
-    
+    Parse input types and transform to PWF format.
+    Returns:
+        List of strings representing lines to write to file.
     """
     lines: list[str] = []
 
@@ -117,7 +120,7 @@ def parse_inputs(
         out_file: TextIO
     ) -> None:
     """
-    
+    Parse inputs and write to PWF file.
     """
     lines: list[str] = [""]
     lines.append(indent("def set_inputs(self):", 1))
@@ -151,7 +154,9 @@ def parse_inputs(
 
 def get_output_type(type_: Any) -> list[str]:
     """
-    
+    Parse output types and transform to PWF format.
+    Returns:
+        List of strings representing lines to write to file.
     """
     lines: list[str] = []
 
@@ -165,22 +170,22 @@ def get_output_type(type_: Any) -> list[str]:
     return lines
 
 
-def get_glob(glob: str) -> str:
-    """
+# def get_glob(glob: str) -> str:
+#     """
     
-    """
-    # FIXME JS should not be transformed
-    s = glob
-    if "$(" in glob and ")" in glob:
-        s = glob[2:-1].split(".")
-        if "inputs" in s[0]:
-            # Get glob from input
-            glob = s[1]
-        else:
-            # Get glob from step
-            glob = "/".join(s[1:])
-        s = f"${glob}$"
-    return s
+#     """
+#     # FIXME JS should not be transformed
+#     s = glob
+#     if "$(" in glob and ")" in glob:
+#         s = glob[2:-1].split(".")
+#         if "inputs" in s[0]:
+#             # Get glob from input
+#             glob = s[1]
+#         else:
+#             # Get glob from step
+#             glob = "/".join(s[1:])
+#         s = f"${glob}$"
+#     return s
 
 
 def parse_outputs(
@@ -207,7 +212,6 @@ def parse_outputs(
             if hasattr(output, "outputBinding"):
                 binding = output.outputBinding
                 if hasattr(binding, "glob"):
-                    # glob = get_glob(binding.glob)   # FIXME JS should not be transformed
                     lines.append(indent(f'"glob": "{binding.glob}",', 4))
 
             lines.append(indent("},", 3))
@@ -253,7 +257,10 @@ def parse_tool_requirements(
         return
     
     def quote(value: Any) -> str:
-        """ Encase strings and expressions in quotes. """
+        """ 
+        Encase strings and string expressions in quotes and cast other types
+        to string.
+        """
         if isinstance(value, str):
             return f'"{value}"'
         else:
@@ -307,24 +314,6 @@ def parse_tool_requirements(
     out_file.writelines(lines)
 
 
-def resolve_source(source: str) -> str:
-    return "/".join(source.split("#")[-1].split("/")[1:])
-
-
-def resolve_run_uri(run_script_uri: str, step_id: str) -> str:
-    run_script_path = Path(run_script_uri[7:])      # Remove 'file://'
-    run_script_filename = run_script_path.name[:-4] + ".py" # Extract filename
-    
-    file_path = Path(step_id[7:].split("#")[0])
-    rel_path = Path(os.path.relpath(run_script_path.parent, file_path.parent))
-    return f"{rel_path / run_script_filename}"
-
-
-def resolve_valueFrom(valueFrom: str) -> str:
-    # FIXME JS should not be transformed
-    return "$" + valueFrom[2:-1] + "$"
-
-
 def parse_steps(
         cwl: Workflow,
         out_file: TextIO
@@ -332,6 +321,17 @@ def parse_steps(
     """
     Parse workflow steps and write to file.
     """
+    def resolve_source(source: str) -> str:
+        return "/".join(source.split("#")[-1].split("/")[1:])
+    
+    def resolve_run_uri(run_script_uri: str, step_id: str) -> str:
+        run_script_path = Path(run_script_uri[7:])      # Remove 'file://'
+        run_script_filename = run_script_path.name[:-4] + ".py" # Extract filename
+        file_path = Path(step_id[7:].split("#")[0])
+        rel_path = Path(os.path.relpath(run_script_path.parent, file_path.parent))
+        return f"{rel_path / run_script_filename}"
+
+
     lines: list[str] = [""]
     lines.append(indent("def set_steps(self):", 1))
     lines.append(indent("self.steps = {", 2))
@@ -363,7 +363,6 @@ def parse_steps(
             if hasattr(i, "default") and i.default is not None:
                 lines.append(indent(f'"default": "{i.default}",', 6))
             if hasattr(i, "valueFrom") and i.valueFrom is not None:
-                # valueFrom = resolve_valueFrom(i.valueFrom)  # FIXME JS should not be transformed
                 lines.append(indent(f'"valueFrom": "{i.valueFrom}"', 6))
             lines.append(indent('},', 5))
         lines.append(indent('},', 4))
@@ -426,7 +425,8 @@ def parse_cwl(
         output_path: Path
     ) -> None:
     """
-    
+    Parse a CWL Process object and write to PWF output file.
+    Note: ExpressionTool is not supported.
     """
     class_name = str(output_path.stem)
 
@@ -455,7 +455,7 @@ def transpile_file(
         output_file_path_string: Optional[str] = None
     ) -> None:
     """
-    
+    Transpile a single CWL file to a PWF file. If no output path is given, use the input path's basename with .py extension.
     """
     # Create path for the CWL input file
     # if isinstance(cwl_file_path, str):
@@ -481,13 +481,13 @@ def transpile_file(
 
 def transpile_files(
         cwl_file_paths: list[str],
-        output_file_paths: Optional[list[str]] = None
+        output_file_path_strings: Optional[list[str]] = None
     ) -> None:
     """
-    
+    Transpile multiple CWL files to PWF files. If no output paths are given, use the input paths' basenames with .py extension.
     """
-    if output_file_paths is None:
-        output_file_paths = [""] * len(cwl_file_paths)
+    if output_file_path_strings is None:
+        output_file_paths = [None] * len(cwl_file_paths)
     for in_path, out_path in zip(cwl_file_paths, output_file_paths):
         transpile_file(in_path, out_path)
         
