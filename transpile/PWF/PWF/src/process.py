@@ -1,5 +1,5 @@
+import argparse
 import copy
-# import dask.delayed
 import inspect
 import js2py
 import os
@@ -22,7 +22,6 @@ class BaseProcess(ABC):
     def __init__(
             self,
             main: bool = True,
-            # client: Optional[Client] = None,
             runtime_context: Optional[dict[str, Any]] = None,
             loading_context: Optional[dict[str, Any]] = None,
             parent_process_id: Optional[str] = None,
@@ -91,6 +90,7 @@ class BaseProcess(ABC):
             self.loading_context = {}
             self.loading_context["graph"] = Graph() # Used in create_dependency_graph()
             self.loading_context["processes"] = {}  # {proc_id, process}
+            self.process_cli_args(self.loading_context)
         else:
             if runtime_context is None:
                 raise Exception(f"Subprocess {type(self)}({self.id}) is not initialized as root process, but lacks runtime context")
@@ -102,9 +102,73 @@ class BaseProcess(ABC):
         # Register this process in the global cache
         self.loading_context["processes"][self.id] = self
 
-        # Register path of main
-        if main:
-            self.main_path = os.getcwd()
+        # Set runtime environment variables from main process
+        # if main:
+
+
+            # TODO is this used anywhere?
+            # self.main_path = os.getcwd()
+
+
+    def create_parser(self) -> argparse.ArgumentParser:
+        """
+        Create and return an argument parser for command-line arguments.
+
+        TODO Description (schema) of arguments
+        python process.py [--outdir OUTDIR] [--tmpdir TMPDIR] [--use_dask]
+        """
+        parser = argparse.ArgumentParser()
+        parser.add_argument(
+            "--outdir",
+            default = os.getcwd(),
+            type = str,
+            help = "Directory to store output files in."
+        )
+        parser.add_argument(
+            "--tmpdir",
+            type = str,
+            default = "/tmp/" + str(uuid.uuid4()),
+            help="Directory to store temporary files in."
+        )
+        parser.add_argument(
+            "--use_dask",
+            action="store_true",
+            default=False,
+            help="Execute process tasks with Dask instead of with standard system call."
+        )
+        return parser
+    
+    
+    def process_cli_args(self, loading_context: dict[str, Any]) -> None:
+        """
+        Process CLI arguments.
+        TODO Description of arguments
+        TODO out dir(empty), tmp dir(empty), use dask
+        """
+        parser = self.create_parser()
+        args = parser.parse_args()
+
+        # Configure designated output directory
+        out_dir_path = Path(args.outdir)
+        if not out_dir_path.is_dir():
+            raise Exception(f"Output directory {out_dir_path} does not exist or is not a directory")
+        is_empty = not any(out_dir_path.iterdir())  # Check if out dir is empty
+        loading_context["init_out_dir_empty"] = is_empty
+        loading_context["designated_out_dir"] = out_dir_path.absolute()
+
+        # Configure designated temporary directory
+        tmp_dir_path = Path(args.tmpdir)
+        if not tmp_dir_path.is_dir():
+            raise Exception(f"Temporary directory {tmp_dir_path} does not exist or is not a directory")
+        is_empty = not any(tmp_dir_path.iterdir())  # Check if tmp dir is empty
+        loading_context["init_tmp_dir_empty"] = is_empty
+        loading_context["designated_tmp_dir"] = tmp_dir_path.absolute()
+
+        # Configure whether Dask is used for execution
+        loading_context["use_dask"] = args.use_dask
+
+        # Copy system PATH environment variable
+        loading_context["PATH"] = os.environ.get("PATH")
 
 
     def global_id(self, s: str) -> str:
