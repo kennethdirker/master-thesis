@@ -73,9 +73,10 @@ class BaseProcess(ABC):
         
         # Assign requirements and hints.
         # Override in set_requirements().
-        # NOTE: Probably not needed for Minimal Viable Product.
-        self.requirements:  list = []
-        self.hints: list = []
+        self.requirements:  dict = {}
+
+        # NOTE: Not sure if I want to support hints, force requirements only?
+        self.hints: dict = {}   
         
         # TODO Update description
         # Assign a dictionary with runtime input variables and a dictionary to
@@ -129,7 +130,7 @@ class BaseProcess(ABC):
             return y
         
     
-    def resolve_input_value(self, input_value: dict) -> Union[str, list[str]]:
+    def resolve_input_object_value(self, input_value: dict) -> Union[str, list[str]]:
         """
         Extract a value from a key-value entry. This is needed because CWL
         input objects may contain key-value pairs that are more complicated
@@ -192,7 +193,7 @@ class BaseProcess(ABC):
         print("[PROCESS]: Inputs loaded into runtime context:")
         for input_id, input_value in input_obj.items():
             # Input from object is indexed by '{Process.id}:{input_id}'
-            input_value = self.resolve_input_value(input_value)
+            input_value = self.resolve_input_object_value(input_value)
             runtime_context[self.global_id(input_id)] = input_value
             print("\t-", input_id, ":", input_value)
         print()
