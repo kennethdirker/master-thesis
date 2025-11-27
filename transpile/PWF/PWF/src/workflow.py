@@ -353,6 +353,8 @@ class BaseWorkflow(BaseProcess):
             NOTE: Nodes contained in node.graph contain a single 
             BaseCommandLineTool and are executed according to the nodes
             internal dependency graph.
+            NOTE: Tools are executed in serial within this function.
+            FIXME: Execute tools Async just like in the main workflow execute()
             """
             graph = workflow_node.graph
             if graph is None:
@@ -391,8 +393,7 @@ class BaseWorkflow(BaseProcess):
                 print(f"[NODE]: Executing tool {tool.id}")
                 # cwl_namespace = self.build_namespace()
                 self.update_sources(tool, runtime_context)
-                result = tool.execute(False, runtime_context, verbose)  # BUG tool.runtime_context not updated with parent runtime context
-                # result = tool.execute(False, cwl_namespace, verbose)  # BUG tool.runtime_context not updated with parent runtime context
+                result = tool.execute(False, runtime_context, verbose)  
                 runtime_context.update(result)
                 new_runtime_context.update(result)
                 finished.append(tool_node)
