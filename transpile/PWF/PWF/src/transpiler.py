@@ -79,7 +79,8 @@ def parse_metadata(
 
     # Insert 'pass' when the file has no label or doc
     if len(lines) == 2:
-        lines.append(indent("pass", 2))
+        # lines.append(indent("pass", 2))
+        lines.append(indent("self.metadata = {}", 2))
 
     # Add newlines to each string
     lines = [line + "\n" for line in lines]
@@ -129,7 +130,8 @@ def parse_inputs(
     if hasattr(cwl, "inputs"):
         for input in cwl.inputs:
             # ID
-            lines.append(indent(f'"{input.id.split("/")[-1]}": {{', 3))
+            # lines.append(indent(f'"{input.id.split("/")[-1]}": {{', 3))
+            lines.append(indent(f'"{input.id.split("#")[-1]}": {{', 3))
 
             # Type
             type_: list[str] = get_input_type(input.type_)
@@ -137,15 +139,28 @@ def parse_inputs(
             
             # Inputbinding
             if hasattr(input, "inputBinding"):
-                # Prefix
                 binding = input.inputBinding
-                if hasattr(binding, "prefix") and binding.prefix is not None:
-                    lines.append(indent(f'"prefix": "{binding.prefix}",', 4))
+
+                # Used to indicate that the input appears on the command line
+                if binding is not None:
+                    lines.append(indent('"bound": True,', 4))
+
                 # Position
                 if hasattr(binding, "position") and binding.position is not None:
                     lines.append(indent(f'"position": {binding.position},', 4))
+
+                # Prefix
+                if hasattr(binding, "prefix") and binding.prefix is not None:
+                    lines.append(indent(f'"prefix": "{binding.prefix}",', 4))
             lines.append(indent("},", 3))
     lines.append(indent("}", 2))
+
+    # Special case: no inputs
+    if len(lines) == 4:
+        lines.clear()
+        lines.append("")
+        lines.append(indent("def set_inputs(self):", 1))
+        lines.append(indent("self.inputs = {}", 2))
 
     # Add newlines to each string
     lines = [line + "\n" for line in lines]
@@ -216,6 +231,13 @@ def parse_outputs(
 
             lines.append(indent("},", 3))
     lines.append(indent("}", 2))
+
+    # Special case: no outputs
+    if len(lines) == 4:
+        lines.clear()
+        lines.append("")
+        lines.append(indent("def set_outputs(self):", 1))
+        lines.append(indent("self.outputs = {}", 2))
 
     # Add newlines to each string
     lines = [line + "\n" for line in lines]
@@ -428,7 +450,9 @@ def parse_cwl(
     Parse a CWL Process object and write to PWF output file.
     Note: ExpressionTool is not supported.
     """
-    class_name = str(output_path.stem)
+    # Generate class name from output file stem + _PWF suffix.
+    # This is to avoid name clashes within the Python environment.
+    class_name = str(output_path.stem) + "_PWF"
 
     # Expression tools are extracted as normal tools
     if isinstance(cwl, ExpressionTool):
@@ -487,7 +511,7 @@ def transpile_files(
     Transpile multiple CWL files to PWF files.
     """
     for in_path, out_path in zip(cwl_file_paths, output_file_paths):
-        print(f"Transpiling '{in_path}' to '{out_path}'...")
+        print(f"Transpiling '{in_path}' to '{out_path}'")
         transpile_file(in_path, out_path)
         
 
