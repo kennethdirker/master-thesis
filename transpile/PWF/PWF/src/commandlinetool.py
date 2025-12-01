@@ -22,9 +22,12 @@ class BaseCommandLineTool(BaseProcess):
             loading_context: Optional[dict[str, str]] = None,
             parent_process_id: Optional[str] = None,
             step_id: Optional[str] = None,
-            with_dask: bool = False
+            with_dask: bool = False,
+            PATH: Optional[str] = None,
         ):
         """ TODO: class description """
+
+        # Initialize BaseProcess class
         super().__init__(
             main = main,
             runtime_context = runtime_context,
@@ -35,6 +38,9 @@ class BaseCommandLineTool(BaseProcess):
 
         # Prepare properties
         self.base_command: list[str] | str | None = None
+        if PATH is None:
+            PATH = os.environ.get("PATH", "")
+        # self.env: dict[str, Any] = {}
 
         # Digest CommandlineTool file
         self.set_metadata()
@@ -45,7 +51,7 @@ class BaseCommandLineTool(BaseProcess):
         
         if main:
             self.register_input_sources()
-            self.execute(with_dask, verbose=True)
+            self.execute(self.loading_context["use_dask"], verbose=True)
 
 
     def set_metadata(self):
@@ -258,10 +264,12 @@ class BaseCommandLineTool(BaseProcess):
 
         # Split positional arguments and key arguments
         for input_id, input_dict in self.inputs.items():
-            if hasattr(input_dict, "position"):
-                pos_inputs.append((input_id, input_dict))
-            else:
-                key_inputs.append((input_id, input_dict))
+            # Skip unbound (without input binding) inputs
+            if hasattr(input_dict, "bound") and input_dict["bound"]:
+                if hasattr(input_dict, "position"):
+                    pos_inputs.append((input_id, input_dict))
+                else:
+                    key_inputs.append((input_id, input_dict))
 
         # Order the arguments
         inputs: list[Tuple[str, dict]] = sorted(pos_inputs, key=lambda x: x[1]["position"])
@@ -287,13 +295,41 @@ class BaseCommandLineTool(BaseProcess):
                 raise Exception(f"base_command should be 'str' or 'list[str]',"
                                 f"but found '{type(self.base_command)}'")
         return cmd
+    
+
+    def build_env(self, cwl_namespace) -> dict[str, Any]:
+        """
+        Build the execution environment for the command line tool. The 
+        environment is new dictionary filled as follows:
+        - HOME must be set to the designated output directory.
+        - TMPDIR must be set to the designated temporary directory.
+        - PATH may be inherited from the parent process, except when TODO run in a container that provides its own PATH.
+        - Variables defined by EnvVarRequirement
+        - TODO The default environment of the container, such as when using DockerRequirement
+
+        Returns:
+            A dictionary representing the environment variables.
+        """
+        env: dict[str, Any] = {
+            "HOME": self.loading_context["designated_out_dir"],
+            "TMPDIR": self.loading_context["designated_tmp_dir"],
+            "PATH": self.loading_context["PATH"],
+        }
+
+        # Add variables from EnvVarRequirement
+        if "EnvVarRequirement" in self.requirements:
+            for key, value in self.requirements["EnvVarRequirement"].items():
+                env[key] = self.eval(value, cwl_namespace)
+
+        return env
 
 
     def run_wrapper(
             self,
             cmd: list[str],
             cwl_namespace,
-            outputs: dict[str, Any]
+            outputs: dict[str, Any],
+            env: dict[str, Any]
         ) -> dict[str, Any]:
         """
         Wrapper for subprocess.run(). Executes the command line tool and
@@ -303,10 +339,11 @@ class BaseCommandLineTool(BaseProcess):
             A dictionary containing all newly added runtime output state.
         """
         # Execute tool
-        print("[TOOL]: EXECUTING", " ".join(cmd))
+        print("[TOOL]: EXECUTING:", " ".join(cmd))
         completed: CompletedProcess = run(
             cmd,
-            capture_output=True
+            capture_output=True,
+            env = env
         )
 
         # Capture stderr
@@ -367,6 +404,7 @@ class BaseCommandLineTool(BaseProcess):
         if runtime_context is not None:
             self.runtime_context = runtime_context
 
+
         # Build the command line
         cwl_namespace = self.build_namespace()
         cmd: list[str] = self.build_commandline(cwl_namespace)
@@ -377,6 +415,8 @@ class BaseCommandLineTool(BaseProcess):
             for property, value in output_dict.items():
                 self.outputs[output_id][property] = self.eval(value, cwl_namespace)
 
+        # Build the execution environment
+        env = self.build_env(cwl_namespace)
 
         # Submit and execute tool and gather output
         new_state: dict[str, Any] = {}
@@ -389,6 +429,7 @@ class BaseCommandLineTool(BaseProcess):
                 cmd,
                 cwl_namespace,
                 self.outputs,
+                env,
                 pure = False
             )
             new_state = future.result()
@@ -397,6 +438,7 @@ class BaseCommandLineTool(BaseProcess):
                 cmd,
                 cwl_namespace,
                 self.outputs,
+                env
             )
 
         # TODO Check if all outputs are present
