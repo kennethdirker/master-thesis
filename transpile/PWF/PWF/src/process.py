@@ -84,13 +84,16 @@ class BaseProcess(ABC):
         # dictionary loaded in the main process.
         self.runtime_context: dict[str, Any] = {}
         if main:
-            # The YAML file uri comes from the first command-line argument.
-            self.runtime_context = self._load_input_object(sys.argv[1])
-
             self.loading_context = {}
             self.loading_context["graph"] = Graph() # Used in create_dependency_graph()
             self.loading_context["processes"] = {}  # {proc_id, process}
             self.process_cli_args(self.loading_context)
+
+            # The YAML file uri comes from the first command-line argument.
+            # self.runtime_context = self._load_input_object(sys.argv[1])
+            self.runtime_context = self._load_input_object(self.loading_context["input_object"])
+            # Copy system PATH environment variable
+            self.loading_context["PATH"] = os.environ.get("PATH")
         else:
             if runtime_context is None:
                 raise Exception(f"Subprocess {type(self)}({self.id}) is not initialized as root process, but lacks runtime context")
@@ -115,9 +118,15 @@ class BaseProcess(ABC):
         Create and return an argument parser for command-line arguments.
 
         TODO Description (schema) of arguments
-        python process.py [--outdir OUTDIR] [--tmpdir TMPDIR] [--use_dask]
+        python process.py [--outdir OUTDIR] [--tmpdir TMPDIR] [--use_dask] input_object.yaml
         """
         parser = argparse.ArgumentParser()
+        parser.add_argument(
+            '-y', "--yaml", 
+            type = str,
+            help='Path to input object YAML file.', 
+            required=True
+        )
         parser.add_argument(
             "--outdir",
             default = os.getcwd(),
@@ -148,27 +157,36 @@ class BaseProcess(ABC):
         parser = self.create_parser()
         args = parser.parse_args()
 
+        # Check input object validity
+        input_object_path = Path(args.yaml).absolute()
+        if not input_object_path.is_file():
+            raise Exception(f"Input object file {args.input_object} does not exist or is not a file")
+        loading_context["input_object"] = input_object_path 
+        print(f"[PROCESS]: Input object file:\n\t{input_object_path}")
+
         # Configure designated output directory
-        out_dir_path = Path(args.outdir)
-        if not out_dir_path.is_dir():
-            raise Exception(f"Output directory {out_dir_path} does not exist or is not a directory")
+        out_dir_path = Path(args.outdir).absolute()
+        if out_dir_path.exists() and not out_dir_path.is_dir():
+            raise Exception(f"Output directory {out_dir_path} is not a directory")
+        out_dir_path.mkdir(parents=True, exist_ok=True)            # Create tmp dir
         is_empty = not any(out_dir_path.iterdir())  # Check if out dir is empty
         loading_context["init_out_dir_empty"] = is_empty
-        loading_context["designated_out_dir"] = out_dir_path.absolute()
+        loading_context["designated_out_dir"] = out_dir_path
+        print(f"[PROCESS]: Designated output directory:\n\t{loading_context['designated_out_dir']}")
 
         # Configure designated temporary directory
-        tmp_dir_path = Path(args.tmpdir)
-        if not tmp_dir_path.is_dir():
-            raise Exception(f"Temporary directory {tmp_dir_path} does not exist or is not a directory")
+        tmp_dir_path = Path(args.tmpdir).absolute()
+        if tmp_dir_path.exists() and not tmp_dir_path.is_dir():
+            raise Exception(f"Temporary directory {tmp_dir_path} is not a directory")
+        tmp_dir_path.mkdir(parents=True, exist_ok=True)            # Create tmp dir
         is_empty = not any(tmp_dir_path.iterdir())  # Check if tmp dir is empty
         loading_context["init_tmp_dir_empty"] = is_empty
-        loading_context["designated_tmp_dir"] = tmp_dir_path.absolute()
+        loading_context["designated_tmp_dir"] = tmp_dir_path
+        print(f"[Process]: Designated temporary directory:\n\t{loading_context['designated_tmp_dir']}")
 
         # Configure whether Dask is used for execution
         loading_context["use_dask"] = args.use_dask
-
-        # Copy system PATH environment variable
-        loading_context["PATH"] = os.environ.get("PATH")
+        print(f"[PROCESS]: Execute with Dask: {args.use_dask}")
 
 
     def global_id(self, s: str) -> str:
