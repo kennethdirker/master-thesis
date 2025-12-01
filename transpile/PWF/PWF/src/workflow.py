@@ -282,6 +282,9 @@ class BaseWorkflow(BaseProcess):
 
         # Add step inputs to namespace
         namespace["inputs"] = {}
+        if tool.step_id is None:
+            raise ValueError("tool.step_id cannot be None")
+
         for input_id in self.steps[tool.step_id]["in"]:
             source = tool.input_to_source[input_id]
             value = runtime_context[source]
