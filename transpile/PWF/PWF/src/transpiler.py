@@ -1,8 +1,9 @@
 import argparse
 import os
+import textwrap
 
 from pathlib import Path
-from typing import Any, Optional, TextIO, Union
+from typing import Any, Optional, TextIO, Tuple, Union
 
 from cwl_utils.parser import load_document_by_uri
 
@@ -26,6 +27,89 @@ def indent(string: str, tab_amount: int) -> str:
     """
     return "\t" * tab_amount + string
 
+
+def format_dict_key_string(
+        key: str,
+        string: str,
+        indents: int = 0,
+        max_length: int = 80
+    ) -> list[str]:
+    """
+    Format a long string as a dictionary key-value pair, splitting it into
+    multiple lines if necessary. The first line will contain the key and the opening quote, indented for a certain number of tabs and the last line will contain the closing quote and comma, also indented. 
+
+    Args:
+        key: The dictionary key for the long string.
+        string: The long string to format.
+        indents: Number of tabs to indent each line.
+        max_length: Maximum length of each line.
+    Returns:
+        List of strings.
+    """
+    if max_length <= 0:
+        raise ValueError("max_length must be greater than 0")
+    extra_length = 7  # for "{key}": "{value}",
+    if indents * 4 + len(key) + len(string) + extra_length <= max_length:
+        # The entire string fits on one line
+        return [indent(f'"{key}": "{string}",', indents)]
+
+    lines: list[str] = []
+    lines.append(indent(f'"{key}": \\', indents))
+
+    # Length of extra needed interpunction, eg. '"{LINE}" \'
+    extra_length = 4  
+
+    wrapped = textwrap.wrap(
+        string, 
+        width = max_length - (indents + 1) * 4 - extra_length,
+        fix_sentence_endings=True)
+    # Add quotes and trailing slash
+    wrapped = ["\t" * (indents + 1) + f'"{l}" \\' for l in wrapped]
+    # Remove last trailing slash
+    wrapped[-1] = wrapped[-1][0:-2]
+    lines.extend(wrapped)
+    
+    return lines
+
+
+def normalize(string: str) -> str:
+    """
+    Normalize expressions by creating a single enclosed expression string.
+    If the string does not contain expressions, the plain string is returned.
+    Example:
+        example_$(inputs.input).txt -> $('example_' + inputs.input + '.txt')
+    Returns:
+        The normalized string.
+    """
+    start = string.find("$(")
+    if start < 0 or ")" not in string[start + 2:]:
+        # String does not have an expression or not contain a
+        # matching closing parenthesis
+        return string
+    
+    count = string.count("$(")
+    substrings: list[str] = []
+    ss = string
+    for _ in range(count):
+        s, ss = ss.split("$(", 1)
+        if len(s):
+            # Here, s is always a plain string and needs quotation
+            substrings.append(f"'{s}'")
+
+        if ")" not in ss:
+            # String does not contain a matching closing parenthesis
+            # Add remaining string tail to last substring
+            substrings[-1] = s + "$(" + ss
+            break
+
+        s, ss = ss.split(")", 1)
+        # Here, s is always an expression, with ss being the remaining tail
+        substrings.append(s)
+    
+    return '$(' + " + ".join(substrings) + ')'
+
+
+
 def parse_prefix(
         cwl: Process,
         class_name: str,
@@ -34,9 +118,6 @@ def parse_prefix(
     """
     Parse the prefix (class definition) and write to PWF file.
     """
-    # if not hasattr(cwl, "class_"):
-        # raise ValueError("CWL file has no 'class' attribute")
-
     lines: list[str] = []
 
     if "CommandLineTool" in cwl.class_:
@@ -61,26 +142,24 @@ def parse_metadata(
     """
     lines: list[str] = [""]
     lines.append(indent("def set_metadata(self):", 1))
-
+    lines.append(indent("self.metadata = {", 2))
+    
     # Label
     if hasattr(cwl, "label") and cwl.label is not None:
-        lines.append(indent(f'self.label = "{cwl.label}"', 2))
-
+        lines.extend(format_dict_key_string("label", cwl.label, 3))
     # Doc
     if hasattr(cwl, "doc") and cwl.doc is not None:
-        doc_len = len(cwl.doc)
-        lines.append(indent("self.doc = (", 2))
-        begin = 0
-        while begin < doc_len:
-            end = min(begin + 60, doc_len)
-            lines.append(indent(f'"{cwl.doc[begin:end]}"', 3))
-            begin += 60
-        lines.append(indent(")", 2))
+        lines.extend(format_dict_key_string("doc", cwl.doc, 3))
+        
+    lines.append(indent("}", 2))
 
-    # Insert 'pass' when the file has no label or doc
-    if len(lines) == 2:
-        # lines.append(indent("pass", 2))
+    # No metadata to write
+    if len(lines) == 4:
+        # Special case
+        lines = [""]
+        lines.append(indent("def set_metadata(self):", 1))
         lines.append(indent("self.metadata = {}", 2))
+    
 
     # Add newlines to each string
     lines = [line + "\n" for line in lines]
@@ -138,7 +217,7 @@ def parse_inputs(
         
         lines.append(indent("self.inputs = {", 2))
         for input in cwl.inputs:
-            # ID from file_path#[input_id | tool_id/input_id]
+            # Get input ID from file_path#[input_id | tool_id/input_id]
             input_id = input.id.split("#")[-1].split("/")[-1]
             lines.append(indent(f'"{input_id}": {{', 3))
 
@@ -146,12 +225,16 @@ def parse_inputs(
             type_: list[str] = get_input_type(input.type_)
             lines.extend(type_)
 
+            # Default
+            if hasattr(input, "default") and input.default is not None:
+                lines.append(indent(f'"default": "{input.default}",', 4))
+
             # secondaryFiles
             # TODO
 
             # Streamable
             # TODO
-            
+
             # Inputbinding
             if hasattr(input, "inputBinding"):
                 binding = input.inputBinding
@@ -168,18 +251,24 @@ def parse_inputs(
                 if hasattr(binding, "prefix") and binding.prefix is not None:
                     lines.append(indent(f'"prefix": "{binding.prefix}",', 4))
 
+                # valueFrom
+                if hasattr(binding, "valueFrom") and binding.valueFrom is not None:
+                    valueFrom = normalize(binding.valueFrom)
+                    lines.append(indent(f'"valueFrom": "{valueFrom}",', 4))
+
+            # loadContents
+            # TODO
+
+            # loadListing
+            # TODO
             
             # Label
-            # TODO better formatting for multi-line labels
             if hasattr(input, "label") and input.label is not None:
-                label = input.label.replace('\n', ' ')
-                lines.append(indent(f'"label": "{label}",', 4))
+                lines.extend(format_dict_key_string("label", input.label, 4))
 
             # Doc
-            # TODO better formatting for multi-line docs
             if hasattr(input, "doc") and input.doc is not None:
-                doc = input.doc.replace('\n', ' ')
-                lines.append(indent(f'"doc": "{doc}",', 4))
+                lines.extend(format_dict_key_string("doc", input.doc, 4))
 
             lines.append(indent("},", 3))
         lines.append(indent("}", 2))
@@ -230,13 +319,16 @@ def parse_outputs(
         out_file: TextIO
     ) -> None:
     """
-    
+    TODO Finish
+
     """
     lines: list[str] = [""]
     lines.append(indent("def set_outputs(self):", 1))
     lines.append(indent("self.outputs = {", 2))
     
-    if hasattr(cwl, "outputs"):
+    if hasattr(cwl, "outputs") and cwl.outputs is not None:
+        # TODO Finish
+        # TODO FIXME Examine the outputs, output object
         for output in cwl.outputs:
             # ID
             lines.append(indent(f'"{output.id.split("/")[-1]}": {{', 3))
@@ -245,13 +337,35 @@ def parse_outputs(
             type_: list[str] = get_output_type(output.type_)
             lines.extend(type_)
             
-            # Glob
             if hasattr(output, "outputBinding"):
                 binding = output.outputBinding
+                # Glob
                 if hasattr(binding, "glob"):
-                    lines.append(indent(f'"glob": "{binding.glob}",', 4))
+                    glob = normalize(binding.glob)
+                    lines.append(indent(f'"glob": "{glob}",', 4))
+                # loadContents
+                # TODO
+                # outputEval
+                # TODO
+                # secondaryFiles
+                # TODO
 
             lines.append(indent("},", 3))
+
+        # Streamable
+        # TODO
+
+        # Label
+        if hasattr(cwl, "label") and cwl.label is not None:
+            label = normalize(cwl.label)
+            lines.append(indent(f'label: "{label}",', 3))
+
+        # Doc
+        if hasattr(cwl, "doc") and cwl.doc is not None:
+            doc = normalize(cwl.doc)
+            lines.append(indent(f'doc: "{doc}",', 3))
+
+
     lines.append(indent("}", 2))
 
     # Special case: no outputs
