@@ -125,17 +125,32 @@ def parse_inputs(
     """
     lines: list[str] = [""]
     lines.append(indent("def set_inputs(self):", 1))
-    lines.append(indent("self.inputs = {", 2))
     
     if hasattr(cwl, "inputs"):
+        if len(cwl.inputs) == 0:
+            # Special case: no inputs
+            lines.append(indent("self.inputs = {}", 2))
+
+            # Add newlines to each string
+            lines = [line + "\n" for line in lines]
+            out_file.writelines(lines)
+            return
+        
+        lines.append(indent("self.inputs = {", 2))
         for input in cwl.inputs:
-            # ID
-            # lines.append(indent(f'"{input.id.split("/")[-1]}": {{', 3))
-            lines.append(indent(f'"{input.id.split("#")[-1]}": {{', 3))
+            # ID from file_path#[input_id | tool_id/input_id]
+            input_id = input.id.split("#")[-1].split("/")[-1]
+            lines.append(indent(f'"{input_id}": {{', 3))
 
             # Type
             type_: list[str] = get_input_type(input.type_)
             lines.extend(type_)
+
+            # secondaryFiles
+            # TODO
+
+            # Streamable
+            # TODO
             
             # Inputbinding
             if hasattr(input, "inputBinding"):
@@ -152,15 +167,22 @@ def parse_inputs(
                 # Prefix
                 if hasattr(binding, "prefix") and binding.prefix is not None:
                     lines.append(indent(f'"prefix": "{binding.prefix}",', 4))
-            lines.append(indent("},", 3))
-    lines.append(indent("}", 2))
 
-    # Special case: no inputs
-    if len(lines) == 4:
-        lines.clear()
-        lines.append("")
-        lines.append(indent("def set_inputs(self):", 1))
-        lines.append(indent("self.inputs = {}", 2))
+            
+            # Label
+            # TODO better formatting for multi-line labels
+            if hasattr(input, "label") and input.label is not None:
+                label = input.label.replace('\n', ' ')
+                lines.append(indent(f'"label": "{label}",', 4))
+
+            # Doc
+            # TODO better formatting for multi-line docs
+            if hasattr(input, "doc") and input.doc is not None:
+                doc = input.doc.replace('\n', ' ')
+                lines.append(indent(f'"doc": "{doc}",', 4))
+
+            lines.append(indent("},", 3))
+        lines.append(indent("}", 2))
 
     # Add newlines to each string
     lines = [line + "\n" for line in lines]
@@ -328,12 +350,50 @@ def parse_tool_requirements(
             case _:
                 raise NotImplementedError(f"Found unsupported requirement {req.class_}")
 
-
     lines.append(indent("}", 2))
 
     # Add newlines to each string
     lines = [line + "\n" for line in lines]
     out_file.writelines(lines)
+
+
+def parse_io(
+        cwl: CommandLineTool,
+        out_file: TextIO
+    ) -> None:
+    """
+    Parse stdin, stdout, stderr, and exit codes and write to PWF file.
+    TODO Test
+    """
+
+    lines: list[str] = [""]
+    lines.append(indent("def set_io(self):", 1))
+    lines.append(indent("self.io = {", 2))
+    if hasattr(cwl, "stdin") and cwl.stdin is not None:
+        lines.append(indent(f'"stdin": "{cwl.stdin}"', 3))
+    if hasattr(cwl, "stdout") and cwl.stdout is not None:
+        lines.append(indent(f'"stdout": "{cwl.stdout}"', 3))
+    if hasattr(cwl, "stderr") and cwl.stderr is not None:
+        lines.append(indent(f'"stderr": "{cwl.stderr}"', 3))
+    if hasattr(cwl, "successCodes") and cwl.successCodes is not None:
+        lines.append(indent(f'"successCodes": {cwl.successCodes}', 3))
+    if hasattr(cwl, "temporaryFailCodes") and cwl.temporaryFailCodes is not None:
+        lines.append(indent(f'"temporaryFailCodes": {cwl.temporaryFailCodes}', 3))
+    if hasattr(cwl, "permanentFailCodes") and cwl.permanentFailCodes is not None:
+        lines.append(indent(f'"permanentFailCodes": {cwl.permanentFailCodes}', 3))
+    lines.append(indent("}", 2))
+
+    if len(lines) == 4:
+        # Special case: no stdin, stdout, stderr, successCodes, 
+        # temporaryFailCodes, permanentFailCodes
+        lines.clear()
+        lines.append("")
+        lines.append(indent("def set_io(self):", 1))
+        lines.append(indent("self.io = {}", 2))
+
+        # Add newlines to each string
+        lines = [line + "\n" for line in lines]
+        out_file.writelines(lines)
 
 
 def parse_steps(
@@ -467,6 +527,7 @@ def parse_cwl(
         if isinstance(cwl, CommandLineTool):
             parse_base_command(cwl, f)
             parse_tool_requirements(cwl, f)
+            parse_io(cwl, f)
         # elif "Workflow" in cwl.class_:
         elif isinstance(cwl, Workflow):
             parse_steps(cwl, f)
