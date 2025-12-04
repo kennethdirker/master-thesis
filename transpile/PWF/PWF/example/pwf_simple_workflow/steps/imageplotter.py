@@ -1,18 +1,22 @@
 from PWF.src.commandlinetool import BaseCommandLineTool
 
-class imageplotter(BaseCommandLineTool):
+class imageplotter_PWF(BaseCommandLineTool):
 
 	def set_metadata(self):
-		self.label = "imageplotter"
+		self.metadata = {
+			"label": "imageplotter",
+		}
 
 	def set_inputs(self):
 		self.inputs = {
 			"input_fits": {
 				"type": "file[]",
+				"bound": True,
 				"position": 0,
 			},
 			"output_image": {
 				"type": "string",
+				"bound": True,
 				"position": 1,
 			},
 		}
@@ -23,6 +27,7 @@ class imageplotter(BaseCommandLineTool):
 				"type": "file",
 				"glob": "$(inputs.output_image)",
 			},
+			"label": "imageplotter",
 		}
 
 	def set_base_command(self):
@@ -31,5 +36,12 @@ class imageplotter(BaseCommandLineTool):
 			"../scripts/imageplotter.py",
 		]
 
+	def set_requirements(self):
+		self.requirements = {
+		}
+
+	def set_io(self):
+		self.io = {}
+
 if __name__ == "__main__":
-	imageplotter()
+	imageplotter_PWF()

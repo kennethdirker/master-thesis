@@ -1,18 +1,22 @@
 from PWF.src.commandlinetool import BaseCommandLineTool
 
-class noiseremover(BaseCommandLineTool):
+class noiseremover_PWF(BaseCommandLineTool):
 
 	def set_metadata(self):
-		self.label = "noiseremover"
+		self.metadata = {
+			"label": "noiseremover",
+		}
 
 	def set_inputs(self):
 		self.inputs = {
 			"input": {
 				"type": "file",
+				"bound": True,
 				"position": 0,
 			},
 			"output_file_name": {
 				"type": "string",
+				"bound": True,
 				"position": 1,
 			},
 		}
@@ -23,6 +27,7 @@ class noiseremover(BaseCommandLineTool):
 				"type": "file",
 				"glob": "$(inputs.output_file_name)",
 			},
+			"label": "noiseremover",
 		}
 
 	def set_base_command(self):
@@ -31,5 +36,12 @@ class noiseremover(BaseCommandLineTool):
 			"../scripts/noiseremover.py",
 		]
 
+	def set_requirements(self):
+		self.requirements = {
+		}
+
+	def set_io(self):
+		self.io = {}
+
 if __name__ == "__main__":
-	noiseremover()
+	noiseremover_PWF()

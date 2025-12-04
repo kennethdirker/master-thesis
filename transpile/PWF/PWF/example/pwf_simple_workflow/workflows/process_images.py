@@ -1,9 +1,11 @@
 from PWF.src.workflow import BaseWorkflow
 
-class process_images(BaseWorkflow):
+class process_images_PWF(BaseWorkflow):
 
 	def set_metadata(self):
-		self.label = "process_images"
+		self.metadata = {
+			"label": "process_images",
+		}
 
 	def set_inputs(self):
 		self.inputs = {
@@ -20,6 +22,7 @@ class process_images(BaseWorkflow):
 			"after_noise_remover_plot": {
 				"type": "file",
 			},
+			"label": "process_images",
 		}
 
 	def set_steps(self):
@@ -83,5 +86,6 @@ class process_images(BaseWorkflow):
 			},
 		}
 
+
 if __name__ == "__main__":
-	process_images()
+	process_images_PWF()

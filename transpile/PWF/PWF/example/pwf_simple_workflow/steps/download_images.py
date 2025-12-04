@@ -1,16 +1,19 @@
 from PWF.src.commandlinetool import BaseCommandLineTool
 
-class download_images(BaseCommandLineTool):
+class download_images_PWF(BaseCommandLineTool):
 
 	def set_metadata(self):
-		self.label = "download_images"
+		self.metadata = {
+			"label": "download_images",
+		}
 
 	def set_inputs(self):
 		self.inputs = {
 			"url_list": {
 				"type": "file",
-				"prefix": "-i",
+				"bound": True,
 				"position": 0,
+				"prefix": "-i",
 			},
 		}
 
@@ -20,6 +23,7 @@ class download_images(BaseCommandLineTool):
 				"type": "file[]",
 				"glob": "*.fits",
 			},
+			"label": "download_images",
 		}
 
 	def set_base_command(self):
@@ -27,5 +31,8 @@ class download_images(BaseCommandLineTool):
 			"wget",
 		]
 
+	def set_io(self):
+		self.io = {}
+
 if __name__ == "__main__":
-	download_images()
+	download_images_PWF()
