@@ -1,4 +1,5 @@
 import argparse
+import glob
 import os
 import textwrap
 
@@ -150,7 +151,7 @@ def parse_metadata(
     # Doc
     if hasattr(cwl, "doc") and cwl.doc is not None:
         lines.extend(format_dict_key_string("doc", cwl.doc, 3))
-        
+
     lines.append(indent("}", 2))
 
     # No metadata to write
@@ -358,12 +359,12 @@ def parse_outputs(
         # Label
         if hasattr(cwl, "label") and cwl.label is not None:
             label = normalize(cwl.label)
-            lines.append(indent(f'label: "{label}",', 3))
+            lines.append(indent(f'"label": "{label}",', 3))
 
         # Doc
         if hasattr(cwl, "doc") and cwl.doc is not None:
             doc = normalize(cwl.doc)
-            lines.append(indent(f'doc: "{doc}",', 3))
+            lines.append(indent(f'"doc": "{doc}",', 3))
 
 
     lines.append(indent("}", 2))
@@ -411,7 +412,7 @@ def parse_tool_requirements(
     """
     
     """
-    if not hasattr(cwl, "requirements") or cwl.requirements is None:
+    if not hasattr(cwl, "requirements") or cwl.requirements is None or len(cwl.requirements) == 0:
         return
     
     def quote(value: Any) -> str:
@@ -751,13 +752,12 @@ def main():
     input_paths = []
     output_paths = []
 
-    # Check if all input paths are valid
+    # Check if all input paths are valid.
+    # Wildcard paths are supported by using glob.
     for input_path in args.input:
         input_path_obj = Path(input_path)
-        if not input_path_obj.is_file():
-            raise FileNotFoundError(f"Input file '{input_path}' does not exist or is not a file")
-        input_paths.append(input_path_obj)
-    
+        input_paths.extend(input_path_obj.parent.glob(input_path_obj.name))
+
     # Determine output paths based on specified method
     if args.s:
         # Output to same directory as the respective input files
