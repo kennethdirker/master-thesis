@@ -118,5 +118,11 @@ class tool_PWF(BaseCommandLineTool):
 			},
 		}
 
+	def set_io(self):
+		self.io = {
+			"stdout": "$('applycal_' + inputs.type)",
+			"stderr": "$('applycal_' + inputs.type)",
+		}
+
 if __name__ == "__main__":
 	tool_PWF()

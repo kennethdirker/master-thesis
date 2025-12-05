@@ -485,17 +485,17 @@ def parse_io(
     lines.append(indent("def set_io(self):", 1))
     lines.append(indent("self.io = {", 2))
     if hasattr(cwl, "stdin") and cwl.stdin is not None:
-        lines.append(indent(f'"stdin": "{cwl.stdin}"', 3))
+        lines.append(indent(f'"stdin": "{normalize(cwl.stdin)}",', 3))
     if hasattr(cwl, "stdout") and cwl.stdout is not None:
-        lines.append(indent(f'"stdout": "{cwl.stdout}"', 3))
+        lines.append(indent(f'"stdout": "{normalize(cwl.stdout)}",', 3))
     if hasattr(cwl, "stderr") and cwl.stderr is not None:
-        lines.append(indent(f'"stderr": "{cwl.stderr}"', 3))
+        lines.append(indent(f'"stderr": "{normalize(cwl.stderr)}",', 3))
     if hasattr(cwl, "successCodes") and cwl.successCodes is not None:
-        lines.append(indent(f'"successCodes": {cwl.successCodes}', 3))
+        lines.append(indent(f'"successCodes": {cwl.successCodes},', 3))
     if hasattr(cwl, "temporaryFailCodes") and cwl.temporaryFailCodes is not None:
-        lines.append(indent(f'"temporaryFailCodes": {cwl.temporaryFailCodes}', 3))
+        lines.append(indent(f'"temporaryFailCodes": {cwl.temporaryFailCodes},', 3))
     if hasattr(cwl, "permanentFailCodes") and cwl.permanentFailCodes is not None:
-        lines.append(indent(f'"permanentFailCodes": {cwl.permanentFailCodes}', 3))
+        lines.append(indent(f'"permanentFailCodes": {cwl.permanentFailCodes},', 3))
     lines.append(indent("}", 2))
 
     if len(lines) == 4:
@@ -506,9 +506,9 @@ def parse_io(
         lines.append(indent("def set_io(self):", 1))
         lines.append(indent("self.io = {}", 2))
 
-        # Add newlines to each string
-        lines = [line + "\n" for line in lines]
-        out_file.writelines(lines)
+    # Add newlines to each string
+    lines = [line + "\n" for line in lines]
+    out_file.writelines(lines)
 
 
 def parse_steps(
