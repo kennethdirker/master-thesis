@@ -1,7 +1,7 @@
-from typing import Any, Optional, Tuple
+from typing import Any, List, Optional, Type, Sequence, Mapping
+from types import NoneType
 # from .Process import BaseProcess
 from pathlib import Path
-
 
 class Absent:
     """ 
@@ -29,30 +29,52 @@ def dict_to_obj(d: dict) -> Any:
     """
     Convert a dictionary to an object with attributes.
     """
-    def do_stuff(obj, d: dict):
+    def helper(obj, d: dict):
         for key, value in d.items():
             if type(value) is dict:
                 setattr(obj, key, NestedObject())
-                do_stuff(getattr(obj, key), value)
+                helper(getattr(obj, key), value)
             else:
                 setattr(obj, key, value)
 
     obj = NestedObject()
-    do_stuff(obj, d)
+    helper(obj, d)
     return obj
 
-def print_obj(obj, indent: int = 0):
+
+# def print_obj(obj: object, indent: int = 0):
+#     for key in dir(obj):
+#         if not key.startswith("__"):
+#             value = getattr(obj, key)
+#             if type(value) is NestedObject:
+#                 print("\t" * indent, f"{key}:")
+#                 print_obj(value, indent + 1)
+#             else:
+#                 print("\t" * indent, f"{key}: {value}")
+
+
+def print_obj(obj: object, indent: int = 0, filter: Optional[Sequence] = None):
     """
-    Pretty print an object recursively.
+    Pretty print a CWL object recursively.
     """
-    for key in dir(obj):
-        if not key.startswith("__"):
-            value = getattr(obj, key)
-            if type(value) is NestedObject:
-                print("\t" * indent, f"{key}:")
-                print_obj(value, indent + 1)
+    if hasattr(obj, "__dict__"):
+        for attr, value in obj.__dict__.items():
+            if filter and attr in filter:
+                continue
+
+            print("\t" * indent + attr)
+            if isinstance(value, Sequence) and not isinstance(value, str):
+                for elem in value:
+                    print_obj(elem, indent + 1, filter)
+            elif isinstance(value, Mapping):
+                for k, v in value.items():
+                    print("\t" * indent + k + ":")
+                    print_obj(v, indent + 2, filter)
             else:
-                print("\t" * indent, f"{key}: {value}")
+                print_obj(value, indent + 1, filter)
+    elif obj:
+        print("\t" * indent + str(obj))
+
 
 class FileObject:
     """
