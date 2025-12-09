@@ -14,6 +14,7 @@ from types import NoneType
 from typing import (
     Any,
     Callable,
+    cast,
     List,
     TextIO,
     Optional,
@@ -30,7 +31,7 @@ from .utils import Absent, FileObject
 Mapping of Python types to CWL types. CWL supports types that base Python does
 not recognize or support, like double and long. FIXME This is a band-aid for now.
 """
-TYPE_MAPPING: dict[Type, List[str]] = {
+PYTHON_CWL_T_MAPPING: dict[Type, List[str]] = {
     NoneType: ["null"],
     Absent: ["null"],
     bool: ["boolean"],
@@ -38,6 +39,22 @@ TYPE_MAPPING: dict[Type, List[str]] = {
     float: ["float", "double"],
     str: ["string"],
     FileObject: ["file", "directory"]
+}
+
+"""
+Mapping of CWL types to Python types. CWL supports types that base Python does not
+recognize or support, like double and long. FIXME This is a band-aid for now.
+"""
+CWL_PYTHON_T_MAPPING: dict[str, Type] = {
+    "null": NoneType,
+    "boolean": bool,
+    "int": int,
+    "long": int,
+    "float": float,
+    "double": float,
+    "string": str,
+    "file": FileObject,
+    "directory": FileObject,
 }
 
 
@@ -118,62 +135,68 @@ class BaseCommandLineTool(BaseProcess):
             self.input_to_source[input_id] = self.global_id(input_id)
 
 
-    def load_runtime_arg_array(
-            self,
-            input_id: str,
-            input_type: str,
-            cwl_namespace: dict[str, Any]   #TODO Use to evaluate expressions
-        ) -> list[str]:
+    def prepare_runtime_context(self, cwl_namespace):
         """
-        TODO Expression evaluation in array items
-        TODO desc
+        Complete runtime context input values if default or valueFrom are
+        specified in the input parameter. Expressions are evaluated. 
+        If an input parameter has no value (or None/"null") supplied from the 
+        input object, default is used if specified. If 'valueFrom' is provided,
+        it overrides the input object input and default value.
+
+        Expressions in 'valueFrom' might reference 'self', which references the
+        value gained from the input object or the 'default' field.
+        TODO Test
         """
-        args: list[str] = []
-
-        if "null" in input_type:
-            return []
-        if "bool" in input_type:
-            # NOTE: At the moment not sure how this should look like/ be implemented.
-            # FIXME yaml safe_load converts yaml strings to likely Python types.
-            # This is a problem here, as 'True' and 'true' both convert to the
-            # Python bool type with value True.
-            raise NotImplementedError()
-        else:   
-            # TODO FIXME Evaluate expressions in array items needed?
-
+        for input_id, input_dict in self.inputs.items():
+            # Get input value from runtime context
             global_source_id: str = self.input_to_source[input_id]
             value = self.runtime_context[global_source_id]
-            if isinstance(value, list):
-                args = [str(item) for item in value]
+
+            # Check if the input has a value. If not, try to fill it with a
+            # default value
+            if isinstance(value, Absent | NoneType):
+                # Input did not receive a non-None value from input object, try
+                # to get a default value or from the an input binding valueFrom
+                if "default" in input_dict and input_dict["default"] is not None:
+                    value: Any = input_dict["default"]
+                    if isinstance(value, str):
+                        # String might be an expression and need evaluation.
+                        value = self.eval(value, cwl_namespace)
+
+            # Add value of 'self' to evaluation context.
+            namespace: dict[str, Any] = cwl_namespace.copy()
+            namespace.update({"self": value})
+
+            # If provided, valueFrom gives value to the input parameter. 
+            if "valueFrom" in input_dict and not isinstance(value, Absent | NoneType):
+                # If the value of the associated input parameter is null,
+                # valueFrom is not evaluated and nothing is added to the 
+                # command line. This means we set value to None, which is
+                # handled in 'build_commandline()'.
+                if not isinstance(value, str):
+                    raise Exception(f"'valueFrom' of {input_id} does not contain string")
+                value = self.eval(input_dict["valueFrom"], namespace)
             else:
-                args = [str(value)]
-        return args
+                # String might be an expression and need evaluation
+                if isinstance(value, str):
+                    value = self.eval(value, cwl_namespace)
+
+            self.runtime_context[global_source_id] =  value
 
 
     def compose_array_arg(
             self,
-            input_id: str,
-            input_dict: dict[str, Any],
-            cwl_namespace: dict[str, Any]
+            values: List[Any],
+            value_t: str,
+            input_dict: dict[str, Any]
         ) -> list[str]:
         """
         Compose a single command-line array argument.
-
-        TODO desc
-        TODO Support for optional arguments 
-        TODO Support for bool type
+        TODO Test
         """
-        array_arg: list[str] = []
-
-        arg_types: list[str] = []
-        if isinstance(input_dict["type"], str):
-            arg_types = [input_dict["type"]] 
-        elif isinstance(input_dict["type"], list):
-            arg_types = input_dict["type"]
-        else:
-            raise Exception(f"Caught unexpected input type for input '{input_id}'")
-        
-        print("[TOOL] COMPOSE_ARRAY_ARG", f"{input_id}: {arg_types}")
+        # null type and empty arrays do not add to the command line
+        if value_t == "null" or len(values) == 0:
+            return []
 
         # Set default properties as per CWL spec
         prefix: str = ""
@@ -181,7 +204,6 @@ class BaseCommandLineTool(BaseProcess):
         itemSeparator: str | None = None
 
         # Load properties
-        arg_types = ["".join(c for c in t if c not in "[]?") for t in arg_types]   # Filter []? from type string
         if "prefix" in input_dict:
             prefix = input_dict["prefix"]
         if "itemSeparator" in input_dict:
@@ -189,21 +211,18 @@ class BaseCommandLineTool(BaseProcess):
         if "separate" in input_dict:
             separate = input_dict["separate"]
 
-        # Convert array items to strings
-        items: list[str] = []
-        items = self.load_runtime_arg_array(input_id, arg_types, cwl_namespace)
-        print("[TOOL] ARRAY ITEMS: ", items, f"({type(items)})")
-        if "null" in input_type:
-            return []
-        elif "bool" in input_type:
+        array_arg: list[str] = []
+
+        if "boolean" in value_t:
             # NOTE: At the moment not sure how this should be implemented.
+            # Would it look like: '--prefix True False True True' ?
             # FIXME yaml safe_load converts yaml strings to likely Python types.
             # This is a problem here, as 'True' and 'true' both convert to the
             # Python bool type with value True.
             raise NotImplementedError()
         else:
             if itemSeparator:
-                items_joined = itemSeparator.join(items)
+                items_joined = itemSeparator.join(values)
                 if prefix and separate:         # -i= A,B,C
                     array_arg.append(prefix)
                     array_arg.append(items_joined)
@@ -214,52 +233,29 @@ class BaseCommandLineTool(BaseProcess):
             else:
                 if prefix and separate:         # -i= A B C
                     array_arg.append(prefix)
-                    array_arg.extend(items)
+                    array_arg.extend(values)
                 if prefix and not separate:     # -i=A -i=B -i=C
-                    for item in items:
+                    for item in values:
                         array_arg.append(prefix + item)
                 else:                           # A B C
-                    array_arg = items
+                    array_arg = values
         return array_arg
 
         
-    def load_runtime_arg(
-            self, 
-            input_id: str,
-            cwl_namespace: dict[str, Any]
-        ) -> Any | Absent | None:
-        """
-        TODO Where do we evaluate now???
-
-        TODO valueFrom?
-        """
-        global_source_id: str = self.input_to_source[input_id]
-        value = self.runtime_context[global_source_id]
-        if isinstance(value, str):
-            value = self.eval(value, cwl_namespace)
-        if isinstance(value, list):
-            # If dealing with array data, just take the first item for now FIXME
-            value = value[0]
-        return value
-
-
     def compose_arg(
             self,
             value: Any,
-            value_t: str | None,
-            input_id: str,
+            value_t: str,
             input_dict: dict[str, Any],
-            cwl_namespace: dict[str, Any],
-            optional: bool = False
         ) -> list[str]:
         """
         Compose a single command-line argument.
-        
-        TODO desc, how is value chosen?
-        TODO Support for optional arguments 
-        TODO Support for bool type
+        TODO Test
         """
-        args: list[str] = []
+        # null type doesn't add to the command line
+        if value_t == "null":
+            return []
+        
         # Set default properties as per CWL spec
         prefix: str = ""
         separate: bool = True
@@ -269,27 +265,12 @@ class BaseCommandLineTool(BaseProcess):
         if "separate" in input_dict:
             separate = input_dict["separate"]
 
-        # Check whether the argument has a default value to be used or the 
-        # command line argument is optional.
-        # Raise an exception if the input is mandatory, but missing.
-        if isinstance(value, (Absent, type(None))):
-            if "default" in input_dict:
-                # TODO FIXME Do this somewhere else?
-                value = input_dict["default"]
-            else:
-                if optional:
-                    # Input is optional, so we just ignore this argument
-                    return []
-                else:
-                    raise Exception(f"Input {input_id} is missing")
+        args: list[str] = []
 
-        if value_t == "boolean":
-            # FIXME yaml safe_load converts yaml strings to likely Python types.
-            # This is a problem here, as 'True' and 'true' both convert to the
-            # Python bool type with value True.
-            raise NotImplementedError()
+        if value_t == "boolean" and "prefix" in input_dict:
+            args.append(prefix)
         else:
-            # Format the 
+            # Format argument
             if separate:
                 if prefix:
                     args.append(prefix)
@@ -302,10 +283,14 @@ class BaseCommandLineTool(BaseProcess):
 
     def build_commandline(
             self, 
-            cwl_namespace: dict[str, Any]
+            # cwl_namespace: dict[str, Any]
         ) -> list[str]:
         """
-        Build the command line to be executed.
+        Build the command line to be executed. Takes values from the runtime
+        context. If the runtime context holds None or the 'Absent' type for an
+        input parameter, nothing is added to the command line.
+        NOTE: Runtime context must be prepared before this function is called.
+        TODO Test
         """
         pos_inputs: list[Tuple[str, dict[str, Any]]] = []
         key_inputs: list[Tuple[str, dict[str, Any]]] = []
@@ -350,25 +335,26 @@ class BaseCommandLineTool(BaseProcess):
                 is_array = True
 
                 if len(value) == 0:
-                    # TODO Should empty arrays be supported?
-                    raise NotImplementedError(f"Found empty array for input '{input_id}'")
-                
+                    # If the array is empty, it does not add anything to command line
+                    continue
+
                 # Check if all array elements have the same type.
                 if any([not isinstance(v, value[0]) for v in value]):
                     raise Exception("Array is not homogeneous")
-                 
+
                 expected_types = [t for t in expected_types if "[]" in t] # Filter for array types
-                value_types = TYPE_MAPPING[type(value[0])]
+                value_types = PYTHON_CWL_T_MAPPING[type(value[0])]
             else:
                 # Dealing with single item.
-                value_types = TYPE_MAPPING[type(value)]
-                
-            # Check if the type of the received runtime input value is
+                value_types = PYTHON_CWL_T_MAPPING[type(value)]
+
+            # Check if the type of the received runtime input value is valid
             value_type: str | None = None
             for v_type in value_types:
                 for valid_type in expected_types:
                     if v_type == valid_type:    # Exact string match
                         value_type = v_type
+
             optional = False
             if value_type is None:
                 # No match, check if the input is optional. If so, don't add
@@ -376,15 +362,22 @@ class BaseCommandLineTool(BaseProcess):
                 if not "null" in expected_types:
                     raise Exception(f"Tool input '{input_id}' supports CWL types '[{', '.join(expected_types)}], but found CWL types ['{', '.join(value_types)}'] (from '{type(value)}')")
                 optional = True
+            
+            if isinstance(value, NoneType | Absent):
+                if optional:
+                    continue
+                else:
+                    raise Exception(f"Required input '{input_id}' has no value")
+            
+            value_type = cast(str, value_type)
 
-            # TODO 'value' is not evaluated yet. Where to do this?
             if is_array:
                 # Compose argument with array data
                 # TODO FIXME UPDATE
-                cmd.extend(self.compose_array_arg(input_id, input_dict, cwl_namespace))
+                cmd.extend(self.compose_array_arg(value, value_type, input_dict))
             else:
                 # Compose argument with single data value
-                cmd.extend(self.compose_arg(value, value_type, input_id, input_dict, cwl_namespace, optional))
+                cmd.extend(self.compose_arg(value, value_type, input_dict))
 
         # Combine the base command with the arguments
         if hasattr(self, "base_command"):
@@ -508,8 +501,9 @@ class BaseCommandLineTool(BaseProcess):
 
         # Build the command line
         cwl_namespace = self.build_namespace()
-        # TODO Evaluate / fill all inputs that rely on expressions (check default/valueFrom?)
-        cmd: list[str] = self.build_commandline(cwl_namespace)
+        self.prepare_runtime_context(cwl_namespace)
+        cmd: list[str] = self.build_commandline()
+        # cmd: list[str] = self.build_commandline(cwl_namespace)
 
         # Evaluate expressions in outputs. This has to be done before wrapper 
         # execution, FIXME but I cant remember why.
