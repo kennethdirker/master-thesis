@@ -418,9 +418,15 @@ class BaseProcess(ABC):
         
         The expression may access CWL namespace variables, like 'inputs'.
         """
-
         # TODO FIXME remove
         # verbose = True
+
+        context_vars = local_vars.copy()
+
+        # 'self' is null by default.
+        if 'self' not in local_vars:
+            # NOTE Should None be 'null'?
+            context_vars.update({"self": None})
 
         if type(expression) is not str:
             raise Exception(f"Expected expression to be a string, but found {type(expression)}")
@@ -429,7 +435,7 @@ class BaseProcess(ABC):
         if expression.startswith("$(") and expression.endswith(")"):
             # Expression is a Javascript expression
             # Build JS context with CWL namespaces
-            js_context = js2py.EvalJs(local_vars)
+            js_context = js2py.EvalJs(context_vars)
             # context["self"] = ... # TODO Other CWL namespaces
 
             # Evaluate expression with JS engine
@@ -439,9 +445,8 @@ class BaseProcess(ABC):
         elif expression.startswith("$") and expression.endswith("$"):
             # Expression is a Python expression
             # Build context dictionary with CWL namespaces
-            py_context = local_vars.copy()
-            py_context["inputs"] = dict_to_obj(local_vars["inputs"])
-            # context["self"] = ... # TODO Other CWL namespaces
+            py_context = context_vars.copy()
+            py_context["inputs"] = dict_to_obj(context_vars["inputs"])
 
             # Evaluate expression with Python eval()
             ret = eval(expression[1:-1], py_context)
