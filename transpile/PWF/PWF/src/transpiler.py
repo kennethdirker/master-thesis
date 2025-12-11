@@ -440,7 +440,11 @@ def parse_tool_requirements(
     """
     
     """
+    # No requirements to parse
     if not hasattr(cwl, "requirements") or cwl.requirements is None or len(cwl.requirements) == 0:
+        return
+    # Only obsolite requirement, dont parse
+    if len(cwl.requirements) == 1 and "InlineJavascriptRequirement" in cwl.requirements[0].class_:
         return
     
     def quote(value: Any) -> str:
