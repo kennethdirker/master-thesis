@@ -370,10 +370,9 @@ class BaseCommandLineTool(BaseProcess):
                     raise Exception(f"Required input '{input_id}' has no value")
             
             value_type = cast(str, value_type)
-
+            print(value)
             if is_array:
                 # Compose argument with array data
-                # TODO FIXME UPDATE
                 cmd.extend(self.compose_array_arg(value, value_type, input_dict))
             else:
                 # Compose argument with single data value
@@ -427,7 +426,10 @@ class BaseCommandLineTool(BaseProcess):
         ) -> dict[str, Any]:
         """
         Wrapper for subprocess.run(). Executes the command line tool and
-        processes the outputs.
+        sets the outputs.
+        
+        NOTE: This function does not match the outputs with the output schema!
+        In order words, the outputs are not validated here.
 
         Returns:
             A dictionary containing all newly added runtime output state.
@@ -450,6 +452,7 @@ class BaseCommandLineTool(BaseProcess):
                 raise Exception("Type missing from output in\n", self.id)
             output_type: str = output_dict["type"]
 
+            # TODO Other output types, like int, float, etc 
             if "string" in output_type:
                 # Get stdout from subprocess.run and decode to utf-8
                 output[global_output_id] = completed.stdout.decode()
@@ -459,12 +462,11 @@ class BaseCommandLineTool(BaseProcess):
                 # by a CommandLineTool.
                 if "glob" in output_dict:
                     glob_string: str = self.eval(output_dict["glob"], cwl_namespace)
-                    output_file_paths = glob.glob(glob_string)
+                    output_file_paths: List[str] = glob.glob(glob_string)
 
                     if len(output_file_paths) == 0:
                         raise Exception(f"Output glob {glob_string} (from '{output_dict['glob'][1:-1]}') did not match any files")
 
-                    # output_file_paths = glob.glob(output_dict["glob"])
                     if "[]" in output_type:
                         # Output is an array of objects
                         output[global_output_id] = output_file_paths
@@ -503,13 +505,6 @@ class BaseCommandLineTool(BaseProcess):
         cwl_namespace = self.build_namespace()
         self.prepare_runtime_context(cwl_namespace)
         cmd: list[str] = self.build_commandline()
-        # cmd: list[str] = self.build_commandline(cwl_namespace)
-
-        # Evaluate expressions in outputs. This has to be done before wrapper 
-        # execution, FIXME but I cant remember why.
-        for output_id, output_dict in self.outputs.items():
-            for property, value in output_dict.items():
-                self.outputs[output_id][property] = self.eval(value, cwl_namespace)
 
         # Build the execution environment
         env = self.build_env(cwl_namespace)
@@ -537,14 +532,18 @@ class BaseCommandLineTool(BaseProcess):
                 env
             )
 
-        # TODO Check if all outputs are present
+        # TODO Validate outputs
+        outputs_schema: List[dict] = []
+        # TODO Transform self.outputs (whether single item, list, or dict) into outputs_schema list
+        # TODO Check if outputs match schema
+        # TODO Evaluate valueFrom NOTE: Should this happen here or in the wrapper?
         
         # Print stderr/stdout
         # FIXME Check if this works
-        if verbose:
-            if "stdout" in new_state:
-                print(new_state["stdout"], file=sys.stdout)
-            if "stderr" in new_state:
-                print(new_state["stderr"], file=sys.stderr)
+        if "stdout" in new_state:
+            print(new_state["stdout"], file=sys.stdout)
+
+        if "stderr" in new_state:
+            print(new_state["stderr"], file=sys.stderr)
 
         return new_state
