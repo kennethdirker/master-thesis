@@ -383,9 +383,6 @@ def parse_outputs(
                     lines.append(indent(f'"outputEval": "{outputEval}",', 4))
                 # secondaryFiles
                 # TODO
-
-            lines.append(indent("},", 3))
-
             # Streamable
             # TODO
 
@@ -397,6 +394,7 @@ def parse_outputs(
             if hasattr(output, "doc") and output.doc is not None:
                 lines.extend(format_dict_key_string("doc", output.doc, 4))
 
+            lines.append(indent("},", 3))
     lines.append(indent("}", 2))
 
     # Special case: no outputs
