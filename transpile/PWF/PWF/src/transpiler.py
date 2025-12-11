@@ -4,7 +4,7 @@ import os
 import textwrap
 
 from pathlib import Path
-from typing import Any, Optional, TextIO, Tuple, Union
+from typing import Any, List, Mapping, Optional, TextIO, Tuple, Union
 
 from cwl_utils.parser import load_document_by_uri
 
@@ -215,10 +215,25 @@ def parse_inputs(
             lines = [line + "\n" for line in lines]
             out_file.writelines(lines)
             return
+
+        # Make sure we are dealing with a list of input parameters
+        inputs: List = []
+        if isinstance(cwl.inputs, List):
+            inputs = cwl.inputs
+        elif isinstance(cwl.inputs, Mapping):
+            # Output parameters are saved in a dict and must be transformed to
+            # a list by including the output paramater ID as a key in the 
+            # output parameter. 
+            for id, output_dict in cwl.inputs:
+                output_dict["id"] = id
+                inputs.append(output_dict)
+        else:
+            raise Exception(f"Expected list/dict, but found '{type(cwl.inputs)}'")
         
         lines.append(indent("self.inputs = {", 2))
-        for input in cwl.inputs:
+        for input in inputs:
             # Get input ID from file_path#[input_id | tool_id/input_id]
+            # NOTE Force id field in cwl file?
             input_id = input.id.split("#")[-1].split("/")[-1]
             lines.append(indent(f'"{input_id}": {{', 3))
 
@@ -330,8 +345,24 @@ def parse_outputs(
     if hasattr(cwl, "outputs") and cwl.outputs is not None:
         # TODO Finish
         # TODO FIXME Examine the outputs, output object
-        for output in cwl.outputs:
+
+        # Make sure we are dealing with a list of output parameters
+        outputs: List = []
+        if isinstance(cwl.outputs, List):
+            outputs = cwl.outputs
+        elif isinstance(cwl.outputs, Mapping):
+            # Output parameters are saved in a dict and must be transformed to
+            # a list by including the output paramater ID as a key in the 
+            # output parameter. 
+            for id, output_dict in cwl.outputs:
+                output_dict["id"] = id
+                outputs.append(output_dict)
+        else:
+            raise Exception(f"Expected list/dict, but found '{type(cwl.outputs)}'")
+        
+        for output in outputs:
             # ID
+            # NOTE Force id field in cwl file?
             lines.append(indent(f'"{output.id.split("/")[-1]}": {{', 3))
 
             # Type
@@ -341,31 +372,30 @@ def parse_outputs(
             if hasattr(output, "outputBinding"):
                 binding = output.outputBinding
                 # Glob
-                if hasattr(binding, "glob"):
+                if hasattr(binding, "glob") and binding.glob is not None:
                     glob = normalize(binding.glob)
                     lines.append(indent(f'"glob": "{glob}",', 4))
                 # loadContents
                 # TODO
                 # outputEval
-                # TODO
+                if hasattr(binding, "outputEval") and binding.outputEval is not None:
+                    outputEval = normalize(binding.outputEval)
+                    lines.append(indent(f'"outputEval": "{outputEval}",', 4))
                 # secondaryFiles
                 # TODO
 
             lines.append(indent("},", 3))
 
-        # Streamable
-        # TODO
+            # Streamable
+            # TODO
 
-        # Label
-        if hasattr(cwl, "label") and cwl.label is not None:
-            label = normalize(cwl.label)
-            lines.append(indent(f'"label": "{label}",', 3))
+            # Label
+            if hasattr(output, "label") and output.label is not None:
+                lines.extend(format_dict_key_string("label", output.label, 4))
 
-        # Doc
-        if hasattr(cwl, "doc") and cwl.doc is not None:
-            doc = normalize(cwl.doc)
-            lines.append(indent(f'"doc": "{doc}",', 3))
-
+            # Doc
+            if hasattr(output, "doc") and output.doc is not None:
+                lines.extend(format_dict_key_string("doc", output.doc, 4))
 
     lines.append(indent("}", 2))
 
@@ -533,8 +563,24 @@ def parse_steps(
     lines.append(indent("def set_steps(self):", 1))
     lines.append(indent("self.steps = {", 2))
 
-    for step in cwl.steps:
+
+    # Make sure we are dealing with a list of steps
+    steps: List = []
+    if isinstance(cwl.steps, List):
+        steps = cwl.steps
+    elif isinstance(cwl.steps, Mapping):
+        # Output parameters are saved in a dict and must be transformed to
+        # a list by including the output paramater ID as a key in the 
+        # output parameter. 
+        for id, output_dict in cwl.steps:
+            output_dict["id"] = id
+            steps.append(output_dict)
+    else:
+        raise Exception(f"Expected list/dict, but found '{type(cwl.inputs)}'")
+
+    for step in steps:
         # ID
+        # NOTE Force id field in cwl file?
         lines.append(indent(f'"{step.id.split("/")[-1]}": {{', 3))
 
         # in
@@ -574,9 +620,14 @@ def parse_steps(
         run_uri: str = resolve_run_uri(step.run, step.id)
         lines.append(indent(f'"run": "{run_uri}",', 4))
 
-        # label
-        if hasattr(step, "label"):
-            lines.append(indent(f'"label": "{step.label}",', 4))
+        # Label
+        if hasattr(step, "label") and step.label is not None:
+            lines.extend(format_dict_key_string("label", step.label, 4))
+
+        # Doc
+        if hasattr(step, "doc") and step.doc is not None:
+            lines.extend(format_dict_key_string("doc", step.doc, 4))
+
         lines.append(indent("},", 3))
     lines.append(indent("}", 2))
 
