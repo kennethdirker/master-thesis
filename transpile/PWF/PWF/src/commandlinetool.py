@@ -38,7 +38,7 @@ PYTHON_CWL_T_MAPPING: dict[Type, List[str]] = {
     int: ["int", "long"],
     float: ["float", "double"],
     str: ["string"],
-    FileObject: ["file", "directory"]
+    FileObject: ["file", "directory"]   # TODO DirectoryObject
 }
 
 """
@@ -54,7 +54,7 @@ CWL_PYTHON_T_MAPPING: dict[str, Type] = {
     "double": float,
     "string": str,
     "file": FileObject,
-    "directory": FileObject,
+    "directory": FileObject,    # TODO DirectoryObject
 }
 
 
@@ -88,10 +88,10 @@ class BaseCommandLineTool(BaseProcess):
         # self.env: dict[str, Any] = {}
 
         # Digest CommandlineTool file
-        self.set_metadata()
-        self.set_inputs()
-        self.set_outputs()
-        self.set_requirements()
+        # self.set_metadata()
+        # self.set_inputs()
+        # self.set_outputs()
+        # self.set_requirements()
         self.set_base_command()
         
         if main:
@@ -184,6 +184,15 @@ class BaseCommandLineTool(BaseProcess):
             self.runtime_context[global_source_id] =  value
 
 
+    def match_inputs(self):
+        """
+        Check if the input values match to the input schema in self.inputs. If 
+        not all inputs match, an exception is raised.
+        
+        """
+
+
+
     def compose_array_arg(
             self,
             values: List[Any],
@@ -220,25 +229,29 @@ class BaseCommandLineTool(BaseProcess):
             # This is a problem here, as 'True' and 'true' both convert to the
             # Python bool type with value True.
             raise NotImplementedError()
+        
+        # Transform values into strings
+        values_s: List[str] = [str(v) for v in values]
+
+        # Format the argument(s) according to prefix and separator config
+        if itemSeparator:
+            items_joined = itemSeparator.join(values_s)
+            if prefix and separate:         # -i= A,B,C
+                array_arg.append(prefix)
+                array_arg.append(items_joined)
+            elif prefix and not separate:   # -i=A,B,C
+                array_arg.append(prefix + items_joined)
+            else:                           # A,B,C
+                array_arg.append(items_joined)
         else:
-            if itemSeparator:
-                items_joined = itemSeparator.join(values)
-                if prefix and separate:         # -i= A,B,C
-                    array_arg.append(prefix)
-                    array_arg.append(items_joined)
-                elif prefix and not separate:   # -i=A,B,C
-                    array_arg.append(prefix + items_joined)
-                else:                           # A,B,C
-                    array_arg.append(items_joined)
-            else:
-                if prefix and separate:         # -i= A B C
-                    array_arg.append(prefix)
-                    array_arg.extend(values)
-                if prefix and not separate:     # -i=A -i=B -i=C
-                    for item in values:
-                        array_arg.append(prefix + item)
-                else:                           # A B C
-                    array_arg = values
+            if prefix and separate:         # -i= A B C
+                array_arg.append(prefix)
+                array_arg.extend(values_s)
+            if prefix and not separate:     # -i=A -i=B -i=C
+                for item in values_s:
+                    array_arg.append(prefix + item)
+            else:                           # A B C
+                array_arg = values_s
         return array_arg
 
         
@@ -270,13 +283,15 @@ class BaseCommandLineTool(BaseProcess):
         if value_t == "boolean" and "prefix" in input_dict:
             args.append(prefix)
         else:
+            # Stringify value
+            value_s = str(value)
             # Format argument
             if separate:
                 if prefix:
                     args.append(prefix)
-                args.append(value)
+                args.append(value_s)
             else:
-                args.append(prefix + value)
+                args.append(prefix + value_s)
 
         return args
 
@@ -301,7 +316,7 @@ class BaseCommandLineTool(BaseProcess):
         # Split positional arguments and key arguments
         for input_id, input_dict in self.inputs.items():
             # Skip unbound (without input binding) inputs
-            if hasattr(input_dict, "bound") and input_dict["bound"]:
+            if "bound" in input_dict and input_dict["bound"]:
                 if hasattr(input_dict, "position"):
                     pos_inputs.append((input_id, input_dict))
                 else:
@@ -320,13 +335,14 @@ class BaseCommandLineTool(BaseProcess):
 
             # Load expected input types
             expected_types: list[str] = []
-            _t: Type = type(input_dict["type"])
-            if isinstance(_t, str):
+            # _t: Type = type(input_dict["type"])
+            if isinstance(input_dict["type"], str):
                 expected_types = [input_dict["type"]]
-            elif isinstance(_t, list):
+            elif isinstance(input_dict["type"], list):
                 expected_types = input_dict["type"]
             else:
-                raise Exception(f"Unexpected type(input_dict['type']). Should be 'str' or 'list', but found '{_t}'")
+                raise Exception(f"Unexpected type(input_dict['type']). Should be 'str' or 'list', but found '{type(input_dict['type'])}'")
+                # raise Exception(f"Unexpected type(input_dict['type']). Should be 'str' or 'list', but found '{_t}'")
 
             # Check whether we are dealing with an array or not
             is_array: bool = False
@@ -339,7 +355,7 @@ class BaseCommandLineTool(BaseProcess):
                     continue
 
                 # Check if all array elements have the same type.
-                if any([not isinstance(v, value[0]) for v in value]):
+                if any([not isinstance(v, type(value[0])) for v in value]):
                     raise Exception("Array is not homogeneous")
 
                 expected_types = [t for t in expected_types if "[]" in t] # Filter for array types
@@ -352,15 +368,19 @@ class BaseCommandLineTool(BaseProcess):
             value_type: str | None = None
             for v_type in value_types:
                 for valid_type in expected_types:
-                    if v_type == valid_type:    # Exact string match
-                        value_type = v_type
+                    if is_array:
+                        if v_type + "[]" == valid_type:
+                            value_type = v_type + "[]"
+                    else:
+                        if v_type == valid_type:    # Exact string match
+                            value_type = v_type
 
             optional = False
             if value_type is None:
                 # No match, check if the input is optional. If so, don't add
                 # anything to the command line
                 if not "null" in expected_types:
-                    raise Exception(f"Tool input '{input_id}' supports CWL types '[{', '.join(expected_types)}], but found CWL types ['{', '.join(value_types)}'] (from '{type(value)}')")
+                    raise Exception(f"Tool input '{input_id}' supports CWL types [{', '.join(expected_types)}], but found CWL types ['{', '.join(value_types)}'] (from '{type(value)}')")
                 optional = True
             
             if isinstance(value, NoneType | Absent):
@@ -370,7 +390,7 @@ class BaseCommandLineTool(BaseProcess):
                     raise Exception(f"Required input '{input_id}' has no value")
             
             value_type = cast(str, value_type)
-            print(value)
+
             if is_array:
                 # Compose argument with array data
                 cmd.extend(self.compose_array_arg(value, value_type, input_dict))
@@ -504,6 +524,7 @@ class BaseCommandLineTool(BaseProcess):
         # Build the command line
         cwl_namespace = self.build_namespace()
         self.prepare_runtime_context(cwl_namespace)
+        self.match_inputs()
         cmd: list[str] = self.build_commandline()
 
         # Build the execution environment
@@ -532,9 +553,10 @@ class BaseCommandLineTool(BaseProcess):
                 env
             )
 
-        # TODO Validate outputs
+        ### TODO Validate outputs ###
+        ### NOTE Should this be done in BaseProcess because both tools and 
+        # workflows need to do this?
         outputs_schema: List[dict] = []
-        # TODO Transform self.outputs (whether single item, list, or dict) into outputs_schema list
         # TODO Check if outputs match schema
         # TODO Evaluate valueFrom NOTE: Should this happen here or in the wrapper?
         

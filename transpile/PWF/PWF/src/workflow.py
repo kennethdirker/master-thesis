@@ -7,7 +7,7 @@ from concurrent.futures import Future
 from copy import deepcopy
 from dask.distributed import Client, Future
 from pathlib import Path
-from typing import Any, Optional, Tuple, Union
+from typing import Any, cast, Optional, Tuple, Union
 
 from .commandlinetool import BaseCommandLineTool
 from .process import BaseProcess, Graph, Node
@@ -45,10 +45,10 @@ class BaseWorkflow(BaseProcess):
         self.steps: dict[str, dict[str, Any]] = {}
 
         # Digest workflow file
-        self.set_metadata()
-        self.set_inputs()
-        self.set_outputs()
-        self.set_requirements()
+        # self.set_metadata()
+        # self.set_inputs()
+        # self.set_outputs()
+        # self.set_requirements()
         self.set_steps()
 
         # Only the main process executes the workflow.
@@ -267,6 +267,7 @@ class BaseWorkflow(BaseProcess):
                         if _process.step_id is None:
                             raise ValueError("_process.step_id cannot be None")
                         _step_id = _process.step_id
+                        
                         _process = processes[_process.parent_process_id]
 
     
