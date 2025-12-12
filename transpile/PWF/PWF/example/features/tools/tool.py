@@ -94,6 +94,7 @@ class tool_PWF(BaseCommandLineTool):
 			"msout": {
 				"type": "directory",
 				"glob": "$(inputs.msin.basename)",
+				"doc": "Output Measurement Set",
 			},
 			"logfile": {
 				"type": "file[]",

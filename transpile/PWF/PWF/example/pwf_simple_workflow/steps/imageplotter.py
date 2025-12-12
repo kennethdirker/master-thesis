@@ -27,7 +27,6 @@ class imageplotter_PWF(BaseCommandLineTool):
 				"type": "file",
 				"glob": "$(inputs.output_image)",
 			},
-			"label": "imageplotter",
 		}
 
 	def set_base_command(self):
@@ -35,10 +34,6 @@ class imageplotter_PWF(BaseCommandLineTool):
 			"python",
 			"../scripts/imageplotter.py",
 		]
-
-	def set_requirements(self):
-		self.requirements = {
-		}
 
 	def set_io(self):
 		self.io = {}

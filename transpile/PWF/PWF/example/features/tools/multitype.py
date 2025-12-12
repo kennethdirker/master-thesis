@@ -1,37 +1,29 @@
 from PWF.src.commandlinetool import BaseCommandLineTool
 
-class download_images_PWF(BaseCommandLineTool):
+class multitype_PWF(BaseCommandLineTool):
 
 	def set_metadata(self):
-		self.metadata = {
-			"label": "download_images",
-		}
+		self.metadata = {}
 
 	def set_inputs(self):
 		self.inputs = {
-			"url_list": {
-				"type": "file",
+			"message": {
+				"type": ["int", "string", "null"],
 				"bound": True,
 				"position": 0,
-				"prefix": "-i",
 			},
 		}
 
 	def set_outputs(self):
-		self.outputs = {
-			"output": {
-				"type": "file[]",
-				"glob": "*.fits",
-			},
-		}
+		self.outputs = {}
 
 	def set_base_command(self):
 		self.base_command = [
-			"wget",
+			"echo",
 		]
 
 	def set_io(self):
 		self.io = {}
 
 if __name__ == "__main__":
-	download_images_PWF()
+	multitype_PWF()

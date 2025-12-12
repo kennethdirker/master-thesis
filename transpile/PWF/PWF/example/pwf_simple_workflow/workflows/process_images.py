@@ -22,7 +22,6 @@ class process_images_PWF(BaseWorkflow):
 			"after_noise_remover_plot": {
 				"type": "file",
 			},
-			"label": "process_images",
 		}
 
 	def set_steps(self):
