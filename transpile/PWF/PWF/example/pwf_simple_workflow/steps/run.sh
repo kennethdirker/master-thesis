@@ -18,6 +18,6 @@ fi
 
 # Execute the tools simulating the workflow in the workflow directory
 # python download_images.py download_images.yaml
-python imageplotter.py imageplotter.yaml
-python noiseremover.py noiseremover.yaml
-python imageplotter.py imageplotter_after.yaml
+python imageplotter.py -y imageplotter.yaml
+# python noiseremover.py -y noiseremover.yaml
+# python imageplotter.py -y imageplotter_after.yaml
