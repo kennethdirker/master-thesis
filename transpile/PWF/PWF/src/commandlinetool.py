@@ -24,38 +24,7 @@ from typing import (
 )
 
 from .process import BaseProcess
-from .utils import Absent, FileObject
-
-    
-"""
-Mapping of Python types to CWL types. CWL supports types that base Python does
-not recognize or support, like double and long. FIXME This is a band-aid for now.
-"""
-PYTHON_CWL_T_MAPPING: dict[Type, List[str]] = {
-    NoneType: ["null"],
-    Absent: ["null"],
-    bool: ["boolean"],
-    int: ["int", "long"],
-    float: ["float", "double"],
-    str: ["string"],
-    FileObject: ["file", "directory"]   # TODO DirectoryObject
-}
-
-"""
-Mapping of CWL types to Python types. CWL supports types that base Python does not
-recognize or support, like double and long. FIXME This is a band-aid for now.
-"""
-CWL_PYTHON_T_MAPPING: dict[str, Type] = {
-    "null": NoneType,
-    "boolean": bool,
-    "int": int,
-    "long": int,
-    "float": float,
-    "double": float,
-    "string": str,
-    "file": FileObject,
-    "directory": FileObject,    # TODO DirectoryObject
-}
+from .utils import Absent, FileObject, PYTHON_CWL_T_MAPPING, CWL_PYTHON_T_MAPPING
 
 
 class BaseCommandLineTool(BaseProcess):

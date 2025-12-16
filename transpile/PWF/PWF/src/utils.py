@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Type, Sequence, Mapping
+from typing import Any, List, Optional, Type, Sequence, Mapping, Union
 from types import NoneType
 # from .Process import BaseProcess
 from pathlib import Path
@@ -9,11 +9,16 @@ class Absent:
     valid value for an argument.
     """
 
+    string: str
+    value = None
+    cwltype: str = "null"
+
     def __init__(self, string: str = "None") -> None:
         self.string = string
 
     def __repr__(self) -> str:
         return f'Absent("{self.string}")'
+
 
 
 # def get_or_default(d: dict, default_value: Any) -> Any:
@@ -106,3 +111,95 @@ class FileObject:
     
     def __repr__(self) -> str:
         return f"FileObject({self.path})"
+    
+class DirectoryObject:
+    """
+    Object that stores path properties as strings.
+    Available properties: 
+        location : TODO
+        path     : absolute/path/to/file.ext,
+        basename : file.ext,
+        listing  : [sub-file?, sub-directory?]
+    """
+    location: str   # TODO
+    path: str
+    basename: str
+    listing: List[Union[FileObject, 'DirectoryObject']]
+    
+    def __init__(self, file_path: str):
+        path: Path = Path(file_path).resolve()
+        self.path = str(path)
+        self.basename = path.name
+        # location: str = #TODO
+
+        self.listing = []
+        for p in path.iterdir():
+            if p.is_dir():
+                self.listing.append(DirectoryObject(str(p)))
+            if p.is_file():
+                self.listing.append(FileObject(str(p)))
+
+    def __str__(self) -> str:
+        return self.path
+    
+    def __repr__(self) -> str:
+        return f"DirectoryObject({self.path})"
+    
+    
+"""
+Mapping of Python types to CWL types. CWL supports types that base Python does
+not recognize or support, like double and long. FIXME This is a band-aid for now.
+"""
+PYTHON_CWL_T_MAPPING: dict[Type, List[str]] = {
+    NoneType: ["null"],
+    Absent: ["null"],
+    bool: ["boolean"],
+    int: ["int", "long"],
+    float: ["float", "double"],
+    str: ["string", "file", "directory"],
+    FileObject: ["file"], 
+    DirectoryObject: ["directory"],
+}
+
+"""
+Mapping of CWL types to Python types. CWL supports types that base Python does not
+recognize or support, like double and long. FIXME This is a band-aid for now.
+"""
+CWL_PYTHON_T_MAPPING: dict[str, Type] = {
+    "null": NoneType,
+    "boolean": bool,
+    "int": int,
+    "long": int,
+    "float": float,
+    "double": float,
+    "string": str,
+    "file": FileObject,
+    "directory": DirectoryObject,
+}
+
+
+class Value:
+    """
+    Wrapper for a value and its corresponding Python and CWL datatype.
+    """
+    value: Any
+    type: Type
+    cwltype: str
+    is_array: bool
+    # is_map: bool
+
+    def __init__(self, value: Any, type_t, cwl_type) -> None:
+        self.value = value
+        self.type = type_t
+        self.cwltype = cwl_type
+        self.is_array = isinstance(value, Sequence)
+
+
+    # def is_array(self):
+    #     return isinstance(self.value, Sequence)
+    
+    # def is_map(self):
+    #     return isinstance(self.value, Mapping)
+
+    def __str__(self) -> str:
+        return f"{self.value} ({self.cwltype})"

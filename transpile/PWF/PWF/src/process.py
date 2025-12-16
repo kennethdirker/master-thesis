@@ -13,9 +13,17 @@ from copy import deepcopy
 from dask.distributed import Client
 from enum import Enum
 from pathlib import Path
-from typing import Any, cast, Optional, Union
+from typing import Any, Mapping, Sequence, Optional, Type, Union, cast
 
-from .utils import Absent, FileObject, dict_to_obj
+from .utils import (
+    Absent,
+    DirectoryObject,
+    FileObject,
+    CWL_PYTHON_T_MAPPING,
+    PYTHON_CWL_T_MAPPING,
+    Value,
+    dict_to_obj
+)
 
 
 class BaseProcess(ABC):
@@ -89,7 +97,8 @@ class BaseProcess(ABC):
         # map processes and step IDs. Only the root process must load the input
         # YAML from a file. Non-root processes get a reference to the
         # dictionary loaded in the main process.
-        self.runtime_context: dict[str, Any] = {}
+        self.runtime_context: dict[str, Value | Absent] = {}
+        # self.runtime_context: dict[str, Any] = {}
         if main:
             self.loading_context = {}
             self.loading_context["graph"] = Graph() # Used in create_dependency_graph()
@@ -223,7 +232,7 @@ class BaseProcess(ABC):
             self, 
             input_id: str,
             input_value: Any
-        ) -> Any | list[Any]:
+        ) -> Value:
         """
         Extract a value from a input object's key-value entry. This is needed
         because CWL input objects may contain key-value pairs that are more
@@ -245,38 +254,154 @@ class BaseProcess(ABC):
         Returns:
             The extracted value.
         """
-        if isinstance(input_value, str):
-            if 'file' in self.inputs[input_id]["type"]:
-                input_value = FileObject(input_value)
-            return input_value
-        elif isinstance(input_value, list):
-            # Because file lists are represented as lists of dicts, we need to
-            # check if a list contains files and extract their paths.
-            # If the list is a regular list, we just return it.
+        expected_cwl_types: Sequence[str]
+
+        if not isinstance(self.inputs[input_id]["type"], Sequence):
+            expected_cwl_types = [self.inputs[input_id]["type"]]
+        else:
+            expected_cwl_types = self.inputs[input_id]["type"]
+
+
+        if isinstance(input_value, Sequence):
+            # We are dealing with an array
             if len(input_value) == 0:
-                return []
-
-            _t = type(input_value[0])
-
-            # Rudimentary homogeneity check on list
-            valid = all([isinstance(i, _t) for i in input_value])
-            if not valid:
-                raise Exception(f"Array for input '{input_id} not homogeneous")
+                # Empty arrays dont add to command line, so just put None
+                return Value(None, type(None), "null")
             
-            # If input value is a list of files, transform it into list of
-            # FileObjects
-            if (isinstance(input_value[0], dict) and
-                "class" in input_value[0] and "file" in input_value[0]):
-                return [FileObject(v["path"]) for v in input_value]
-            if "file[]" in self.inputs[input_id]["type"]:
-                # FIXME Collision between 'string' and 'file' type when value is a path string
-                return [FileObject(string_path) for string_path in input_value]
+            # Get the first array item
+            head = input_value[0]
 
-            return input_value
-        elif isinstance(input_value, dict):
-            if "file" in input_value["class"]:
-                return FileObject(input_value["path"])
-        raise Exception(f"Unexpected value type {type(input_value)}")
+            # Check if all array elements have the same type.
+            if any([not isinstance(v, type(head)) for v in input_value]):
+                raise Exception(f"Input {input_id} is non-homogeneous array")
+
+            
+            # Filter for array types and remove [] from cwl type
+            expected_cwl_types = [t[:-2] for t in expected_cwl_types if "[]" in t]
+
+            # Match input to schema
+            value_types = PYTHON_CWL_T_MAPPING[type(head)]
+            matched_types = [t for t in value_types if t in expected_cwl_types]
+            if len(matched_types) == 0:
+                raise Exception(f"Input '{input_id}' did not match the input schema")
+
+            if isinstance(head, str):
+                # Files and directories can come in the form of a string path,
+                # which we need to check for.
+                if "file" in matched_types:
+                    return Value([FileObject(p) for p in input_value], FileObject, "file")
+                if "directory" in matched_types:
+                    return Value([DirectoryObject(p) for p in input_value], DirectoryObject, "directory")
+            
+            if isinstance(head, Mapping):
+            # A mapping either means a potential file/directory, or an
+            # unsupported custom data type. Unsupported types result in error.
+                if "class" in head:
+                    if "file" in head["class"]:
+                        return Value(
+                            [FileObject(p["path"]) for p in input_value], 
+                            FileObject, 
+                            "file"
+                        )
+                    elif "directory" in head["class"]:
+                        return Value(
+                            [DirectoryObject(p["path"]) for p in input_value],
+                            DirectoryObject, 
+                            "directory"
+                        )
+                    else:
+                        raise Exception(f'Found unsupported class in {input_id}: {input_value[0]["class"]}')
+
+            return Value(
+                input_value, 
+                type(input_value[0]), 
+                PYTHON_CWL_T_MAPPING[type(head)][0] # Mapping isnt 1-to-1, so take first item
+            )
+        elif isinstance(input_value, Mapping):
+            # A mapping either means a potential file/directory, or an
+            # unsupported custom data type. Unsupported types result in error.
+            if "class" in input_value:
+                if "file" in input_value["class"]:
+                    return Value(
+                        FileObject(input_value["path"]), 
+                        FileObject, 
+                        "file"
+                    )
+                elif "directory" in input_value["class"]:
+                    return Value(
+                        DirectoryObject(input_value["path"]), 
+                        DirectoryObject, 
+                        "directory"
+                    )
+                else:
+                    raise Exception(f'Found unsupported class in {input_id}: {input_value["class"]}')
+            else:
+                raise NotImplementedError()
+        else:
+            if type(input_value) not in PYTHON_CWL_T_MAPPING:
+                raise Exception(f"Found unsupported Python value type {type(input_value)} for input {input_id}")
+
+            # Match input to schema
+            value_types = PYTHON_CWL_T_MAPPING[type(input_value)]
+            matched_types = [t for t in value_types if t in expected_cwl_types]
+            if len(matched_types) == 0:
+                raise Exception(f"Input '{input_id}' did not match the input schema")
+
+            if isinstance(input_value, str):
+                # It is valid in CWL to pass files and directories as a simple
+                # string path, which we need to check for.
+                if "file" in matched_types:
+                    return Value(
+                        FileObject(input_value),
+                        FileObject,
+                        "file"
+                    )
+                elif "directory" in matched_types:
+                    return Value(
+                        DirectoryObject(input_value),
+                        DirectoryObject,
+                        "directory"
+                    )
+
+            return Value(
+                input_value,
+                type(input_value),
+                PYTHON_CWL_T_MAPPING[type(input_value)][0]
+            )
+
+
+        # if isinstance(input_value, str):
+        #     if 'file' in self.inputs[input_id]["type"]:
+        #         input_value = FileObject(input_value)
+        #     return input_value
+        # elif isinstance(input_value, list):
+        #     # Because file lists are represented as lists of dicts, we need to
+        #     # check if a list contains files and extract their paths.
+        #     # If the list is a regular list, we just return it.
+        #     if len(input_value) == 0:
+        #         return []
+
+        #     _t = type(input_value[0])
+
+        #     # Rudimentary homogeneity check on list
+        #     valid = all([isinstance(i, _t) for i in input_value])
+        #     if not valid:
+        #         raise Exception(f"Array for input '{input_id} not homogeneous")
+            
+        #     # If input value is a list of files, transform it into list of
+        #     # FileObjects
+        #     if (isinstance(input_value[0], dict) and
+        #         "class" in input_value[0] and "file" in input_value[0]):
+        #         return [FileObject(v["path"]) for v in input_value]
+        #     if "file[]" in self.inputs[input_id]["type"]:
+        #         # FIXME Collision between 'string' and 'file' type when value is a path string
+        #         return [FileObject(string_path) for string_path in input_value]
+
+        #     return input_value
+        # elif isinstance(input_value, dict):
+        #     if "file" in input_value["class"]:
+        #         return FileObject(input_value["path"])
+        # raise Exception(f"Unexpected value type {type(input_value)}")
 
     
     def _load_input_object(self, yaml_uri: str) -> dict:
@@ -391,9 +516,11 @@ class BaseProcess(ABC):
         # TODO Other CWL namespaces, like 'self', 'runtime'?
         namespace["inputs"] = {}
 
-        for input_id, input_dict in self.inputs.items():
+        for input_id, _ in self.inputs.items():
+        # for input_id, input_dict in self.inputs.items():
+            # If runtime value is Absent, value is assigned None
             source = self.input_to_source[input_id]
-            value = self.runtime_context[source]
+            value = self.runtime_context[source].value
             namespace["inputs"][input_id] = value
 
             # if "file" in input_dict["type"]:
@@ -444,7 +571,7 @@ class BaseProcess(ABC):
             2. Javascript expression: "$( JS expression )". Evaluated with JS engine.
             3. Python expression: "$ Python expression $". Evaluated with Python eval().
         
-        The expression may access CWL namespace variables, like 'inputs'.
+        The expression may access CWL namespace variables, like 'inputs' and 'self'.
         """
         # TODO FIXME remove
         # verbose = True
