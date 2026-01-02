@@ -188,7 +188,14 @@ class Value:
     is_array: bool
     # is_map: bool
 
-    def __init__(self, value: Any, type_t, cwl_type) -> None:
+    def __init__(self, value: Any, type_t: Type, cwl_type: str) -> None:
+        if isinstance(value, Mapping):
+            raise TypeError("Value class does not support map types.")
+        if type_t not in PYTHON_CWL_T_MAPPING:
+            raise ValueError(f"Unsupported Python type: {type_t}")
+        if cwl_type not in CWL_PYTHON_T_MAPPING:
+            raise ValueError(f"Unsupported CWL type: {cwl_type}")
+
         self.value = value
         self.type = type_t
         self.cwltype = cwl_type
@@ -202,4 +209,7 @@ class Value:
     #     return isinstance(self.value, Mapping)
 
     def __str__(self) -> str:
-        return f"{self.value} ({self.cwltype})"
+        return str(self.value)
+    
+    def __repr__(self) -> str:
+        return f"Value({self.value}, {self.type}, {self.cwltype})"
