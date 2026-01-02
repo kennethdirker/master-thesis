@@ -18,13 +18,14 @@ from typing import (
     List,
     TextIO,
     Optional,
+    Sequence,
     Tuple,
     Type,
     Union
 )
 
 from .process import BaseProcess
-from .utils import Absent, FileObject, PYTHON_CWL_T_MAPPING, CWL_PYTHON_T_MAPPING
+from .utils import Absent, FileObject, DirectoryObject, Value, PYTHON_CWL_T_MAPPING, CWL_PYTHON_T_MAPPING
 
 
 class BaseCommandLineTool(BaseProcess):
@@ -119,7 +120,7 @@ class BaseCommandLineTool(BaseProcess):
         for input_id, input_dict in self.inputs.items():
             # Get input value from runtime context
             global_source_id: str = self.input_to_source[input_id]
-            value = self.runtime_context[global_source_id]
+            value = self.runtime_context[global_source_id].value
 
             # Check if the input has a value. If not, try to fill it with a
             # default value
@@ -137,7 +138,8 @@ class BaseCommandLineTool(BaseProcess):
             namespace.update({"self": value})
 
             # If provided, valueFrom gives value to the input parameter. 
-            if "valueFrom" in input_dict and not isinstance(value, Absent | NoneType):
+            if "valueFrom" in input_dict and isinstance(value, Value):
+            # if "valueFrom" in input_dict and not isinstance(value, Absent | NoneType):
                 # If the value of the associated input parameter is null,
                 # valueFrom is not evaluated and nothing is added to the 
                 # command line. This means we set value to None, which is
@@ -150,7 +152,7 @@ class BaseCommandLineTool(BaseProcess):
                 if isinstance(value, str):
                     value = self.eval(value, cwl_namespace)
 
-            self.runtime_context[global_source_id] =  value
+            self.runtime_context[global_source_id] =  Value(value, type(value), PYTHON_CWL_T_MAPPING[type(value)][0])
 
 
     def match_inputs(self):
@@ -300,7 +302,7 @@ class BaseCommandLineTool(BaseProcess):
         for input_id, input_dict  in inputs:
             # Load value from runtime_context
             global_source_id: str = self.input_to_source[input_id]
-            value = self.runtime_context[global_source_id]
+            value = self.runtime_context[global_source_id].value
 
             # Load expected input types
             expected_types: list[str] = []
@@ -409,13 +411,17 @@ class BaseCommandLineTool(BaseProcess):
     def run_wrapper(
             self,
             cmd: list[str],
-            cwl_namespace,
-            outputs: dict[str, Any],
+            cwl_namespace: dict[str, Any],
+            output_schema: dict[str, Any],
             env: dict[str, Any]
-        ) -> dict[str, Any]:
+        ) -> dict[str, Value]:
         """
         Wrapper for subprocess.run(). Executes the command line tool and
         sets the outputs.
+
+        TODO Wrap output values in Value object.
+        TODO Add support for all CWL datatypes
+        TODO Correct type checking
         
         NOTE: This function does not match the outputs with the output schema!
         In order words, the outputs are not validated here.
@@ -431,47 +437,109 @@ class BaseCommandLineTool(BaseProcess):
             env = env
         )
 
-        # Capture stderr
-        output: dict = {"stderr": completed.stderr.decode()}
+        # Match outputs against the output schema and create outputs
+        # based on output bindings.
+
+
+        # Capture stdout and stderr from command. 
+        # NOTE: We are not printing them here, because we might not be on the
+        # main thread when using Dask.
+        # TODO Maybe wrap in Value object (later on)?
+        output: dict = {
+            "stdout": completed.stdout,
+            "stderr": completed.stderr
+        }
         
-        # Process tool outputs
-        for output_id, output_dict in outputs.items():
+        # Process outputs.
+        # Command outputs are matched against the tool's output schema. Tool 
+        # outputs are generated based on the output bindings defined in the
+        # output schema.
+        for output_id, output_dict in output_schema.items():
             global_output_id = self.global_id(output_id)
+            
+            # Get types
+            output_types: List[str]
             if "type" not in output_dict:
-                raise Exception("Type missing from output in\n", self.id)
-            output_type: str = output_dict["type"]
-
-            # TODO Other output types, like int, float, etc 
-            if "string" in output_type:
-                # Get stdout from subprocess.run and decode to utf-8
-                output[global_output_id] = completed.stdout.decode()
-                output["stdout"] = completed.stdout.decode()
-            elif "file" in output_type:
-                # Generate an output parameter based on the files produced
-                # by a CommandLineTool.
-                if "glob" in output_dict:
-                    glob_string: str = self.eval(output_dict["glob"], cwl_namespace)
-                    output_file_paths: List[str] = glob.glob(glob_string)
-
-                    if len(output_file_paths) == 0:
-                        raise Exception(f"Output glob {glob_string} (from '{output_dict['glob'][1:-1]}') did not match any files")
-
-                    if "[]" in output_type:
-                        # Output is an array of objects
-                        output[global_output_id] = output_file_paths
-                    else:
-                        # Output is a single object
-                        output[global_output_id] = output_file_paths[0]
-                elif "loadContents" in output_dict:
-                    raise NotImplementedError()
-                elif "outputEval" in output_dict:
-                    raise NotImplementedError()
-                elif "secondaryFiles" in output_dict:
-                    raise NotImplementedError()
-                else:
-                    raise Exception(f"No method to resolve output schema:{output_dict}")
+                raise Exception(f"Output {output_id} is missing type")
+            if isinstance(output_dict["type"], List):
+                output_types = output_dict["type"]
+            elif isinstance(output_dict["type"], str):
+                output_types = [output_dict["type"]]
             else:
-                raise NotImplementedError(f"Output type {output_type} is not supported")
+                raise Exception(f"Expected 'str' or 'list' in output type, but found '{type(output_dict['type'])}'")
+            
+            # glob
+            if "glob" in output_dict and output_dict["glob"] is not None:
+                # Evaluate glob patterns. Is either a string, expression or
+                # array of strings. First normalize to list of 
+                # glob strings, then capture matching files.
+                globs: List[str]
+
+                if isinstance(output_dict["glob"], str):
+                    # Evaluate string and check if the output is either a
+                    # string or list of strings.
+                    eval_return: Any = self.eval(output_dict["glob"], cwl_namespace)
+                    if isinstance(eval_return, str):
+                        globs = [eval_return]
+                    elif isinstance(eval_return, List):
+                        globs = eval_return
+                    else:
+                        raise Exception(f"Expression of '{output_id}' did not evaluate to 'str' or 'list', but '{type(eval_return)}'")
+                elif not isinstance(output_dict["glob"], List):
+                    raise Exception(f"Output glob of '{output_id}' is neither 'str' nor 'list', but '{type(output_dict['glob'])}'")
+                
+                globs = output_dict["glob"]
+                
+                # Validate that list of globs contains strings
+                for g in globs:
+                    if isinstance(g, str):
+                        raise Exception(f"Output '{output_id}' has glob '{g}' that should be 'str', but is '{type(g)}'")
+                    
+                # Collect matched files
+                output_file_paths: List[str] = []
+                for g in globs:
+                    output_file_paths.extend(glob.glob(g, root_dir = self.loading_context["designated_out_dir"]))
+                
+                # Set 'self' for outputEval and loadContents
+                cwl_namespace["self"] = output_file_paths
+
+
+            # loadContents
+            if ("loadContents" in output_dict and output_dict["outputEval"] is not None):
+                if not any(["file" in type_ for type_ in output_types]):
+                    raise Exception(f"loadContents must only be used on 'file' or 'file[]' type")
+                # TODO
+                raise NotImplementedError()
+
+            # outputEval
+            if (
+                "outputEval" in output_dict and 
+                output_dict["outputEval"] is not None
+            ):
+                # Evaluated expression might yield any type, so validation is needed
+                value = self.eval(output_dict["outputEval"], cwl_namespace)
+                # TODO Validate value type
+                # NOTE: For now, just force
+                
+                
+                # Wrap in Value object and put in output
+                # FIXME Handle this logic in Value constructor? Also at other spots in code.
+                if isinstance(value, Sequence):
+                    output[global_output_id] = Value(value, type(value[0]), PYTHON_CWL_T_MAPPING[type(value[0])][0])
+                else:
+                    output[global_output_id] = Value(value, type(value), PYTHON_CWL_T_MAPPING[type(value)][0])
+
+            # secondaryFiles
+            if ("secondaryFiles" in output_dict and output_dict["outputEval"] is not None):
+                if not any(["file" in type_ for type_ in output_types]):
+                    raise Exception(f"secondaryFiles must only be used on 'file' or 'file[]' type")
+                # TODO Check if actual output is file or file[]
+                raise NotImplementedError()
+                # if isinstance(output[global_output_id], List): 
+                #     output[global_output_id].extend(Value(...))
+                # else:
+                #     ???
+            
         return output
 
         
@@ -481,9 +549,10 @@ class BaseCommandLineTool(BaseProcess):
             runtime_context: Optional[dict[str, Any]] = None,
             verbose: Optional[bool] = True,
             client: Optional[Client] = None,
-        ) -> dict[str, Any]:
+        ) -> dict[str, Value]:
         """
         TODO Description
+        TODO Validate outputs
         """
         # Update runtime context
         if runtime_context is not None:
@@ -500,7 +569,7 @@ class BaseCommandLineTool(BaseProcess):
         env = self.build_env(cwl_namespace)
 
         # Submit and execute tool and gather output
-        new_state: dict[str, Any] = {}
+        new_state: dict[str, Value] = {}
         if use_dask:
             if client is None:
                 client = Client()
@@ -522,15 +591,8 @@ class BaseCommandLineTool(BaseProcess):
                 env
             )
 
-        ### TODO Validate outputs ###
-        ### NOTE Should this be done in BaseProcess because both tools and 
-        # workflows need to do this?
-        outputs_schema: List[dict] = []
-        # TODO Check if outputs match schema
-        # TODO Evaluate valueFrom NOTE: Should this happen here or in the wrapper?
-        
         # Print stderr/stdout
-        # FIXME Check if this works
+        # FIXME TODO Redirect to configured stdout/stderr
         if "stdout" in new_state:
             print(new_state["stdout"], file=sys.stdout)
 

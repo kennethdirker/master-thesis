@@ -11,7 +11,7 @@ from typing import Any, cast, Optional, Tuple, Union
 
 from .commandlinetool import BaseCommandLineTool
 from .process import BaseProcess, Graph, Node
-from .utils import Absent, FileObject
+from .utils import Absent, FileObject, DirectoryObject, Value, CWL_PYTHON_T_MAPPING, PYTHON_CWL_T_MAPPING
 
 
 class BaseWorkflow(BaseProcess):
@@ -247,7 +247,7 @@ class BaseWorkflow(BaseProcess):
                         # Input has no dynamic source: Use default value
                         process.input_to_source[input_id] = _process.global_id(_step_id + "/" + input_id)
                         print(f"[ASSIGN] {source} -> {process.input_to_source[input_id]}")
-                        self.runtime_context[process.input_to_source[input_id]] = source
+                        self.runtime_context[process.input_to_source[input_id]] = Value(source, type(source), PYTHON_CWL_T_MAPPING[type(source)][0])
                         break
                     
                     if "/" in source:   # {global_process_id}:{step_id}/{output_id}
@@ -409,7 +409,7 @@ class BaseWorkflow(BaseProcess):
             self, 
             verbose: Optional[bool] = True,
             client: Optional[Client] = None
-        ) -> dict[str, Any]:
+        ) -> dict[str, Value]:
         """
         Execute the workflow as the main process. The workflow is executed by
         submitting each node of the workflow dependency graph to the Dask
@@ -417,6 +417,7 @@ class BaseWorkflow(BaseProcess):
         loop that checks for finished nodes and submits newly executable nodes.
         The function returns when all nodes have been executed.
         NOTE: This function should only be called from the main process.
+
         Returns:
             Dictionary of (output ID, output value) key-value pairs.
         """
@@ -431,7 +432,7 @@ class BaseWorkflow(BaseProcess):
         waiting: dict[str, Node] = {id: node for id, node in nodes.items() if id not in runnable}
         running: dict[str, Tuple[Future, Node]] = {}
         completed: dict[str, Node] = {}
-        output: dict[str, Any] = {}
+        output: dict[str, Value] = {}
 
         def lprint():
             s = ", "
