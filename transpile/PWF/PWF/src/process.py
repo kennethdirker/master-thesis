@@ -13,14 +13,14 @@ from copy import deepcopy
 from dask.distributed import Client
 from enum import Enum
 from pathlib import Path
-from typing import Any, Mapping, Sequence, Optional, Type, Union, cast
+from typing import Any, Mapping, List, Optional, Type, Union, cast
 
 from .utils import (
     Absent,
     DirectoryObject,
     FileObject,
-    CWL_PYTHON_T_MAPPING,
-    PYTHON_CWL_T_MAPPING,
+    CWL_PY_T_MAPPING,
+    PY_CWL_T_MAPPING,
     Value,
     dict_to_obj
 )
@@ -178,7 +178,8 @@ class BaseProcess(ABC):
         if not input_object_path.is_file():
             raise Exception(f"Input object file {args.input_object} does not exist or is not a file")
         loading_context["input_object"] = input_object_path 
-        print(f"[PROCESS]: Input object file:\n\t{input_object_path}")
+        print(f"[PROCESS]: Input object file:")
+        print(f"[PROCESS]:\t{input_object_path}")
 
         # Configure designated output directory
         out_dir_path = Path(args.outdir).absolute()
@@ -188,7 +189,8 @@ class BaseProcess(ABC):
         is_empty = not any(out_dir_path.iterdir())  # Check if out dir is empty
         loading_context["init_out_dir_empty"] = is_empty
         loading_context["designated_out_dir"] = out_dir_path
-        print(f"[PROCESS]: Designated output directory:\n\t{loading_context['designated_out_dir']}")
+        print(f"[PROCESS]: Designated output directory:")
+        print(f"[PROCESS]:\t{loading_context['designated_out_dir']}")
 
         # Configure designated temporary directory
         tmp_dir_path = Path(args.tmpdir).absolute()
@@ -198,7 +200,8 @@ class BaseProcess(ABC):
         is_empty = not any(tmp_dir_path.iterdir())  # Check if tmp dir is empty
         loading_context["init_tmp_dir_empty"] = is_empty
         loading_context["designated_tmp_dir"] = tmp_dir_path
-        print(f"[Process]: Designated temporary directory:\n\t{loading_context['designated_tmp_dir']}")
+        print(f"[Process]: Designated temporary directory:")
+        print(f"[PROCESS]:\t{loading_context['designated_tmp_dir']}")
 
         # Configure whether Dask is used for execution
         loading_context["use_dask"] = args.use_dask
@@ -254,15 +257,15 @@ class BaseProcess(ABC):
         Returns:
             The extracted value.
         """
-        expected_cwl_types: Sequence[str]
+        expected_cwl_types: List[str]
 
-        if not isinstance(self.inputs[input_id]["type"], Sequence):
+        if not isinstance(self.inputs[input_id]["type"], List):
             expected_cwl_types = [self.inputs[input_id]["type"]]
         else:
             expected_cwl_types = self.inputs[input_id]["type"]
 
 
-        if isinstance(input_value, Sequence):
+        if isinstance(input_value, List):
             # We are dealing with an array
             if len(input_value) == 0:
                 # Empty arrays dont add to command line, so just put None
@@ -274,20 +277,19 @@ class BaseProcess(ABC):
             # Check if all array elements have the same type.
             if any([not isinstance(v, type(head)) for v in input_value]):
                 raise Exception(f"Input {input_id} is non-homogeneous array")
-
             
             # Filter for array types and remove [] from cwl type
             expected_cwl_types = [t[:-2] for t in expected_cwl_types if "[]" in t]
 
-            # Match input to schema
-            value_types = PYTHON_CWL_T_MAPPING[type(head)]
-            matched_types = [t for t in value_types if t in expected_cwl_types]
-            if len(matched_types) == 0:
-                raise Exception(f"Input '{input_id}' did not match the input schema")
-
             if isinstance(head, str):
                 # Files and directories can come in the form of a string path,
                 # which we need to check for.
+                # Match input to schema
+                value_types = PY_CWL_T_MAPPING[type(head)]
+                matched_types = [t for t in value_types if t in expected_cwl_types]
+                if len(matched_types) == 0:
+                    raise Exception(f"Input '{input_id}' did not match the input schema")
+            
                 if "file" in matched_types:
                     return Value([FileObject(p) for p in input_value], FileObject, "file")
                 if "directory" in matched_types:
@@ -315,7 +317,7 @@ class BaseProcess(ABC):
             return Value(
                 input_value, 
                 type(input_value[0]), 
-                PYTHON_CWL_T_MAPPING[type(head)][0] # Mapping isnt 1-to-1, so take first item
+                PY_CWL_T_MAPPING[type(head)][0] # Mapping isnt 1-to-1, so take first item
             )
         elif isinstance(input_value, Mapping):
             # A mapping either means a potential file/directory, or an
@@ -338,11 +340,11 @@ class BaseProcess(ABC):
             else:
                 raise NotImplementedError()
         else:
-            if type(input_value) not in PYTHON_CWL_T_MAPPING:
+            if type(input_value) not in PY_CWL_T_MAPPING:
                 raise Exception(f"Found unsupported Python value type {type(input_value)} for input {input_id}")
 
             # Match input to schema
-            value_types = PYTHON_CWL_T_MAPPING[type(input_value)]
+            value_types = PY_CWL_T_MAPPING[type(input_value)]
             matched_types = [t for t in value_types if t in expected_cwl_types]
             if len(matched_types) == 0:
                 raise Exception(f"Input '{input_id}' did not match the input schema")
@@ -366,7 +368,7 @@ class BaseProcess(ABC):
             return Value(
                 input_value,
                 type(input_value),
-                PYTHON_CWL_T_MAPPING[type(input_value)][0]
+                PY_CWL_T_MAPPING[type(input_value)][0]
             )
 
 
@@ -423,7 +425,7 @@ class BaseProcess(ABC):
             # Input from object is indexed by '{Process.id}:{input_id}'
             input_value = self.resolve_input_object_value(input_id, input_value)
             runtime_context[self.global_id(input_id)] = input_value
-            print("\t-", input_id, ":", input_value)
+            print("[PROCESS]: \t-", input_id, ":", input_value)
         print()
 
         return runtime_context

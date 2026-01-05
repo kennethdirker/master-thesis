@@ -13,19 +13,20 @@ from subprocess import run, CompletedProcess
 from types import NoneType
 from typing import (
     Any,
+    AnyStr,
     Callable,
     cast,
+    IO,
     List,
     TextIO,
     Optional,
-    Sequence,
     Tuple,
     Type,
     Union
 )
 
 from .process import BaseProcess
-from .utils import Absent, FileObject, DirectoryObject, Value, PYTHON_CWL_T_MAPPING, CWL_PYTHON_T_MAPPING
+from .utils import Absent, FileObject, DirectoryObject, Value, PY_CWL_T_MAPPING, CWL_PY_T_MAPPING
 
 
 class BaseCommandLineTool(BaseProcess):
@@ -105,7 +106,7 @@ class BaseCommandLineTool(BaseProcess):
             self.input_to_source[input_id] = self.global_id(input_id)
 
 
-    def prepare_runtime_context(self, cwl_namespace):
+    def prepare_runtime_context(self, cwl_namespace: dict[str, Any]):
         """
         Complete runtime context input values if default or valueFrom are
         specified in the input parameter. Expressions are evaluated. 
@@ -152,15 +153,15 @@ class BaseCommandLineTool(BaseProcess):
                 if isinstance(value, str):
                     value = self.eval(value, cwl_namespace)
 
-            self.runtime_context[global_source_id] =  Value(value, type(value), PYTHON_CWL_T_MAPPING[type(value)][0])
+            value_t = type(value[0]) if isinstance(value, List) else type(value)
+            self.runtime_context[global_source_id] =  Value(value, value_t, PY_CWL_T_MAPPING[value_t][0])
 
 
-    def match_inputs(self):
-        """
-        Check if the input values match to the input schema in self.inputs. If 
-        not all inputs match, an exception is raised.
-        
-        """
+    # def match_inputs(self):
+    #     """
+    #     Check if the input values match to the input schema in self.inputs. If 
+    #     not all inputs match, an exception is raised.
+    #     """
 
 
 
@@ -304,47 +305,47 @@ class BaseCommandLineTool(BaseProcess):
             global_source_id: str = self.input_to_source[input_id]
             value = self.runtime_context[global_source_id].value
 
-            # Load expected input types
+            # Normalize expected input types into a list of CWL types
             expected_types: list[str] = []
-            # _t: Type = type(input_dict["type"])
             if isinstance(input_dict["type"], str):
                 expected_types = [input_dict["type"]]
             elif isinstance(input_dict["type"], list):
                 expected_types = input_dict["type"]
             else:
                 raise Exception(f"Unexpected type(input_dict['type']). Should be 'str' or 'list', but found '{type(input_dict['type'])}'")
-                # raise Exception(f"Unexpected type(input_dict['type']). Should be 'str' or 'list', but found '{_t}'")
 
-            # Check whether we are dealing with an array or not
+            # Retrieve possible CWL types of the value. The value might be an
+            # array and need more validation.
             is_array: bool = False
-            if isinstance(value, list):
+            if isinstance(value, List):
                 # Value is an array
                 is_array = True
 
+                # Empty arrays do not add anything to command line
                 if len(value) == 0:
-                    # If the array is empty, it does not add anything to command line
                     continue
 
-                # Check if all array elements have the same type.
+                # All array elements must have the same type.
                 if any([not isinstance(v, type(value[0])) for v in value]):
                     raise Exception("Array is not homogeneous")
 
                 expected_types = [t for t in expected_types if "[]" in t] # Filter for array types
-                value_types = PYTHON_CWL_T_MAPPING[type(value[0])]
+                value_types = PY_CWL_T_MAPPING[type(value[0])]
             else:
                 # Dealing with single item.
-                value_types = PYTHON_CWL_T_MAPPING[type(value)]
+                value_types = PY_CWL_T_MAPPING[type(value)]
 
             # Check if the type of the received runtime input value is valid
             value_type: str | None = None
-            for v_type in value_types:
+            for value_t in value_types:
                 for valid_type in expected_types:
                     if is_array:
-                        if v_type + "[]" == valid_type:
-                            value_type = v_type + "[]"
+                        if value_t + "[]" == valid_type:
+                            value_type = value_t + "[]"
                     else:
-                        if v_type == valid_type:    # Exact string match
-                            value_type = v_type
+                        if value_t == valid_type:    # Exact string match
+                            value_type = value_t
+                            break   # Stop searching if a match is found
 
             optional = False
             if value_type is None:
@@ -413,7 +414,9 @@ class BaseCommandLineTool(BaseProcess):
             cmd: list[str],
             cwl_namespace: dict[str, Any],
             output_schema: dict[str, Any],
-            env: dict[str, Any]
+            env: dict[str, Any],
+            # stdout: Optional[IO[AnyStr]], # TODO
+            # stderr: Optional[IO[AnyStr]], # TODO
         ) -> dict[str, Value]:
         """
         Wrapper for subprocess.run(). Executes the command line tool and
@@ -429,23 +432,22 @@ class BaseCommandLineTool(BaseProcess):
         Returns:
             A dictionary containing all newly added runtime output state.
         """
+        print("Namespace: ", cwl_namespace)
+
         # Execute tool
         print("[TOOL]: EXECUTING:", " ".join(cmd))
         completed: CompletedProcess = run(
             cmd,
+            # stdout = stdout,  # TODO
+            # stderr = stderr,  # TODO
             capture_output=True,
             env = env
         )
 
-        # Match outputs against the output schema and create outputs
-        # based on output bindings.
-
-
         # Capture stdout and stderr from command. 
-        # NOTE: We are not printing them here, because we might not be on the
-        # main thread when using Dask.
+        # FIXME: stdout and stderr should be redirected instead of captured
         # TODO Maybe wrap in Value object (later on)?
-        output: dict = {
+        outputs: dict = {
             "stdout": completed.stdout,
             "stderr": completed.stderr
         }
@@ -457,14 +459,14 @@ class BaseCommandLineTool(BaseProcess):
         for output_id, output_dict in output_schema.items():
             global_output_id = self.global_id(output_id)
             
-            # Get types
-            output_types: List[str]
+            # Get and normalize types into lis of CWL types
+            expected_types: List[str]
             if "type" not in output_dict:
                 raise Exception(f"Output {output_id} is missing type")
             if isinstance(output_dict["type"], List):
-                output_types = output_dict["type"]
+                expected_types = output_dict["type"]
             elif isinstance(output_dict["type"], str):
-                output_types = [output_dict["type"]]
+                expected_types = [output_dict["type"]]
             else:
                 raise Exception(f"Expected 'str' or 'list' in output type, but found '{type(output_dict['type'])}'")
             
@@ -492,7 +494,7 @@ class BaseCommandLineTool(BaseProcess):
                 
                 # Validate that list of globs contains strings
                 for g in globs:
-                    if isinstance(g, str):
+                    if not isinstance(g, str):
                         raise Exception(f"Output '{output_id}' has glob '{g}' that should be 'str', but is '{type(g)}'")
                     
                 # Collect matched files
@@ -506,7 +508,7 @@ class BaseCommandLineTool(BaseProcess):
 
             # loadContents
             if ("loadContents" in output_dict and output_dict["outputEval"] is not None):
-                if not any(["file" in type_ for type_ in output_types]):
+                if not any(["file" in type_ for type_ in expected_types]):
                     raise Exception(f"loadContents must only be used on 'file' or 'file[]' type")
                 # TODO
                 raise NotImplementedError()
@@ -518,20 +520,54 @@ class BaseCommandLineTool(BaseProcess):
             ):
                 # Evaluated expression might yield any type, so validation is needed
                 value = self.eval(output_dict["outputEval"], cwl_namespace)
-                # TODO Validate value type
-                # NOTE: For now, just force
-                
-                
-                # Wrap in Value object and put in output
-                # FIXME Handle this logic in Value constructor? Also at other spots in code.
-                if isinstance(value, Sequence):
-                    output[global_output_id] = Value(value, type(value[0]), PYTHON_CWL_T_MAPPING[type(value[0])][0])
+
+                # TODO Match received and expected CWL types of output
+                is_array: bool = False
+                if isinstance(value, List):
+                    # Value is an array
+                    is_array = True
+
+                    # Empty arrays dont have item types, so any can be assigned
+                    if len(value) == 0:
+                        ... # TODO
+                        
+                 
+                    # All array elements must have the same type.
+                    if any([not isinstance(v, type(value[0])) for v in value]):
+                        raise Exception("Array is not homogeneous")   
+                    expected_types = [t for t in expected_types if "[]" in t] # Filter for array types
+                    value_types = PY_CWL_T_MAPPING[type(value[0])]
                 else:
-                    output[global_output_id] = Value(value, type(value), PYTHON_CWL_T_MAPPING[type(value)][0])
+                    # Dealing with a single item
+                    value_types = PY_CWL_T_MAPPING[type(value)]
+
+                # Check if the type of the received runtime input value is 
+                # valid and return get the matching CWL type
+                value_type: str | None = None
+                for value_t in value_types:
+                    for valid_type in expected_types:
+                        if is_array:
+                            if value_t + "[]" == valid_type:
+                                value_type = value_t + "[]"
+                        else:
+                            if value_t == valid_type:    # Exact string match
+                                value_type = value_t
+                                break   # Stop searching if a match is found
+
+                if value_type is None:
+                    raise Exception(f"No matching type found for output {output_id}")
+
+                # Wrap the validated result in a Value instance and save to outputs
+                _type = CWL_PY_T_MAPPING[value_type.replace("[]", "")]
+                if is_array:
+                    outputs[global_output_id] = Value([_type(v) for v in value], _type, value_type)
+                else:
+                    outputs[global_output_id] = Value(_type(value), _type, value_type)
+
 
             # secondaryFiles
             if ("secondaryFiles" in output_dict and output_dict["outputEval"] is not None):
-                if not any(["file" in type_ for type_ in output_types]):
+                if not any(["file" in type_ for type_ in expected_types]):
                     raise Exception(f"secondaryFiles must only be used on 'file' or 'file[]' type")
                 # TODO Check if actual output is file or file[]
                 raise NotImplementedError()
@@ -540,7 +576,7 @@ class BaseCommandLineTool(BaseProcess):
                 # else:
                 #     ???
             
-        return output
+        return outputs
 
         
     def execute(
@@ -562,7 +598,7 @@ class BaseCommandLineTool(BaseProcess):
         # Build the command line
         cwl_namespace = self.build_namespace()
         self.prepare_runtime_context(cwl_namespace)
-        self.match_inputs()
+        # self.match_inputs()
         cmd: list[str] = self.build_commandline()
 
         # Build the execution environment

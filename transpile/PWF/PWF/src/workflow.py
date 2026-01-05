@@ -7,11 +7,11 @@ from concurrent.futures import Future
 from copy import deepcopy
 from dask.distributed import Client, Future
 from pathlib import Path
-from typing import Any, cast, Optional, Tuple, Union
+from typing import Any, cast, List, Optional, Tuple, Union
 
 from .commandlinetool import BaseCommandLineTool
 from .process import BaseProcess, Graph, Node
-from .utils import Absent, FileObject, DirectoryObject, Value, CWL_PYTHON_T_MAPPING, PYTHON_CWL_T_MAPPING
+from .utils import Absent, FileObject, DirectoryObject, Value, CWL_PY_T_MAPPING, PY_CWL_T_MAPPING
 
 
 class BaseWorkflow(BaseProcess):
@@ -132,6 +132,7 @@ class BaseWorkflow(BaseProcess):
         # Add tool nodes to the dependency graph
         for tool in processes.values():
             if issubclass(type(tool), BaseCommandLineTool):
+                tool = cast(BaseCommandLineTool, tool)
                 graph.connect_node(
                     node_id = tool.id,
                     parents = get_process_parents(tool),
@@ -247,7 +248,7 @@ class BaseWorkflow(BaseProcess):
                         # Input has no dynamic source: Use default value
                         process.input_to_source[input_id] = _process.global_id(_step_id + "/" + input_id)
                         print(f"[ASSIGN] {source} -> {process.input_to_source[input_id]}")
-                        self.runtime_context[process.input_to_source[input_id]] = Value(source, type(source), PYTHON_CWL_T_MAPPING[type(source)][0])
+                        self.runtime_context[process.input_to_source[input_id]] = Value(source, type(source), PY_CWL_T_MAPPING[type(source)][0])
                         break
                     
                     if "/" in source:   # {global_process_id}:{step_id}/{output_id}
@@ -288,7 +289,7 @@ class BaseWorkflow(BaseProcess):
 
         for input_id in self.steps[tool.step_id]["in"]:
             source = tool.input_to_source[input_id]
-            value = runtime_context[source]
+            value = runtime_context[source].value
 
             input_dict = tool.inputs[input_id]
             if "file" in input_dict["type"]:
@@ -299,22 +300,20 @@ class BaseWorkflow(BaseProcess):
                     namespace["inputs"][input_id] = file_objects
                 else:
                     # Single file
-                    # NOTE: why is value[0] used here, instead of value?
-                    namespace["inputs"][input_id] = FileObject(value[0])
+                    namespace["inputs"][input_id] = FileObject(value)
             elif "string" in input_dict["type"]:
                 namespace["inputs"][input_id] = value
             else:
                 raise NotImplementedError(f"Input type {input_dict['type']} not supported")
 
         # TODO Other CWL namespaces, like 'self', 'runtime'?
-
         return namespace
     
 
     def update_sources(
             self,
             tool: BaseCommandLineTool, 
-            runtime_context: dict[str, Any]
+            runtime_context: dict[str, Value]
         ) -> None:
         """
         Update the sources of the tool's inputs by evaluating any valueFrom
@@ -325,22 +324,56 @@ class BaseWorkflow(BaseProcess):
             raise ValueError("Tool must have parent_process_id and step_id defined")
         # parent_process: BaseWorkflow = self.loading_context["processes"][tool.parent_process_id]
         
-        for input_id in tool.inputs:
+        for input_id, input_dict in tool.inputs.items():
+            expected_types = input_dict["type"]
             source = tool.input_to_source[input_id]
             source_split = source.split(":")
-            source_tail = source_split[-1]          # Get input ID or expression
-            
-            if source_tail.startswith(("$", "$(")) and source.endswith("$"):
+            # source_tail = source_split[-1]          # Get input ID or expression
+            value_object = runtime_context[source]
+
+            if not isinstance(value_object.value, str):
+                continue
+
+            expression = value_object.value
+            # if source_tail.startswith(("$", "$(")) and source.endswith("$"):
+            if (expression.startswith("$") and expression.endswith("$") or
+                expression.startswith("$(") and expression.endswith(")")):
                 # Input is a valueFrom expression
-                process_id = ":".join(source_split[0:2]) # Get parent workflow ID
+                process_id = ":".join(source_split[:2]) # Get parent workflow ID
                 process: BaseWorkflow = self.loading_context["processes"][process_id]
                 
                 # Build CWL namespace for expression evaluation and evaluate
                 cwl_namespace = process.build_step_namespace(tool, runtime_context)
-                # expression = source_tail[1:-1]  # Removes the $ symbols
-                value = self.eval(source_tail, cwl_namespace)
+                value = self.eval(expression, cwl_namespace)
+                
+                # Wrap the return value of the expression in a Value instance.
+                if isinstance(value, str):
+                    if "file" in expected_types:
+                        value = Value(FileObject(value), FileObject, "file")
+                    elif "directory" in expected_types:
+                        value = Value(DirectoryObject(value), DirectoryObject, "directory")
+                    else:
+                        value = Value(value, str, "string")
+                elif isinstance(value, List):
+                    expected_types = [t.replace("[]", "") for t in expected_types if "[]" in t] 
+                    if len(value) == 0:
+                        # TODO Empty array can have any type...
+                        raise NotImplementedError()
+                        # value = Value([], ..., ...)   #   Implement an Any type? 
+
+                    if isinstance(value[0], str):
+                        if "file" in expected_types:
+                            value = Value([FileObject(v) for v in value], FileObject, "file")
+                        elif "directory" in expected_types:
+                            value = Value([DirectoryObject(v) for v in value], DirectoryObject, "file")
+                        else:
+                            value = Value(value, str, "string")
+                    else:
+                        value = Value(value, type(value[0]), PY_CWL_T_MAPPING[type(value[0])][0])
+                else:
+                    value = Value(value, type(value), PY_CWL_T_MAPPING[type(value)][0])
+                    
                 runtime_context[source] = value
-                # runtime_context[source] = self.eval(source_tail, cwl_namespace)
 
 
  
@@ -432,7 +465,7 @@ class BaseWorkflow(BaseProcess):
         waiting: dict[str, Node] = {id: node for id, node in nodes.items() if id not in runnable}
         running: dict[str, Tuple[Future, Node]] = {}
         completed: dict[str, Node] = {}
-        output: dict[str, Value] = {}
+        outputs: dict[str, Value] = {}
 
         def lprint():
             s = ", "
@@ -479,7 +512,7 @@ class BaseWorkflow(BaseProcess):
                 if running_node[0].done():
                     # Add new runtime state from finished node
                     result = running_node[0].result()
-                    output.update(result)
+                    outputs.update(result)
                     self.runtime_context.update(result)
 
                     # Move node to finished
@@ -508,7 +541,7 @@ class BaseWorkflow(BaseProcess):
                         print("[WORKFLOW]: Completed node", graph.short_id[running_node[1].id])
                         lprint()
             # time.sleep(0.1)
-        return output
+        return outputs
 
 
     def _load_process_from_uri(
@@ -610,6 +643,7 @@ def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
             if cont:
                 break
 
+            source = cast("str", source)
             if "/" in source:
                 # A step of this process is the input source
                 parent_step_id, _ = source.split("/")

@@ -150,7 +150,7 @@ class DirectoryObject:
 Mapping of Python types to CWL types. CWL supports types that base Python does
 not recognize or support, like double and long. FIXME This is a band-aid for now.
 """
-PYTHON_CWL_T_MAPPING: dict[Type, List[str]] = {
+PY_CWL_T_MAPPING: dict[Type, List[str]] = {
     NoneType: ["null"],
     Absent: ["null"],
     bool: ["boolean"],
@@ -165,7 +165,7 @@ PYTHON_CWL_T_MAPPING: dict[Type, List[str]] = {
 Mapping of CWL types to Python types. CWL supports types that base Python does not
 recognize or support, like double and long. FIXME This is a band-aid for now.
 """
-CWL_PYTHON_T_MAPPING: dict[str, Type] = {
+CWL_PY_T_MAPPING: dict[str, Type] = {
     "null": NoneType,
     "boolean": bool,
     "int": int,
@@ -191,9 +191,9 @@ class Value:
     def __init__(self, value: Any, type_t: Type, cwl_type: str) -> None:
         if isinstance(value, Mapping):
             raise TypeError("Value class does not support map types.")
-        if type_t not in PYTHON_CWL_T_MAPPING:
+        if type_t not in PY_CWL_T_MAPPING:
             raise ValueError(f"Unsupported Python type: {type_t}")
-        if cwl_type not in CWL_PYTHON_T_MAPPING:
+        if cwl_type not in CWL_PY_T_MAPPING:
             raise ValueError(f"Unsupported CWL type: {cwl_type}")
 
         self.value = value
