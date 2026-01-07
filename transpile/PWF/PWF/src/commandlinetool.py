@@ -167,16 +167,20 @@ class BaseCommandLineTool(BaseProcess):
 
     def compose_array_arg(
             self,
-            values: List[Any],
-            value_t: str,
+            values: Any | List[Any],
+            cwl_value_t: str,
             input_dict: dict[str, Any]
         ) -> list[str]:
         """
         Compose a single command-line array argument.
         TODO Test
         """
+        # Wrap single item in list if needed
+        if not isinstance(values, List):
+            values = [values]
+
         # null type and empty arrays do not add to the command line
-        if value_t == "null" or len(values) == 0:
+        if cwl_value_t == "null" or len(values) == 0:
             return []
 
         # Set default properties as per CWL spec
@@ -194,7 +198,7 @@ class BaseCommandLineTool(BaseProcess):
 
         array_arg: list[str] = []
 
-        if "boolean" in value_t:
+        if "boolean" in cwl_value_t:
             # NOTE: At the moment not sure how this should be implemented.
             # Would it look like: '--prefix True False True True' ?
             # FIXME yaml safe_load converts yaml strings to likely Python types.
@@ -229,16 +233,23 @@ class BaseCommandLineTool(BaseProcess):
         
     def compose_arg(
             self,
-            value: Any,
-            value_t: str,
+            value: Any | List[Any],
+            cwl_value_t: str,
             input_dict: dict[str, Any],
         ) -> list[str]:
         """
         Compose a single command-line argument.
         TODO Test
-        """
+        """       
+        # Head of array will be used to format the argument
+        if isinstance(value, List):
+            # Empty array means no value (equal to "null")
+            if len(value) == 0:
+                return []
+            value = value[0]
+
         # null type doesn't add to the command line
-        if value_t == "null":
+        if cwl_value_t == "null":
             return []
         
         # Set default properties as per CWL spec
@@ -252,7 +263,7 @@ class BaseCommandLineTool(BaseProcess):
 
         args: list[str] = []
 
-        if value_t == "boolean" and "prefix" in input_dict:
+        if cwl_value_t == "boolean" and "prefix" in input_dict:
             args.append(prefix)
         else:
             # Stringify value
@@ -301,9 +312,6 @@ class BaseCommandLineTool(BaseProcess):
         # Match arguments with runtime input values
         cmd: list[str] = []
         for input_id, input_dict  in inputs:
-            # Load value from runtime_context
-            global_source_id: str = self.input_to_source[input_id]
-            value = self.runtime_context[global_source_id].value
 
             # Normalize expected input types into a list of CWL types
             expected_types: list[str] = []
@@ -313,62 +321,51 @@ class BaseCommandLineTool(BaseProcess):
                 expected_types = input_dict["type"]
             else:
                 raise Exception(f"Unexpected type(input_dict['type']). Should be 'str' or 'list', but found '{type(input_dict['type'])}'")
+            
+            optional: bool = "null" in expected_types
 
-            # Retrieve possible CWL types of the value. The value might be an
-            # array and need more validation.
-            is_array: bool = False
-            if isinstance(value, List):
-                # Value is an array
-                is_array = True
+            # Load value from runtime_context
+            global_source_id: str = self.input_to_source[input_id]
+            v = self.runtime_context[global_source_id]
 
-                # Empty arrays do not add anything to command line
-                if len(value) == 0:
-                    continue
-
-                # All array elements must have the same type.
-                if any([not isinstance(v, type(value[0])) for v in value]):
-                    raise Exception("Array is not homogeneous")
-
-                expected_types = [t for t in expected_types if "[]" in t] # Filter for array types
-                value_types = PY_CWL_T_MAPPING[type(value[0])]
-            else:
-                # Dealing with single item.
-                value_types = PY_CWL_T_MAPPING[type(value)]
-
-            # Check if the type of the received runtime input value is valid
-            value_type: str | None = None
-            for value_t in value_types:
-                for valid_type in expected_types:
-                    if is_array:
-                        if value_t + "[]" == valid_type:
-                            value_type = value_t + "[]"
-                    else:
-                        if value_t == valid_type:    # Exact string match
-                            value_type = value_t
-                            break   # Stop searching if a match is found
-
-            optional = False
-            if value_type is None:
-                # No match, check if the input is optional. If so, don't add
-                # anything to the command line
-                if not "null" in expected_types:
+            if isinstance(v, (NoneType, Absent)):
+                if not optional:
                     raise Exception(f"Tool input '{input_id}' supports CWL types [{', '.join(expected_types)}], but found CWL types ['{', '.join(value_types)}'] (from '{type(value)}')")
-                optional = True
-            
-            if isinstance(value, NoneType | Absent):
-                if optional:
-                    continue
-                else:
-                    raise Exception(f"Required input '{input_id}' has no value")
-            
-            value_type = cast(str, value_type)
+                continue
 
-            if is_array:
+            value = v.value
+            value_t = v.type
+            value_cwl_t = v.cwltype
+
+            match: str | None = None
+            if value_cwl_t is "string":
+                if "file" in expected_types or "file[]" in expected_types:
+                    match = "file"
+                elif "directory" in expected_types or "directory[]" in expected_types:
+                    match = "directory"
+                elif "string" in expected_types or "string[]" in expected_types:
+                    match = "string"
+            elif value_cwl_t in expected_types or value_cwl_t + "[]" in expected_types:
+                match = value_cwl_t
+
+            if match is None:
+                if not optional:
+                    raise Exception(f"Tool input '{input_id}' supports CWL types [{', '.join(expected_types)}], but found CWL types ['{', '.join(value_types)}'] (from '{type(value)}')")
+                continue
+
+            # If we get array data, prioritize array type over single type,
+            # Unless we have an array with 1 item and expected type supports
+            # both single and array, in which case we choose single.
+            expects_array: bool = value_cwl_t + "[]" in expected_types
+            if  isinstance(value, List) and len(value) == 1 and value_cwl_t in expected_types:
+                expects_array = False
+
+            if expects_array:
                 # Compose argument with array data
-                cmd.extend(self.compose_array_arg(value, value_type, input_dict))
+                cmd.extend(self.compose_array_arg(value, value_cwl_t, input_dict))
             else:
                 # Compose argument with single data value
-                cmd.extend(self.compose_arg(value, value_type, input_dict))
+                cmd.extend(self.compose_arg(value, value_cwl_t, input_dict))
 
         # Combine the base command with the arguments
         if hasattr(self, "base_command"):
@@ -436,13 +433,16 @@ class BaseCommandLineTool(BaseProcess):
 
         # Execute tool
         print("[TOOL]: EXECUTING:", " ".join(cmd))
-        completed: CompletedProcess = run(
-            cmd,
-            # stdout = stdout,  # TODO
-            # stderr = stderr,  # TODO
-            capture_output=True,
-            env = env
-        )
+        try:
+            completed: CompletedProcess = run(
+                cmd,
+                # stdout = stdout,  # TODO
+                # stderr = stderr,  # TODO
+                capture_output=True,
+                env = env
+            )
+        except Exception as e:
+            raise e
 
         # Capture stdout and stderr from command. 
         # FIXME: stdout and stderr should be redirected instead of captured
@@ -505,6 +505,21 @@ class BaseCommandLineTool(BaseProcess):
                 # Set 'self' for outputEval and loadContents
                 cwl_namespace["self"] = output_file_paths
 
+                # Set glob matches as output value
+                if len(output_file_paths) == 0:
+                    outputs[global_output_id] = None
+                elif "file" in expected_types:
+                    outputs[global_output_id] = Value(FileObject(output_file_paths[0]), FileObject, "file")
+                elif "file[]" in expected_types:
+                    outputs[global_output_id] = Value([FileObject(p) for p in output_file_paths], FileObject, "file")
+                elif "directory" in expected_types:
+                    outputs[global_output_id] = Value(DirectoryObject(output_file_paths[0]), DirectoryObject, "directory")
+                elif "directory[]" in expected_types:
+                    outputs[global_output_id] = Value([DirectoryObject(p) for p in output_file_paths], DirectoryObject, "directory")
+                elif "string" in expected_types:
+                    outputs[global_output_id] = Value(output_file_paths[0], str, "string")
+                elif "string[]" in expected_types:
+                    outputs[global_output_id] = Value(output_file_paths, str, "string")
 
             # loadContents
             if ("loadContents" in output_dict and output_dict["outputEval"] is not None):
@@ -626,6 +641,10 @@ class BaseCommandLineTool(BaseProcess):
                 self.outputs,
                 env
             )
+
+        print(f"[TOOL]: Outputs:")
+        for k, v in new_state.items():
+            print(f"[TOOL]: \t- {k}: {v}")
 
         # Print stderr/stdout
         # FIXME TODO Redirect to configured stdout/stderr
