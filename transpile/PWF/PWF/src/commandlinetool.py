@@ -84,8 +84,19 @@ class BaseCommandLineTool(BaseProcess):
     @abstractmethod
     # FIXME: Better function name
     def set_base_command(self) -> None:
-        """
-        TODO: Description
+        """Set the tool's base command.
+
+        Implementations should assign ``self.base_command`` to either a
+        string (single command) or a list of strings (command plus fixed
+        arguments). This method is called during initialization so the
+        instance can later combine the base command with runtime arguments
+        produced by ``build_commandline()``.
+
+        Example implementations:
+            - ``self.base_command = "ls -l"``
+            - ``self.base_command = ["ls", "-l"]``
+
+        No return value; raise an exception on invalid configuration.
         """
         # Example:
         # self.base_command = "ls -l"
@@ -171,9 +182,32 @@ class BaseCommandLineTool(BaseProcess):
             cwl_value_t: str,
             input_dict: dict[str, Any]
         ) -> list[str]:
-        """
-        Compose a single command-line array argument.
-        TODO Test
+        """Compose command-line tokens for an array-typed CWL input.
+
+        This function converts a single value or a list of values into the
+        appropriate sequence of command-line tokens according to CWL's
+        InputBinding fields supported here: ``prefix``, ``separate`` and
+        ``itemSeparator``.
+
+        Args:
+            values: A single item or list of items to be represented on the
+                command line. If a non-list is provided it will be wrapped
+                into a one-element list.
+            cwl_value_t: The CWL runtime type string for the items (for
+                example: ``"string"``, ``"file"``, ``"int"``, or the
+                corresponding array form like ``"string[]"``). If the type
+                is ``"null"`` or the list is empty, an empty list is
+                returned.
+            input_dict: The CWL input definition (inputBinding) which may
+                contain keys ``prefix``, ``separate`` and ``itemSeparator``.
+
+        Returns:
+            A list of string tokens to append to the final command. The
+            returned tokens reflect the combination rules for prefix,
+            separation and item joining per CWL semantics.
+
+        Raises:
+            NotImplementedError: boolean array handling is not implemented.
         """
         # Wrap single item in list if needed
         if not isinstance(values, List):
@@ -237,10 +271,31 @@ class BaseCommandLineTool(BaseProcess):
             cwl_value_t: str,
             input_dict: dict[str, Any],
         ) -> list[str]:
+        """Compose command-line tokens for a single CWL input value.
+
+        If ``value`` is provided as a list, the first element (head) is
+        used — an empty list is treated as absent and yields an empty
+        result. The function respects the inputBinding keys ``prefix`` and
+        ``separate`` to produce either separate tokens or a concatenated
+        token.
+
+        Args:
+            value: A single value or list; lists use only the first element
+                (empty lists return ``[]``).
+            cwl_value_t: The CWL type string describing the value (e.g.
+                ``"string"``, ``"boolean"``, ``"file"``). If this is
+                ``"null"`` an empty list is returned.
+            input_dict: The CWL input binding dictionary, may contain
+                ``prefix`` and ``separate``.
+
+        Returns:
+            A list of command-line tokens representing the argument, or an
+            empty list if the value is considered absent.
+
+        Notes:
+            For boolean inputs with a prefix, this function currently
+            treats the prefix as a flag (prefix only).
         """
-        Compose a single command-line argument.
-        TODO Test
-        """       
         # Head of array will be used to format the argument
         if isinstance(value, List):
             # Empty array means no value (equal to "null")
@@ -268,6 +323,7 @@ class BaseCommandLineTool(BaseProcess):
         else:
             # Stringify value
             value_s = str(value)
+
             # Format argument
             if separate:
                 if prefix:
@@ -275,20 +331,28 @@ class BaseCommandLineTool(BaseProcess):
                 args.append(value_s)
             else:
                 args.append(prefix + value_s)
-
         return args
 
 
-    def build_commandline(
-            self, 
-            # cwl_namespace: dict[str, Any]
-        ) -> list[str]:
-        """
-        Build the command line to be executed. Takes values from the runtime
-        context. If the runtime context holds None or the 'Absent' type for an
-        input parameter, nothing is added to the command line.
-        NOTE: Runtime context must be prepared before this function is called.
-        TODO Test
+    def build_commandline(self) -> list[str]:
+        """Construct the full command line for the tool from runtime input values.
+
+        The method iterates over the tool's inputs, orders positional
+        parameters by their ``position``, validates runtime types against the
+        declared CWL types, and delegates formatting to
+        ``compose_array_arg`` or ``compose_arg``. If ``self.base_command`` is
+        set it is prepended to the generated argument list.
+
+        Precondition:
+            ``prepare_runtime_context()`` must have been called so that
+            ``self.runtime_context`` contains evaluated ``Value`` instances.
+
+        Returns:
+            A list of string tokens representing the full command to be
+            executed.
+
+        Raises:
+            Exception on missing required inputs or type mismatches.
         """
         pos_inputs: list[Tuple[str, dict[str, Any]]] = []
         key_inputs: list[Tuple[str, dict[str, Any]]] = []
@@ -330,13 +394,14 @@ class BaseCommandLineTool(BaseProcess):
 
             if isinstance(v, (NoneType, Absent)):
                 if not optional:
-                    raise Exception(f"Tool input '{input_id}' supports CWL types [{', '.join(expected_types)}], but found CWL types ['{', '.join(value_types)}'] (from '{type(value)}')")
+                    raise Exception(f"Tool input '{input_id}' supports CWL types [{', '.join(expected_types)}], but found CWL type '{value_cwl_t}' (from '{type(value)}')")
                 continue
 
             value = v.value
-            value_t = v.type
             value_cwl_t = v.cwltype
 
+            # Files and directories can come in the form of a simple string, so
+            # we have to check for that.
             match: str | None = None
             if value_cwl_t is "string":
                 if "file" in expected_types or "file[]" in expected_types:
@@ -350,7 +415,7 @@ class BaseCommandLineTool(BaseProcess):
 
             if match is None:
                 if not optional:
-                    raise Exception(f"Tool input '{input_id}' supports CWL types [{', '.join(expected_types)}], but found CWL types ['{', '.join(value_types)}'] (from '{type(value)}')")
+                    raise Exception(f"Tool input '{input_id}' supports CWL types [{', '.join(expected_types)}], but found CWL types '{value_cwl_t} (from '{type(value)}')")
                 continue
 
             # If we get array data, prioritize array type over single type,
@@ -389,8 +454,14 @@ class BaseCommandLineTool(BaseProcess):
         - Variables defined by EnvVarRequirement
         - TODO The default environment of the container, such as when using DockerRequirement
 
+        Args:
+            cwl_namespace: Namespace used to evaluate EnvVarRequirement values
+                (expressions may appear in those values).
+
         Returns:
-            A dictionary representing the environment variables.
+            A dictionary representing the environment variables to use for
+            subprocess execution. Keys include at minimum ``HOME``,
+            ``TMPDIR`` and ``PATH`` and may be extended by ``EnvVarRequirement``.
         """
         env: dict[str, Any] = {
             "HOME": self.loading_context["designated_out_dir"],
@@ -415,19 +486,30 @@ class BaseCommandLineTool(BaseProcess):
             # stdout: Optional[IO[AnyStr]], # TODO
             # stderr: Optional[IO[AnyStr]], # TODO
         ) -> dict[str, Value]:
-        """
-        Wrapper for subprocess.run(). Executes the command line tool and
-        sets the outputs.
+        """Execute the command and produce CWL-typed outputs.
 
-        TODO Wrap output values in Value object.
-        TODO Add support for all CWL datatypes
-        TODO Correct type checking
-        
-        NOTE: This function does not match the outputs with the output schema!
-        In order words, the outputs are not validated here.
+        This wrapper runs ``cmd`` via ``subprocess.run``, captures standard
+        output and error, and then maps files and evaluated expressions to
+        CWL outputs according to ``output_schema``. The function returns a
+        dictionary of new runtime outputs keyed by global output id. The
+        returned mapping includes the raw ``stdout`` and ``stderr`` under
+        those keys.
+
+        Args:
+            cmd: The command token list to execute.
+            cwl_namespace: Namespace used for evaluating output globs and
+                expressions (``outputEval``).
+            output_schema: Dictionary describing outputs and their bindings.
+            env: Environment variables to pass to the subprocess.
 
         Returns:
-            A dictionary containing all newly added runtime output state.
+            A dict mapping global output ids to ``Value`` instances (or
+            ``None`` for missing outputs) and includes keys ``stdout`` and
+            ``stderr`` containing captured bytes.
+
+        Raises:
+            NotImplementedError for features not yet implemented (e.g.
+            ``loadContents`` handling), or re-raises subprocess errors.
         """
         print("Namespace: ", cwl_namespace)
 
@@ -490,8 +572,6 @@ class BaseCommandLineTool(BaseProcess):
                 elif not isinstance(output_dict["glob"], List):
                     raise Exception(f"Output glob of '{output_id}' is neither 'str' nor 'list', but '{type(output_dict['glob'])}'")
                 
-                globs = output_dict["glob"]
-                
                 # Validate that list of globs contains strings
                 for g in globs:
                     if not isinstance(g, str):
@@ -500,7 +580,8 @@ class BaseCommandLineTool(BaseProcess):
                 # Collect matched files
                 output_file_paths: List[str] = []
                 for g in globs:
-                    output_file_paths.extend(glob.glob(g, root_dir = self.loading_context["designated_out_dir"]))
+                    output_file_paths.extend(glob.glob(g))
+                    # output_file_paths.extend(glob.glob(g, root_dir = self.loading_context["designated_out_dir"])) # FIXME Uncomment when out dir is used correctly 
                 
                 # Set 'self' for outputEval and loadContents
                 cwl_namespace["self"] = output_file_paths
@@ -601,9 +682,24 @@ class BaseCommandLineTool(BaseProcess):
             verbose: Optional[bool] = True,
             client: Optional[Client] = None,
         ) -> dict[str, Value]:
-        """
-        TODO Description
-        TODO Validate outputs
+        """Top-level execution entrypoint for the tool.
+
+        This method prepares the runtime namespace and context, builds the
+        command line and environment, and executes the tool either locally
+        or via a Dask ``Client``. The outputs returned by ``run_wrapper``
+        are returned as the new runtime state.
+
+        Args:
+            use_dask: If True, submit the work to the provided or a new
+                Dask client; otherwise run locally.
+            runtime_context: Optional mapping of runtime inputs to override
+                the instance's current ``runtime_context``.
+            verbose: Whether to print progress and debugging information.
+            client: Optional Dask ``Client`` to use when ``use_dask`` is
+                True.
+
+        Returns:
+            A dictionary mapping global output ids to ``Value`` objects.
         """
         # Update runtime context
         if runtime_context is not None:
