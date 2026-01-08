@@ -1,2 +1,2 @@
 
-python process_images.py process_images.yaml
+python process_images.py -y process_images.yaml
