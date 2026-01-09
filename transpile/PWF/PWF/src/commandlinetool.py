@@ -403,7 +403,7 @@ class BaseCommandLineTool(BaseProcess):
             # Files and directories can come in the form of a simple string, so
             # we have to check for that.
             match: str | None = None
-            if value_cwl_t is "string":
+            if value_cwl_t == "string":
                 if "file" in expected_types or "file[]" in expected_types:
                     match = "file"
                 elif "directory" in expected_types or "directory[]" in expected_types:
