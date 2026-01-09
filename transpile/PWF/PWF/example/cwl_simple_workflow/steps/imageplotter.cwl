@@ -3,10 +3,10 @@ cwlVersion: v1.2
 id: imageplotter
 baseCommand:
   - python
-  - ../scripts/imageplotter.py
+  - /home/kennethdirker/Leiden/2024-2025/Thesis/transpile/PWF/PWF/example/cwl_simple_workflow/scripts/imageplotter.py
 inputs:
   - id: input_fits
-    type: 'File[]'
+    type: File[]
     inputBinding:
       position: 0
   - id: output_image

@@ -1,0 +1,10 @@
+fit_list:
+  - {class: File, path: image_mf_01.fits}
+  - {class: File, path: image_mf_02.fits}
+  - {class: File, path: image_mf_04.fits}
+# or
+# fit_list: [
+#   {class: file, path: image_mf_01.fits},
+#   {class: file, path: image_mf_02.fits},
+#   {class: file, path: image_mf_04.fits}
+# ]

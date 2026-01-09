@@ -1,11 +1,7 @@
-# DATA=image_mf_02.fits
 OUT=out.png
 NOISE=no_noise_image.fits
 NOISEOUT=no_noise_out.png
 
-# if test -f $DATA; then
-    # rm $DATA
-# fi
 if test -f $OUT; then
     rm $OUT
 fi

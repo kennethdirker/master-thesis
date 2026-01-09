@@ -3,7 +3,7 @@ cwlVersion: v1.2
 id: noiseremover
 baseCommand:
   - python
-  - ../scripts/noiseremover.py
+  - /home/kennethdirker/Leiden/2024-2025/Thesis/transpile/PWF/PWF/example/cwl_simple_workflow/scripts/noiseremover.py
 inputs:
   - id: input
     type: File

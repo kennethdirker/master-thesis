@@ -32,7 +32,7 @@ class noiseremover_PWF(BaseCommandLineTool):
 	def set_base_command(self):
 		self.base_command = [
 			"python",
-			"../scripts/noiseremover.py",
+			"/home/kennethdirker/Leiden/2024-2025/Thesis/transpile/PWF/PWF/example/cwl_simple_workflow/scripts/noiseremover.py",
 		]
 
 	def set_io(self):

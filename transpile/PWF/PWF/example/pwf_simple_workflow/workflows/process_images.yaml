@@ -1,4 +1,0 @@
-url_list:
-  class: file
-  path: ../1_link
-  # path: ../links

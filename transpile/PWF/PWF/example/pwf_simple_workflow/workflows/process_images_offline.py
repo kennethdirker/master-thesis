@@ -1,14 +1,25 @@
 from PWF.src.workflow import BaseWorkflow
 
-class process_images(BaseWorkflow):
+class process_images_offline_PWF(BaseWorkflow):
 
 	def set_metadata(self):
-		self.label = "process_images"
+		self.metadata = {
+			"label": "process_images",
+		}
 
 	def set_inputs(self):
 		self.inputs = {
 			"fit_list": {
 				"type": "file[]",
+			},
+			"fit_1": {
+				"type": "file",
+			},
+			"fit_2": {
+				"type": "file",
+			},
+			"fit_3": {
+				"type": "file",
 			},
 		}
 
@@ -39,13 +50,43 @@ class process_images(BaseWorkflow):
 				"run": "../steps/imageplotter.py",
 				"label": "imageplotter",
 			},
-			"noiseremover": {
+			"noiseremover1": {
 				"in": {
 					"input": {
-						"source": "fit_list",
+						"source": "fit_1",
 					},
 					"output_file_name": {
-						"valueFrom": "$('no_noise' + inputs.input.basename)"
+						"valueFrom": "$('no_noise_' + inputs.input.basename)"
+					},
+				},
+				"out": [
+					"output",
+				],
+				"run": "../steps/noiseremover.py",
+				"label": "noiseremover",
+			},
+			"noiseremover2": {
+				"in": {
+					"input": {
+						"source": "fit_2",
+					},
+					"output_file_name": {
+						"valueFrom": "$('no_noise_' + inputs.input.basename)"
+					},
+				},
+				"out": [
+					"output",
+				],
+				"run": "../steps/noiseremover.py",
+				"label": "noiseremover",
+			},
+			"noiseremover3": {
+				"in": {
+					"input": {
+						"source": "fit_3",
+					},
+					"output_file_name": {
+						"valueFrom": "$('no_noise_' + inputs.input.basename)"
 					},
 				},
 				"out": [
@@ -57,7 +98,11 @@ class process_images(BaseWorkflow):
 			"after_plot_inspect": {
 				"in": {
 					"input_fits": {
-						"source":"noiseremover/output",
+						"source": [
+							"noiseremover1/output",
+							"noiseremover2/output",
+							"noiseremover3/output",
+						],
 					},
 					"output_image": {
 						"default": "after_noise_remover.png",
@@ -71,5 +116,6 @@ class process_images(BaseWorkflow):
 			},
 		}
 
+
 if __name__ == "__main__":
-	process_images()
+	process_images_offline_PWF()
