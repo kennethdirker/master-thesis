@@ -11,6 +11,7 @@ from cwl_utils.parser import load_document_by_uri
 from cwl_utils.parser.cwl_v1_2 import (
     CommandOutputArraySchema, 
     CommandInputArraySchema,
+    InputArraySchema,
     WorkflowStepOutput,
 )
 
@@ -175,7 +176,7 @@ def get_input_type(type_: Any) -> list[str]:
     """
     lines: list[str] = []
 
-    if isinstance(type_, CommandInputArraySchema):
+    if isinstance(type_, (CommandInputArraySchema, InputArraySchema)):
         lines.append(indent(f'"type": "{type_.items.lower()}[]",', 4))
     elif isinstance(type_, str):
         lines.append(indent(f'"type": "{type_.lower()}",', 4))
