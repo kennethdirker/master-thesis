@@ -244,12 +244,12 @@ class BaseProcess(ABC):
 
         Examples of special cases:
         input_file:
-            class: file
+            class: File
             path: path/to/file
 
         input_files: 
-            - {class: file, path: path/to/file1} 
-            - {class: file, path: path/to/file2}
+            - {class: File, path: path/to/file1} 
+            - {class: File, path: path/to/file2}
 
         Arguments:
             input_value: An object value from the primary key-value YAML layer.
@@ -258,7 +258,6 @@ class BaseProcess(ABC):
             The extracted value.
         """
         expected_cwl_types: List[str]
-
         if not isinstance(self.inputs[input_id]["type"], List):
             expected_cwl_types = [self.inputs[input_id]["type"]]
         else:
@@ -299,13 +298,13 @@ class BaseProcess(ABC):
             # A mapping either means a potential file/directory, or an
             # unsupported custom data type. Unsupported types result in error.
                 if "class" in head:
-                    if "file" in head["class"]:
+                    if "File" in head["class"]:
                         return Value(
                             [FileObject(p["path"]) for p in input_value], 
                             FileObject, 
                             "file"
                         )
-                    elif "directory" in head["class"]:
+                    elif "Directory" in head["class"]:
                         return Value(
                             [DirectoryObject(p["path"]) for p in input_value],
                             DirectoryObject, 
@@ -323,13 +322,13 @@ class BaseProcess(ABC):
             # A mapping either means a potential file/directory, or an
             # unsupported custom data type. Unsupported types result in error.
             if "class" in input_value:
-                if "file" in input_value["class"]:
+                if "File" in input_value["class"]:
                     return Value(
                         FileObject(input_value["path"]), 
                         FileObject, 
                         "file"
                     )
-                elif "directory" in input_value["class"]:
+                elif "Directory" in input_value["class"]:
                     return Value(
                         DirectoryObject(input_value["path"]), 
                         DirectoryObject, 

@@ -180,16 +180,16 @@ def get_input_type(type_: Any) -> list[str]:
         lines.append(indent(f'"type": "{type_.items.lower()}[]",', 4))
     elif isinstance(type_, str):
         lines.append(indent(f'"type": "{type_.lower()}",', 4))
-    elif isinstance(type_, list):
+    elif isinstance(type_, List):
         # Union of types, can also be optional
-        types = type_.copy()
+        types: List[str] = type_.copy()
 
         if "null" in types:
             # Input is optional. Put 'null' at the end for clarity.
             types.remove("null")
             types.append("null")
 
-        line = '"type": [' + ", ".join([f'"{t}"' for t in types]) + "],"
+        line = '"type": [' + ", ".join([f'"{t.lower()}"' for t in types]) + "],"
         lines.append(indent(line, 4))
     else:
         raise NotImplementedError(f"Found unsupported type {type(type_)}")
@@ -605,6 +605,7 @@ def parse_steps(
                         for s in i.source:
                             lines.append(indent(f'"{resolve_source(s)}",', 7))
                         lines.append(indent(f'],', 6))
+                        print("\t[INFO] Step input with multiple sources not yet supported")
 
             if hasattr(i, "default") and i.default is not None:
                 lines.append(indent(f'"default": "{i.default}",', 6))
