@@ -1,17 +1,22 @@
+import concurrent.futures
+import dask.distributed
 import importlib
 import inspect
 import sys
 
 from abc import abstractmethod
-from concurrent.futures import Future
+from concurrent.futures import ThreadPoolExecutor   
 from copy import deepcopy
-from dask.distributed import Client, Future
+from dask.distributed import Client
 from pathlib import Path
-from typing import Any, cast, List, Optional, Tuple, Union
+from typing import Any, cast, List, Optional, Tuple, TypeAlias, Union
+
+Future: TypeAlias = concurrent.futures.Future | dask.distributed.Future
 
 from .commandlinetool import BaseCommandLineTool
 from .process import BaseProcess, Graph, Node
 from .utils import Absent, FileObject, DirectoryObject, Value, CWL_PY_T_MAPPING, PY_CWL_T_MAPPING
+
 
 
 class BaseWorkflow(BaseProcess):
@@ -54,10 +59,10 @@ class BaseWorkflow(BaseProcess):
         # Only the main process executes the workflow.
         if main:
             self.create_dependency_graph()
-            self._process_steps()       # BUG Now only handles the main workflow file
+            self._process_steps()
             self.optimize_dependency_graph()
             self.register_input_sources()
-            self.execute()
+            self.execute(self.loading_context["use_dask"])
 
 
     @abstractmethod
@@ -141,7 +146,6 @@ class BaseWorkflow(BaseProcess):
 
     def _process_steps(self) -> None:
         """
-        BUG FIXME Now only handles the main workflow file, should handle all
                 TODO Desc
         """
         for process in self.loading_context["processes"].values():
@@ -151,15 +155,6 @@ class BaseWorkflow(BaseProcess):
             for step_id, step_dict in self.steps.items():
                 step_proc: BaseProcess = self.step_id_to_process[step_id]
                 
-                # Register step inputs with expressions and default values as global sources
-                # TODO FIXME Uncomment if needed
-                # for input_id, input_dict in step_dict["in"].items():
-                #     if "default" in input_dict:
-                #         self.runtime_context[step_proc.global_id(input_id)] = input_dict["default"]
-                #     if "valueFrom" in input_dict:
-                #         # tool = self.step_id_to_process[step_id]
-                #         self.runtime_context[process.global_id(input_id)] = input_dict["valueFrom"]
-
                 # Register step outputs as global sources
                 if isinstance(step_dict["out"], list):
                     for out_id in step_dict["out"]:
@@ -310,32 +305,29 @@ class BaseWorkflow(BaseProcess):
         return namespace
     
 
-    def update_sources(
+    def update_source_values(
             self,
             tool: BaseCommandLineTool, 
             runtime_context: dict[str, Value]
         ) -> None:
         """
-        Update the sources of the tool's inputs by evaluating any valueFrom
+        Update source values of the tool's inputs by evaluating any valueFrom
         expressions. The evaluated value is stored in the runtime_context
         dictionary with the source as key.
         """
         if tool.parent_process_id is None or tool.step_id is None:
             raise ValueError("Tool must have parent_process_id and step_id defined")
-        # parent_process: BaseWorkflow = self.loading_context["processes"][tool.parent_process_id]
         
         for input_id, input_dict in tool.inputs.items():
             expected_types = input_dict["type"]
             source = tool.input_to_source[input_id]
             source_split = source.split(":")
-            # source_tail = source_split[-1]          # Get input ID or expression
             value_object = runtime_context[source]
 
             if not isinstance(value_object.value, str):
                 continue
 
             expression = value_object.value
-            # if source_tail.startswith(("$", "$(")) and source.endswith("$"):
             if (expression.startswith("$") and expression.endswith("$") or
                 expression.startswith("$(") and expression.endswith(")")):
                 # Input is a valueFrom expression
@@ -381,7 +373,8 @@ class BaseWorkflow(BaseProcess):
             self,
             workflow_node: Node,
             runtime_context: dict[str, Any],
-            verbose: Optional[bool] = True
+            verbose: Optional[bool] = True,
+            executor: Optional[ThreadPoolExecutor] = None
         ) -> dict[str, Any]:
             """
             Execute the tasks of this node. 
@@ -397,51 +390,86 @@ class BaseWorkflow(BaseProcess):
             if graph is None:
                 raise Exception("Node has no graph")
 
-            tool_queue: list[Node] = graph.get_nodes(graph.roots)
-            finished: list[Node] = []
-            new_runtime_context: dict[str, Any] = {}
-            
-            # Cycle through tool nodes until all tools have been executed
-            while len(tool_queue) != 0 and len(finished) != len(tool_queue):
-                # Retrieve tool node from the queue
-                tool_node = tool_queue.pop(0)
-                
-                # Check if the node is ready for execution by checking if all
-                # of its parents have finished.
-                good: bool = True
-                for parent in graph.get_nodes(tool_node.parents):
-                    # If not all parents have been visited, re-queue node
-                    if parent not in finished:
-                        good = False
-                        tool_queue.append(tool_node)
-                        break
-                if not good:
-                    continue
+            if executor is None:
+                executor = ThreadPoolExecutor()
 
-                # Dask sends a copy of runtime_context to the cluster node. 
-                # This means that outputs have to be registered in the main 
-                # runtime_context.
-                # 
-                # Nodes at this level contain a single BaseCommandLineTool.
-                process = tool_node.processes[0]
-                if not isinstance(process, BaseCommandLineTool):
-                    raise TypeError(f"Process {process} is not a BaseCommandLineTool")
-                tool: BaseCommandLineTool = process
-                print(f"[NODE]: Executing tool {tool.id}")
-                # cwl_namespace = self.build_namespace()
-                self.update_sources(tool, runtime_context)
-                result = tool.execute(False, runtime_context, verbose)  
-                runtime_context.update(result)
-                new_runtime_context.update(result)
-                finished.append(tool_node)
+            nodes = graph.nodes
+            runnable_nodes: list[Node] = deepcopy(graph.get_nodes(graph.roots))
+            runnable: dict[str, Node] = {node.id: node for node in runnable_nodes}
+            waiting: dict[str, Node] = {id: node for id, node in nodes.items() if id not in runnable}
+            running: dict[str, Tuple[Future, Node]] = {}
+            completed: dict[str, Node] = {}
+            outputs: dict[str, Value] = {}
+
+            while len(runnable) != 0 and len(running) != 0 :
+                # Execute runnable nodes in the ThreadPool
+                for node_id, node in runnable.copy().items():
+                    # These nodes (which are wrapped tools) contain a single 
+                    # node in their graph.
+                    tool = ... #TODO
+                    # Update sources, eval stuff etc
+                    future = executor.submit(
+                        tool.execute,
+                        False, 
+                        runtime_context, 
+                        verbose
+                    )
+
+                    running[node_id] = (future, node)
+                    runnable.pop(node_id)
+
+            # tool_queue: list[Node] = graph.get_nodes(graph.roots)
+            # finished: list[Node] = []
+            # new_runtime_context: dict[str, Any] = {}
             
-            return new_runtime_context
+            # # Cycle through tool nodes until all tools have been executed
+            # while len(tool_queue) != 0 and len(finished) != len(tool_queue):
+            #     # Retrieve tool node from the queue
+            #     tool_node = tool_queue.pop(0)
+                
+            #     # Check if the node is ready for execution by checking if all
+            #     # of its parents have finished.
+            #     good: bool = True
+            #     for parent in graph.get_nodes(tool_node.parents):
+            #         # If not all parents have been visited, re-queue node
+            #         if parent not in finished:
+            #             good = False
+            #             tool_queue.append(tool_node)
+            #             break
+            #     if not good:
+            #         continue
+
+            #     # Dask sends a copy of runtime_context to the cluster node. 
+            #     # This means that outputs have to be registered in the main 
+            #     # runtime_context.
+            #     # 
+            #     # Nodes at this level contain a single BaseCommandLineTool.
+            #     process = tool_node.processes[0]
+            #     if not isinstance(process, BaseCommandLineTool):
+            #         raise TypeError(f"Process {process} is not a BaseCommandLineTool")
+            #     tool: BaseCommandLineTool = process
+            #     print(f"[NODE]: Executing tool {tool.id}")
+            #     # cwl_namespace = self.build_namespace()
+            #     self.update_source_values(tool, runtime_context)
+            #     result = tool.execute(False, runtime_context, verbose)
+            #     runtime_context.update(result)
+            #     new_runtime_context.update(result)
+            #     finished.append(tool_node)
+            
+            # return new_runtime_context
+            # Check for deadlock
+            if len(runnable) == 0 and len(running) == 0 and len(waiting) != 0:
+                s = "\n\t".join([node_id for node_id in waiting.keys()])
+                raise Exception(f"Deadlock detected. Waiting nodes:\n\t{s}")
+            
+            return outputs
     
 
     def execute(
             self, 
-            verbose: Optional[bool] = True,
-            client: Optional[Client] = None
+            use_dask: bool,
+            verbose: bool = True,
+            dask_client: Optional[Client] = None
         ) -> dict[str, Value]:
         """
         Execute the workflow as the main process. The workflow is executed by
@@ -454,8 +482,10 @@ class BaseWorkflow(BaseProcess):
         Returns:
             Dictionary of (output ID, output value) key-value pairs.
         """
-        if client is None:
+        if use_dask and dask_client is None:
             client = Client()
+        else:
+            client = ThreadPoolExecutor()
 
         # Initialize queues
         graph: Graph = self.loading_context["graph"]
@@ -487,21 +517,23 @@ class BaseWorkflow(BaseProcess):
         # executable nodes. Invalid workflows, faulty tools or bad input might
         # result in deadlocks, in which case an exception is raised.
         print("[WORKFLOW]: Executing workflow")
-        while len(runnable) != 0 or len(running) != 0:
-            # Check for deadlock
-            if len(runnable) == 0 and len(running) == 0 and len(waiting) != 0:
-                s = "\n\t".join([node_id for node_id in waiting.keys()])
-                raise Exception(f"Deadlock detected. Waiting nodes:\n\t{s}")
 
+        while len(runnable) != 0 or len(running) != 0:
             # Execute runnable nodes
             for node_id, node in runnable.copy().items():
                 if verbose: print("[WORKFLOW]: Submitting node", graph.short_id[node_id])
+
+                # If dask is disabled, the ThreadPoolExecutor client is used to
+                # get concurrently executed tasks. If Dask is used, a 
+                # ThreadPoolExecutor client is created on the execution node.
                 future = client.submit(
                     self.execute_workflow_node, 
                     node, 
                     self.runtime_context.copy(),
-                    verbose
+                    verbose,
+                    client if isinstance(client, ThreadPoolExecutor) else None
                 )
+
                 running[node_id] = (future, node)
                 runnable.pop(node_id)
 
@@ -541,6 +573,11 @@ class BaseWorkflow(BaseProcess):
                         print("[WORKFLOW]: Completed node", graph.short_id[running_node[1].id])
                         lprint()
             # time.sleep(0.1)
+        # Check for deadlock
+        if len(runnable) == 0 and len(running) == 0 and len(waiting) != 0:
+            s = "\n\t".join([node_id for node_id in waiting.keys()])
+            raise Exception(f"Deadlock detected. Waiting nodes:\n\t{s}")
+            
         return outputs
 
 
