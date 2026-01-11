@@ -378,13 +378,7 @@ class BaseWorkflow(BaseProcess):
         ) -> dict[str, Any]:
             """
             Execute the tasks of this node. 
-            
-            FIXME: Is the following note still accurate?
-            NOTE: Nodes contained in node.graph contain a single 
-            BaseCommandLineTool and are executed according to the nodes
-            internal dependency graph.
-            NOTE: Tools are executed in serial within this function.
-            FIXME: Execute tools Async just like in the main workflow execute()
+            TODO Untested!            
             """
             graph = workflow_node.graph
             if graph is None:
@@ -406,57 +400,48 @@ class BaseWorkflow(BaseProcess):
                 for node_id, node in runnable.copy().items():
                     # These nodes (which are wrapped tools) contain a single 
                     # node in their graph.
-                    tool = ... #TODO
-                    # Update sources, eval stuff etc
+                    tool = cast(BaseCommandLineTool, node.processes[0])
+                    self.update_source_values(tool, runtime_context)
+                    print(f"[NODE]: Executing tool {tool.id}")
                     future = executor.submit(
                         tool.execute,
                         False, 
                         runtime_context, 
                         verbose
                     )
-
                     running[node_id] = (future, node)
                     runnable.pop(node_id)
-
-            # tool_queue: list[Node] = graph.get_nodes(graph.roots)
-            # finished: list[Node] = []
-            # new_runtime_context: dict[str, Any] = {}
-            
-            # # Cycle through tool nodes until all tools have been executed
-            # while len(tool_queue) != 0 and len(finished) != len(tool_queue):
-            #     # Retrieve tool node from the queue
-            #     tool_node = tool_queue.pop(0)
                 
-            #     # Check if the node is ready for execution by checking if all
-            #     # of its parents have finished.
-            #     good: bool = True
-            #     for parent in graph.get_nodes(tool_node.parents):
-            #         # If not all parents have been visited, re-queue node
-            #         if parent not in finished:
-            #             good = False
-            #             tool_queue.append(tool_node)
-            #             break
-            #     if not good:
-            #         continue
+                # Check for completed tools and move runnable children to the
+                # running queue.
+                for node_id, running_node in running.copy().items():
+                    if running_node[0].done():
+                        # Save results from finished tool and remove tool from
+                        # the running list. Runtime_context is updated for the
+                        # next tool.
+                        result: dict[str, Value] = running_node[0].result()
+                        outputs.update(result)
+                        runtime_context.update(result)
 
-            #     # Dask sends a copy of runtime_context to the cluster node. 
-            #     # This means that outputs have to be registered in the main 
-            #     # runtime_context.
-            #     # 
-            #     # Nodes at this level contain a single BaseCommandLineTool.
-            #     process = tool_node.processes[0]
-            #     if not isinstance(process, BaseCommandLineTool):
-            #         raise TypeError(f"Process {process} is not a BaseCommandLineTool")
-            #     tool: BaseCommandLineTool = process
-            #     print(f"[NODE]: Executing tool {tool.id}")
-            #     # cwl_namespace = self.build_namespace()
-            #     self.update_source_values(tool, runtime_context)
-            #     result = tool.execute(False, runtime_context, verbose)
-            #     runtime_context.update(result)
-            #     new_runtime_context.update(result)
-            #     finished.append(tool_node)
+                        # Move tool to finished
+                        completed[node_id] = running_node[1]
+                        running.pop(node_id)
+
+                        # Add new runnable tools to queue by checking for each
+                        # child if all its parents have completed.
+                        for child_id in running_node[1].children:
+                            # Only check waiting children
+                            if child_id not in waiting:
+                                continue
+                            
+                            ready = True
+                            for childs_parent_id in nodes[child_id].parents:
+                                if childs_parent_id not in completed:
+                                    ready = False
+                                    break
+                            if ready:
+                                runnable[child_id] = waiting.pop(child_id)
             
-            # return new_runtime_context
             # Check for deadlock
             if len(runnable) == 0 and len(running) == 0 and len(waiting) != 0:
                 s = "\n\t".join([node_id for node_id in waiting.keys()])
@@ -517,7 +502,6 @@ class BaseWorkflow(BaseProcess):
         # executable nodes. Invalid workflows, faulty tools or bad input might
         # result in deadlocks, in which case an exception is raised.
         print("[WORKFLOW]: Executing workflow")
-
         while len(runnable) != 0 or len(running) != 0:
             # Execute runnable nodes
             for node_id, node in runnable.copy().items():
@@ -543,7 +527,7 @@ class BaseWorkflow(BaseProcess):
                 # Remove node from the running list if it has finished
                 if running_node[0].done():
                     # Add new runtime state from finished node
-                    result = running_node[0].result()
+                    result: dict[str, Value] = running_node[0].result()
                     outputs.update(result)
                     self.runtime_context.update(result)
 
