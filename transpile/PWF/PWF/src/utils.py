@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any, List, Optional, Type, Sequence, Mapping, Union
 from types import NoneType
 # from .Process import BaseProcess
@@ -98,8 +100,8 @@ class FileObject:
     nameroot: str = ""
     nameext: str = ""
     
-    def __init__(self, file_path: str):
-        path: Path = Path(file_path).resolve()
+    def __init__(self, file_path: str | FileObject):
+        path: Path = Path(str(file_path)).resolve()
         self.path = str(path)
         self.basename = path.name
         self.dirname = str(path.parent)
@@ -110,7 +112,7 @@ class FileObject:
         return self.path
     
     def __repr__(self) -> str:
-        return f"FileObject({self.path})"
+        return f"FileObject('{self.path}')"
     
 class DirectoryObject:
     """

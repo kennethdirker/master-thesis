@@ -59,7 +59,7 @@ class BaseWorkflow(BaseProcess):
         # Only the main process executes the workflow.
         if main:
             self.create_dependency_graph()
-            self._process_steps()
+            self.register_step_sources()
             self.optimize_dependency_graph()
             self.register_input_sources()
             self.execute(self.loading_context["use_dask"])
@@ -144,7 +144,7 @@ class BaseWorkflow(BaseProcess):
                 )
 
 
-    def _process_steps(self) -> None:
+    def register_step_sources(self) -> None:
         """
                 TODO Desc
         """
@@ -199,16 +199,15 @@ class BaseWorkflow(BaseProcess):
                 source (str):
                     The source of the input. If is_static is True, this is the
                     default value of the input. If is_static is False, this is
-                    the source of the input.
+                    the source ID of the input.
             """
             step_in_dict = process.steps[step_id]["in"][in_id]
             if "source" in step_in_dict:
                 return False, step_in_dict["source"]
-            elif "valueFrom" in step_in_dict:
-                return True, step_in_dict["valueFrom"]
-                # return False, step_in_dict["valueFrom"]
             elif "default" in step_in_dict:
                 return True, step_in_dict["default"]
+            elif "valueFrom" in step_in_dict:
+                return True, step_in_dict["valueFrom"]
             raise NotImplementedError()
 
         processes: dict[str, BaseProcess] = self.loading_context["processes"]
@@ -233,19 +232,19 @@ class BaseWorkflow(BaseProcess):
                 if process.step_id is None:
                     raise ValueError("process.step_id cannot be None")
                 _step_id: str = process.step_id
-                
+
                 _process: BaseWorkflow = processes[process.parent_process_id]
                 source = input_id
 
                 while True:
                     is_static, source = get_source_from_step_in(_process, _step_id, source)
                     if is_static:
-                        # Input has no dynamic source: Use default value
+                        # Input comes from default or valueFrom
                         process.input_to_source[input_id] = _process.global_id(_step_id + "/" + input_id)
                         print(f"[ASSIGN] {source} -> {process.input_to_source[input_id]}")
                         self.runtime_context[process.input_to_source[input_id]] = Value(source, type(source), PY_CWL_T_MAPPING[type(source)][0])
                         break
-                    
+
                     if "/" in source:   # {global_process_id}:{step_id}/{output_id}
                         # A step output is the input source
                         step_id, output_id = source.split("/")
@@ -267,7 +266,7 @@ class BaseWorkflow(BaseProcess):
                         _process = processes[_process.parent_process_id]
 
     
-    def build_step_namespace(
+    def build_step_input_namespace(
             self, 
             tool:  BaseCommandLineTool,
             runtime_context: dict[str, Any],
@@ -275,97 +274,142 @@ class BaseWorkflow(BaseProcess):
         """
         """
         # Add workflow inputs to namespace
-        namespace = {}
+        # namespace = {}
+        namespace = self.build_namespace()
 
         # Add step inputs to namespace
-        namespace["inputs"] = {}
+        # namespace["inputs"] = {}
         if tool.step_id is None:
             raise ValueError("tool.step_id cannot be None")
 
-        for input_id in self.steps[tool.step_id]["in"]:
-            source = tool.input_to_source[input_id]
+        for in_id, in_dict in self.steps[tool.step_id]["in"].items():
+            source = tool.input_to_source[in_id]
             value = runtime_context[source].value
 
-            input_dict = tool.inputs[input_id]
+            input_dict = tool.inputs[in_id]
             if "file" in input_dict["type"]:
                 # Create built-in file properties used in CWL expressions
                 if "[]" in input_dict["type"]:
                     # Array of files
+                    print("[VALUE []]", value)
+                    # print(value)
                     file_objects = [FileObject(p) for p in value]
-                    namespace["inputs"][input_id] = file_objects
+                    namespace["inputs"][in_id] = file_objects
                 else:
                     # Single file
-                    namespace["inputs"][input_id] = FileObject(value)
+                    print("[VALUE]", value)
+                    # if isinstance(value, List):
+                        # value = value[0]
+                    namespace["inputs"][in_id] = FileObject(value)
             elif "string" in input_dict["type"]:
-                namespace["inputs"][input_id] = value
+                namespace["inputs"][in_id] = value
             else:
                 raise NotImplementedError(f"Input type {input_dict['type']} not supported")
+                
 
-        # TODO Other CWL namespaces, like 'self', 'runtime'?
+        # TODO Other CWL namespaces, like 'self'?
         return namespace
     
 
-    def update_source_values(
+    def prepare_step_runtime_context(
             self,
             tool: BaseCommandLineTool, 
             runtime_context: dict[str, Value]
-        ) -> None:
+        ) -> dict[str, Value]:
         """
-        Update source values of the tool's inputs by evaluating any valueFrom
-        expressions. The evaluated value is stored in the runtime_context
-        dictionary with the source as key.
+        Create a new runtime context dictionary with updated source values
+        from process input and step input valueFrom fields.
         """
         if tool.parent_process_id is None or tool.step_id is None:
             raise ValueError("Tool must have parent_process_id and step_id defined")
-        
+        parent_workflow_id = tool.parent_process_id
+        parent_process = cast(BaseWorkflow, self.loading_context["processes"][parent_workflow_id])
+
+        # Create a copy to prevent replacing source values with valueFrom values
+        step_runtime_context: dict[str, Value] = runtime_context.copy()
+
+        # TODO Update all tool inputs of the step:
+        # Create cwl_namespace with step ins and runtime_namespace
+        cwl_namespace = ...
+        cwl_namespace.expand(...)
+        # for each input check:
         for input_id, input_dict in tool.inputs.items():
-            expected_types = input_dict["type"]
             source = tool.input_to_source[input_id]
-            source_split = source.split(":")
-            value_object = runtime_context[source]
-
-            if not isinstance(value_object.value, str):
-                continue
-
-            expression = value_object.value
-            if (expression.startswith("$") and expression.endswith("$") or
-                expression.startswith("$(") and expression.endswith(")")):
-                # Input is a valueFrom expression
-                process_id = ":".join(source_split[:2]) # Get parent workflow ID
-                process: BaseWorkflow = self.loading_context["processes"][process_id]
-                
-                # Build CWL namespace for expression evaluation and evaluate
-                cwl_namespace = process.build_step_namespace(tool, runtime_context)
-                value = self.eval(expression, cwl_namespace)
-                
-                # Wrap the return value of the expression in a Value instance.
-                if isinstance(value, str):
-                    if "file" in expected_types:
-                        value = Value(FileObject(value), FileObject, "file")
-                    elif "directory" in expected_types:
-                        value = Value(DirectoryObject(value), DirectoryObject, "directory")
-                    else:
-                        value = Value(value, str, "string")
-                elif isinstance(value, List):
-                    expected_types = [t.replace("[]", "") for t in expected_types if "[]" in t] 
-                    if len(value) == 0:
-                        # TODO Empty array can have any type...
-                        raise NotImplementedError()
-                        # value = Value([], ..., ...)   #   Implement an Any type? 
-
-                    if isinstance(value[0], str):
-                        if "file" in expected_types:
-                            value = Value([FileObject(v) for v in value], FileObject, "file")
-                        elif "directory" in expected_types:
-                            value = Value([DirectoryObject(v) for v in value], DirectoryObject, "file")
-                        else:
-                            value = Value(value, str, "string")
-                    else:
-                        value = Value(value, type(value[0]), PY_CWL_T_MAPPING[type(value[0])][0])
+            # Absent/None/null in runtime_context is valid and is further handled by the tool.
+            # If value in input_to_source is expression, no source or default was given.
+            if (source.startswith("$") and source.endswith("$") or  # Python
+                source.startswith("$(") and source.endswith(")")):  # JS
+                # Where did that expression come from? -> Always valueFrom in step input!
+                expression = source
+                # 'self' should be null
+                cwl_namespace["self"] = None
+                # Evaluate and put in step_runtime_context
+                expr_result = self.eval(expression, cwl_namespace)
+            else:
+                value = step_runtime_context[source]
+                # If value in runtime_context AND in step input valueFrom:
+                if "valueFrom" in parent_process.steps[input_id]["in"]:
+                    # Set correct 'self' in namespace
+                    cwl_namespace["self"] = value.value
+                    # Evaluate and put in step_runtime_context
+                    expr_result = self.eval(parent_process.steps[input_id]["in"]["valueFrom"])
+                    # If only value in runtime_context:
                 else:
-                    value = Value(value, type(value), PY_CWL_T_MAPPING[type(value)][0])
+                    # Correct value is already copied from runtime_context
+                    continue
+            
+            # Evaluated expression needs to be wrapped
+            # TODO
+            # NOTE TO SELF: If string overlap with files and dirs is handled in commandlinetool, skip it here?
+
+        # for input_id, input_dict in tool.inputs.items():
+        #     expected_types = input_dict["type"]
+        #     source = tool.input_to_source[input_id]
+        #     parent_id = ":".join(source.split(":")[:2]) # Get parent workflow ID
+
+        #     value = step_runtime_context[source].value
+        #     if not isinstance(value, str):
+        #         continue
+
+        #     expr = value
+        #     if (expr.startswith("$") and expr.endswith("$") or  # Python
+        #         expr.startswith("$(") and expr.endswith(")")):  # JS
+        #         # Input is an expression from a valueFrom field
+        #         process: BaseWorkflow = self.loading_context["processes"][parent_id]
+                
+        #         # Build CWL namespace for expression evaluation and evaluate
+        #         cwl_namespace = process.build_step_input_namespace(tool, step_runtime_context)
+        #         value = self.eval(expr, cwl_namespace)
+                
+        #         # Wrap the return value of the expression in a Value instance.
+        #         if isinstance(value, str):
+        #             if "file" in expected_types:
+        #                 value = Value(FileObject(value), FileObject, "file")
+        #             elif "directory" in expected_types:
+        #                 value = Value(DirectoryObject(value), DirectoryObject, "directory")
+        #             else:
+        #                 value = Value(value, str, "string")
+        #         elif isinstance(value, List):
+        #             expected_types = [t.replace("[]", "") for t in expected_types if "[]" in t] 
+        #             if len(value) == 0:
+        #                 # TODO Empty array can have any type...
+        #                 raise NotImplementedError()
+        #                 # value = Value([], ..., ...)   #   Implement an Any type? 
+
+        #             if isinstance(value[0], str):
+        #                 if "file" in expected_types:
+        #                     value = Value([FileObject(v) for v in value], FileObject, "file")
+        #                 elif "directory" in expected_types:
+        #                     value = Value([DirectoryObject(v) for v in value], DirectoryObject, "file")
+        #                 else:
+        #                     value = Value(value, str, "string")
+        #             else:
+        #                 value = Value(value, type(value[0]), PY_CWL_T_MAPPING[type(value[0])][0])
+        #         else:
+        #             value = Value(value, type(value), PY_CWL_T_MAPPING[type(value)][0])
                     
-                runtime_context[source] = value
+        #         step_runtime_context[source] = value
+        return step_runtime_context
 
 
  
@@ -386,6 +430,7 @@ class BaseWorkflow(BaseProcess):
 
             if executor is None:
                 executor = ThreadPoolExecutor()
+            print("===================================")
 
             nodes = graph.nodes
             runnable_nodes: list[Node] = deepcopy(graph.get_nodes(graph.roots))
@@ -394,19 +439,19 @@ class BaseWorkflow(BaseProcess):
             running: dict[str, Tuple[Future, Node]] = {}
             completed: dict[str, Node] = {}
             outputs: dict[str, Value] = {}
-
-            while len(runnable) != 0 and len(running) != 0 :
+            while len(runnable) != 0 or len(running) != 0:
+                # print("[NODE]: Runnable:\n\t", runnable)
                 # Execute runnable nodes in the ThreadPool
                 for node_id, node in runnable.copy().items():
                     # These nodes (which are wrapped tools) contain a single 
                     # node in their graph.
                     tool = cast(BaseCommandLineTool, node.processes[0])
-                    self.update_source_values(tool, runtime_context)
+                    step_runtime_context = self.prepare_step_runtime_context(tool, runtime_context)
                     print(f"[NODE]: Executing tool {tool.id}")
                     future = executor.submit(
                         tool.execute,
                         False, 
-                        runtime_context, 
+                        step_runtime_context, 
                         verbose
                     )
                     running[node_id] = (future, node)
@@ -414,26 +459,27 @@ class BaseWorkflow(BaseProcess):
                 
                 # Check for completed tools and move runnable children to the
                 # running queue.
-                for node_id, running_node in running.copy().items():
-                    if running_node[0].done():
+                for node_id, running_task in running.copy().items():
+                    if running_task[0].done():
+                        # print("[???]", workflow_node.id, "done:\n\t\t", node_id)
                         # Save results from finished tool and remove tool from
                         # the running list. Runtime_context is updated for the
                         # next tool.
-                        result: dict[str, Value] = running_node[0].result()
+                        result: dict[str, Value] = running_task[0].result()
                         outputs.update(result)
                         runtime_context.update(result)
 
                         # Move tool to finished
-                        completed[node_id] = running_node[1]
+                        completed[node_id] = running_task[1]
                         running.pop(node_id)
 
                         # Add new runnable tools to queue by checking for each
                         # child if all its parents have completed.
-                        for child_id in running_node[1].children:
+                        for child_id in running_task[1].children:
                             # Only check waiting children
                             if child_id not in waiting:
                                 continue
-                            
+
                             ready = True
                             for childs_parent_id in nodes[child_id].parents:
                                 if childs_parent_id not in completed:
@@ -441,12 +487,13 @@ class BaseWorkflow(BaseProcess):
                                     break
                             if ready:
                                 runnable[child_id] = waiting.pop(child_id)
-            
+
             # Check for deadlock
             if len(runnable) == 0 and len(running) == 0 and len(waiting) != 0:
                 s = "\n\t".join([node_id for node_id in waiting.keys()])
                 raise Exception(f"Deadlock detected. Waiting nodes:\n\t{s}")
-            
+
+            # print(*{(k, v) for k, v in outputs.items()})
             return outputs
     
 
@@ -523,22 +570,22 @@ class BaseWorkflow(BaseProcess):
 
             # Check for completed nodes and move runnable children to the
             # running queue.
-            for node_id, running_node in running.copy().items(): # running_node: (Future, Node)
+            for node_id, running_task in running.copy().items(): # running_task: (Future, Node)
                 # Remove node from the running list if it has finished
-                if running_node[0].done():
+                if running_task[0].done():
                     # Add new runtime state from finished node
-                    result: dict[str, Value] = running_node[0].result()
+                    result: dict[str, Value] = running_task[0].result()
                     outputs.update(result)
                     self.runtime_context.update(result)
 
                     # Move node to finished
-                    completed[node_id] = running_node[1]
+                    completed[node_id] = running_task[1]
                     running.pop(node_id)
                     lprint()
 
                     # Add new runnable nodes to queue by checking for each
                     # child if all its parents have completed.
-                    for child_id in running_node[1].children:
+                    for child_id in running_task[1].children:
 
                         # Only check children that have not already been queued
                         if child_id not in waiting:
@@ -554,7 +601,7 @@ class BaseWorkflow(BaseProcess):
                             # All parents have finished: Queue up the child
                             runnable[child_id] = waiting.pop(child_id)
                     if verbose:
-                        print("[WORKFLOW]: Completed node", graph.short_id[running_node[1].id])
+                        print("[WORKFLOW]: Completed node", graph.short_id[running_task[1].id])
                         lprint()
             # time.sleep(0.1)
         # Check for deadlock
