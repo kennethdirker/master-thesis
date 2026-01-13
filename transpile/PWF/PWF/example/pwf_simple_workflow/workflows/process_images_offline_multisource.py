@@ -1,6 +1,6 @@
 from PWF.src.workflow import BaseWorkflow
 
-class process_images_offline_PWF(BaseWorkflow):
+class process_images_offline_multisource_PWF(BaseWorkflow):
 
 	def set_metadata(self):
 		self.metadata = {
@@ -11,6 +11,15 @@ class process_images_offline_PWF(BaseWorkflow):
 		self.inputs = {
 			"fit_list": {
 				"type": "file[]",
+			},
+			"fit_1": {
+				"type": "file",
+			},
+			"fit_2": {
+				"type": "file",
+			},
+			"fit_3": {
+				"type": "file",
 			},
 		}
 
@@ -41,14 +50,43 @@ class process_images_offline_PWF(BaseWorkflow):
 				"run": "../steps/imageplotter.py",
 				"label": "imageplotter",
 			},
-			"noiseremover": {
+			"noiseremover1": {
 				"in": {
 					"input": {
-						"source": "fit_list",
-						"valueFrom": "$(self[0])"
+						"source": "fit_1",
 					},
 					"output_file_name": {
-						"valueFrom": "$('no_noise_' + inputs.input[0].basename)"
+						"valueFrom": "$('no_noise_' + inputs.input.basename)"
+					},
+				},
+				"out": [
+					"output",
+				],
+				"run": "../steps/noiseremover.py",
+				"label": "noiseremover",
+			},
+			"noiseremover2": {
+				"in": {
+					"input": {
+						"source": "fit_2",
+					},
+					"output_file_name": {
+						"valueFrom": "$('no_noise_' + inputs.input.basename)"
+					},
+				},
+				"out": [
+					"output",
+				],
+				"run": "../steps/noiseremover.py",
+				"label": "noiseremover",
+			},
+			"noiseremover3": {
+				"in": {
+					"input": {
+						"source": "fit_3",
+					},
+					"output_file_name": {
+						"valueFrom": "$('no_noise_' + inputs.input.basename)"
 					},
 				},
 				"out": [
@@ -60,8 +98,11 @@ class process_images_offline_PWF(BaseWorkflow):
 			"after_plot_inspect": {
 				"in": {
 					"input_fits": {
-						"source": "noiseremover/output",
-						"valueFrom": "$([self])"
+						"source": [
+							"noiseremover1/output",
+							"noiseremover2/output",
+							"noiseremover3/output",
+						],
 					},
 					"output_image": {
 						"default": "after_noise_remover.png",
@@ -77,4 +118,4 @@ class process_images_offline_PWF(BaseWorkflow):
 
 
 if __name__ == "__main__":
-	process_images_offline_PWF()
+	process_images_offline_multisource_PWF()

@@ -5,6 +5,12 @@ label: process_images
 inputs:
   - id: fit_list
     type: File[]
+  - id: fit_1
+    type: File
+  - id: fit_2
+    type: File
+  - id: fit_3
+    type: File
 outputs:
   - id: before_noise_remover
     outputSource:
@@ -26,13 +32,32 @@ steps:
       - id: output
     run: ../steps/imageplotter.cwl
     label: imageplotter
-  - id: noiseremover
+  - id: noiseremover1
     in:
       - id: input
-        source: fit_list
-        valueFrom: $(self[0])
+        source: fit_1
       - id: output_file_name
-        valueFrom: $('no_noise_' + inputs.input[0].basename)
+        valueFrom: $('no_noise_' + inputs.input.basename)
+    out:
+      - id: output
+    run: ../steps/noiseremover.cwl
+    label: noiseremover
+  - id: noiseremover2
+    in:
+      - id: input
+        source: fit_2
+      - id: output_file_name
+        valueFrom: $('no_noise_' + inputs.input.basename)
+    out:
+      - id: output
+    run: ../steps/noiseremover.cwl
+    label: noiseremover
+  - id: noiseremover3
+    in:
+      - id: input
+        source: fit_3
+      - id: output_file_name
+        valueFrom: $('no_noise_' + inputs.input.basename)
     out:
       - id: output
     run: ../steps/noiseremover.cwl
@@ -40,8 +65,11 @@ steps:
   - id: after_plot_inspect
     in:
       - id: input_fits
-        source: noiseremover/output
-        valueFrom: $([self])
+        source:
+          - noiseremover1/output
+          - noiseremover2/output
+          - noiseremover3/output
+        linkMerge: merge_nested
       - id: output_image
         default: after_noise_remover.png
     out:
@@ -49,5 +77,6 @@ steps:
     run: ../steps/imageplotter.cwl
     label: imageplotter
 requirements:
+  - class: MultipleInputFeatureRequirement
   - class: StepInputExpressionRequirement
   - class: InlineJavascriptRequirement
