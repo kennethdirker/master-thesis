@@ -38,7 +38,7 @@ class BaseCommandLineTool(BaseProcess):
             loading_context: Optional[dict[str, str]] = None,
             parent_process_id: Optional[str] = None,
             step_id: Optional[str] = None,
-            with_dask: bool = False,
+            # with_dask: bool = False,
             PATH: Optional[str] = None,
         ):
         """ TODO: class description """
@@ -399,6 +399,7 @@ class BaseCommandLineTool(BaseProcess):
 
             value = v.value
             value_cwl_t = v.cwltype
+            is_array = v.is_array
 
             # Files and directories can come in the form of a simple string, so
             # we have to check for that.
@@ -418,12 +419,13 @@ class BaseCommandLineTool(BaseProcess):
                     raise Exception(f"Tool input '{input_id}' supports CWL types [{', '.join(expected_types)}], but found CWL types '{value_cwl_t} (from '{type(value)}')")
                 continue
 
+            expects_array: bool = value_cwl_t + "[]" in expected_types and is_array
             # If we get array data, prioritize array type over single type,
             # Unless we have an array with 1 item and expected type supports
             # both single and array, in which case we choose single.
-            expects_array: bool = value_cwl_t + "[]" in expected_types
-            if  isinstance(value, List) and len(value) == 1 and value_cwl_t in expected_types:
-                expects_array = False
+            # expects_array: bool = value_cwl_t + "[]" in expected_types
+            # if  isinstance(value, List) and len(value) == 1 and value_cwl_t in expected_types:
+                # expects_array = False
 
             if expects_array:
                 # Compose argument with array data
