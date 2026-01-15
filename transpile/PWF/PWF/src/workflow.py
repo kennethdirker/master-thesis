@@ -233,11 +233,11 @@ class BaseWorkflow(BaseProcess):
                     raise ValueError("process.step_id cannot be None")
                 _step_id: str = process.step_id
 
-                _process: BaseWorkflow = processes[process.parent_process_id]
+                _process = cast(BaseWorkflow, processes[cast(str, process.parent_process_id)])
                 source = input_id
 
                 while True:
-                    is_static, source = get_source_from_step_in(_process, _step_id, source)
+                    is_static, source = get_source_from_step_in(cast(BaseWorkflow, _process), _step_id, source)
                     if is_static:
                         # Input comes from default or valueFrom
                         process.input_to_source[input_id] = _process.global_id(_step_id + "/" + input_id)
@@ -263,7 +263,7 @@ class BaseWorkflow(BaseProcess):
                             raise ValueError("_process.step_id cannot be None")
                         _step_id = _process.step_id
                         
-                        _process = processes[_process.parent_process_id]
+                        _process = processes[cast(str, _process.parent_process_id)]
 
     
     def build_step_input_namespace(
@@ -352,7 +352,7 @@ class BaseWorkflow(BaseProcess):
                     # Set correct 'self' in namespace
                     cwl_namespace["self"] = value.value
                     # Evaluate and put in step_runtime_context
-                    expr_result = self.eval(parent_process.steps[input_id]["in"]["valueFrom"])
+                    expr_result = self.eval(parent_process.steps[input_id]["in"]["valueFrom"], cwl_namespace)
                     # If only value in runtime_context:
                 else:
                     # Correct value is already copied from runtime_context
@@ -700,9 +700,9 @@ def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
     for input_id in tool.inputs:
         # Start in the parent of tool
         # NOTE Make sure this still works when not working with BaseWorkflow
-        process: BaseWorkflow = processes[tool.parent_process_id] 
+        process = cast(BaseWorkflow, processes[cast(str, tool.parent_process_id)])
         step_id = tool.step_id
-        step_dict = process.steps[step_id]
+        step_dict = process.steps[cast(str, step_id)]
 
         # Go up the process tree, until a tool or the input object
         # is encountered
@@ -715,7 +715,7 @@ def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
             if "/" in source:
                 # A step of this process is the input source
                 parent_step_id, _ = source.split("/")
-                process = process.step_id_to_process[parent_step_id]
+                process = cast(BaseWorkflow, process).step_id_to_process[parent_step_id]
                 parents.append(process.id)
                 break
             else:
@@ -725,7 +725,7 @@ def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
                     break
                 else:
                     # Input comes from another source upstream
-                    process = processes[process.parent_process_id]
+                    process = processes[cast(str, process.parent_process_id)]
                     step_id = process.step_id
-                    step_dict = process.steps[step_id]
+                    step_dict = cast(BaseWorkflow, process).steps[cast(str, step_id)]
     return parents
