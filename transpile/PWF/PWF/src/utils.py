@@ -82,6 +82,15 @@ def print_obj(obj: object, indent: int = 0, filter: Optional[Sequence] = None):
     elif obj:
         print("\t" * indent + str(obj))
 
+def pretty_print_dict(d, indent=0):
+    res = ""
+    for k, v in d.items():
+        res += "\t"*indent + str(k) + "\n"
+        if isinstance(v, dict):
+            res += pretty_print_dict(v, indent+1)
+        else:
+            res += "\t"*(indent+1) + str(v) + "\n"
+    return res
 
 class FileObject:
     """
@@ -101,12 +110,21 @@ class FileObject:
     nameext: str = ""
     
     def __init__(self, file_path: str | FileObject):
-        path: Path = Path(str(file_path)).resolve()
-        self.path = str(path)
-        self.basename = path.name
-        self.dirname = str(path.parent)
-        self.nameroot = path.stem
-        self.nameext = path.suffix
+        if isinstance(file_path, str):
+            path: Path = Path(file_path).resolve()
+            self.path = str(path)
+            self.basename = path.name
+            self.dirname = str(path.parent)
+            self.nameroot = path.stem
+            self.nameext = path.suffix
+        elif isinstance(file_path, FileObject):
+            self.path = file_path.path
+            self.basename = file_path.basename
+            self.dirname = file_path.dirname
+            self.nameroot = file_path.nameroot
+            self.nameext = file_path.nameext
+        else:
+            raise Exception(f"FileObject expects 'str' or 'FileObject', but found '{type(file_path)}'")
 
     def __str__(self) -> str:
         return self.path

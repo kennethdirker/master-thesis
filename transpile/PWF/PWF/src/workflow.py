@@ -3,20 +3,21 @@ import dask.distributed
 import importlib
 import inspect
 import sys
+import time
 
 from abc import abstractmethod
 from concurrent.futures import ThreadPoolExecutor   
 from copy import deepcopy
 from dask.distributed import Client
 from pathlib import Path
-from typing import Any, cast, List, Optional, Tuple, TypeAlias, Union
-
-Future: TypeAlias = concurrent.futures.Future | dask.distributed.Future
+from types import NoneType
+from typing import Any, cast, List, Mapping, Optional, Tuple, TypeAlias, Union
 
 from .commandlinetool import BaseCommandLineTool
 from .process import BaseProcess, Graph, Node
-from .utils import Absent, FileObject, DirectoryObject, Value, CWL_PY_T_MAPPING, PY_CWL_T_MAPPING
+from .utils import Absent, FileObject, DirectoryObject, pretty_print_dict, Value, CWL_PY_T_MAPPING, PY_CWL_T_MAPPING
 
+Future: TypeAlias = concurrent.futures.Future | dask.distributed.Future
 
 
 class BaseWorkflow(BaseProcess):
@@ -189,7 +190,7 @@ class BaseWorkflow(BaseProcess):
                 process: BaseWorkflow, 
                 step_id: str,
                 in_id: str
-            ) -> Tuple[bool, str]:
+            ) -> Tuple[bool, str | None]:
             """
             Returns:
                 (is_static, source)
@@ -207,7 +208,8 @@ class BaseWorkflow(BaseProcess):
             elif "default" in step_in_dict:
                 return True, step_in_dict["default"]
             elif "valueFrom" in step_in_dict:
-                return True, step_in_dict["valueFrom"]
+                return True, None
+                # return True, step_in_dict["valueFrom"]
             raise NotImplementedError()
 
         processes: dict[str, BaseProcess] = self.loading_context["processes"]
@@ -242,9 +244,15 @@ class BaseWorkflow(BaseProcess):
                         # Input comes from default or valueFrom
                         process.input_to_source[input_id] = _process.global_id(_step_id + "/" + input_id)
                         print(f"[ASSIGN] {source} -> {process.input_to_source[input_id]}")
-                        self.runtime_context[process.input_to_source[input_id]] = Value(source, type(source), PY_CWL_T_MAPPING[type(source)][0])
+                        if source is None:
+                            value = Absent("Value comes from valueFrom and is not yet filled in")
+                        else:
+                            value = Value(source, type(source), PY_CWL_T_MAPPING[type(source)][0])
+
+                        self.runtime_context[process.input_to_source[input_id]] = value
                         break
 
+                    source = cast(str, source)
                     if "/" in source:   # {global_process_id}:{step_id}/{output_id}
                         # A step output is the input source
                         step_id, output_id = source.split("/")
@@ -266,48 +274,80 @@ class BaseWorkflow(BaseProcess):
                         _process = processes[cast(str, _process.parent_process_id)]
 
     
-    def build_step_input_namespace(
+    def build_step_namespace(
             self, 
             tool:  BaseCommandLineTool,
             runtime_context: dict[str, Any],
         ) -> dict[str, Any]:
         """
         """
+        if tool.parent_process_id is None or tool.step_id is None:
+            raise ValueError("Tool must have parent_process_id and step_id defined")
         # Add workflow inputs to namespace
         # namespace = {}
-        namespace = self.build_namespace()
+        namespace = tool.build_namespace()
+        # print(f"[NAMESPACE]", [f"{k}:{v}"], sep='\n\t')
+        print(f"[NAMESPACE]: {namespace}")
 
         # Add step inputs to namespace
         # namespace["inputs"] = {}
         if tool.step_id is None:
             raise ValueError("tool.step_id cannot be None")
-
-        for in_id, in_dict in self.steps[tool.step_id]["in"].items():
-            source = tool.input_to_source[in_id]
-            value = runtime_context[source].value
-
+        
+        workflow = self.loading_context["processes"][tool.parent_process_id]
+        workflow = cast(BaseWorkflow, workflow)
+        for in_id, in_dict in workflow.steps[tool.step_id]["in"].items():
             input_dict = tool.inputs[in_id]
-            if "file" in input_dict["type"]:
-                # Create built-in file properties used in CWL expressions
-                if "[]" in input_dict["type"]:
-                    # Array of files
-                    print("[VALUE []]", value)
-                    # print(value)
-                    file_objects = [FileObject(p) for p in value]
-                    namespace["inputs"][in_id] = file_objects
-                else:
-                    # Single file
-                    print("[VALUE]", value)
-                    # if isinstance(value, List):
-                        # value = value[0]
-                    namespace["inputs"][in_id] = FileObject(value)
-            elif "string" in input_dict["type"]:
-                namespace["inputs"][in_id] = value
-            else:
-                raise NotImplementedError(f"Input type {input_dict['type']} not supported")
-                
+            source = tool.input_to_source[in_id]
+            v = runtime_context[source]
+            if isinstance(v, (Absent, NoneType)):
+                namespace["inputs"][in_id] = None
+                continue
+            if not isinstance(v, Value):
+                raise Exception(f"Runtime_context item is not wrapped in Value: Found '{type(v)}'")
 
-        # TODO Other CWL namespaces, like 'self'?
+            # Add the value to the namespace. If the value is a string,
+            # we have to check if it needs to be converted to a FileObject
+            # or a DirectoryObject.
+            if isinstance(v.value, str):
+                if v.is_array:
+                    if "file[]" in input_dict["type"]:
+                        file_objects = [FileObject(p) for p in v.value]
+                        namespace["inputs"][in_id] = file_objects
+                    if "directory[]" in input_dict["type"]:
+                        dir_objects = [DirectoryObject(p) for p in v.value]
+                        namespace["inputs"][in_id] = dir_objects
+                    else:
+                        namespace["inputs"][in_id] = v.value
+                else:
+                    if "file" in input_dict["type"]:
+                        namespace["inputs"][in_id] = FileObject(v.value)
+                    if "directory" in input_dict["type"]:
+                        namespace["inputs"][in_id] = DirectoryObject(v.value)
+                    else:
+                        namespace["inputs"][in_id] = v.value
+            elif v.type in PY_CWL_T_MAPPING:
+                namespace["inputs"][in_id] = v.value
+            else:
+                raise Exception(f"Found unsupported type '{v.type}")
+
+            # if "file" in input_dict["type"] and not is_array:
+            #     # Single file. Create built-in file properties used in CWL 
+            #     # expressions.
+            #     print("[VALUE]", value)
+            #     # if isinstance(value, List):
+            #         # value = value[0]
+            #     namespace["inputs"][in_id] = FileObject(value)
+            # if "file[]" in input_dict["type"] and is_array:
+            #     # File array. Create built-in file properties used in CWL 
+            #     # expressions.
+            #     file_objects = [FileObject(p) for p in value]
+            #     namespace["inputs"][in_id] = file_objects
+            # elif "string" in input_dict["type"]:
+            #     namespace["inputs"][in_id] = value
+            # else:
+            #     raise NotImplementedError(f"Input type {input_dict['type']} not supported")
+                
         return namespace
     
 
@@ -330,37 +370,43 @@ class BaseWorkflow(BaseProcess):
 
         # TODO Update all tool inputs of the step:
         # Create cwl_namespace with step ins and runtime_namespace
-        cwl_namespace = ...
-        cwl_namespace.expand(...)
+        cwl_namespace = self.build_step_namespace(tool, runtime_context)
+
         # for each input check:
         for input_id, input_dict in tool.inputs.items():
+            if not "valueFrom" in parent_process.steps[tool.step_id]["in"][input_id]:
+                continue
+
+            # Evaluate valueFrom. Before evaluation, 'self' needs to be set in
+            # the namespace.
             source = tool.input_to_source[input_id]
-            # Absent/None/null in runtime_context is valid and is further handled by the tool.
-            # If value in input_to_source is expression, no source or default was given.
-            if (source.startswith("$") and source.endswith("$") or  # Python
-                source.startswith("$(") and source.endswith(")")):  # JS
-                # Where did that expression come from? -> Always valueFrom in step input!
-                expression = source
-                # 'self' should be null
-                cwl_namespace["self"] = None
-                # Evaluate and put in step_runtime_context
-                expr_result = self.eval(expression, cwl_namespace)
-            else:
-                value = step_runtime_context[source]
-                # If value in runtime_context AND in step input valueFrom:
-                if "valueFrom" in parent_process.steps[input_id]["in"]:
-                    # Set correct 'self' in namespace
-                    cwl_namespace["self"] = value.value
-                    # Evaluate and put in step_runtime_context
-                    expr_result = self.eval(parent_process.steps[input_id]["in"]["valueFrom"], cwl_namespace)
-                    # If only value in runtime_context:
-                else:
-                    # Correct value is already copied from runtime_context
-                    continue
-            
+            value = step_runtime_context[source]
+            if value:
+                value = value.value
+            cwl_namespace["self"] = value
+            expression = parent_process.steps[tool.step_id]["in"][input_id]["valueFrom"]
+            expr_result = self.eval(expression, cwl_namespace)
+            # print(f"[EXPR_RESULT]: {expr_result}")
             # Evaluated expression needs to be wrapped
-            # TODO
             # NOTE TO SELF: If string overlap with files and dirs is handled in commandlinetool, skip it here?
+            # BUG js2py returns lists and dicts as js2py.base.JsObjectWrapper.
+            # How to handle this?
+            if isinstance(expr_result, List):
+                if len(expr_result) == 0:
+                    # TODO List items can be any type, what to do?
+                    ...
+                if not type(expr_result[0]) in PY_CWL_T_MAPPING:
+                    raise Exception(f"Found unsupported item type in array: '{type(expr_result[0])}'")
+                
+                value = Value(expr_result, type(expr_result[0]), PY_CWL_T_MAPPING[type(expr_result[0])][0])
+            elif isinstance(expr_result, Mapping):
+                raise NotImplementedError("Maps are not supported as a type")
+            else:
+                if not type(expr_result) in PY_CWL_T_MAPPING:
+                    raise Exception(f"Found unsupported type: '{type(expr_result)}'")
+                value = Value(expr_result, type(expr_result), PY_CWL_T_MAPPING[type(expr_result)][0])
+                
+            step_runtime_context[source] = value
 
         # for input_id, input_dict in tool.inputs.items():
         #     expected_types = input_dict["type"]
@@ -378,7 +424,7 @@ class BaseWorkflow(BaseProcess):
         #         process: BaseWorkflow = self.loading_context["processes"][parent_id]
                 
         #         # Build CWL namespace for expression evaluation and evaluate
-        #         cwl_namespace = process.build_step_input_namespace(tool, step_runtime_context)
+        #         cwl_namespace = process.build_step_namespace(tool, step_runtime_context)
         #         value = self.eval(expr, cwl_namespace)
                 
         #         # Wrap the return value of the expression in a Value instance.
@@ -420,81 +466,81 @@ class BaseWorkflow(BaseProcess):
             verbose: Optional[bool] = True,
             executor: Optional[ThreadPoolExecutor] = None
         ) -> dict[str, Any]:
-            """
-            Execute the tasks of this node. 
-            TODO Untested!            
-            """
-            graph = workflow_node.graph
-            if graph is None:
-                raise Exception("Node has no graph")
+        """
+        Execute the tasks of this node. 
+        TODO Untested!            
+        """
+        graph = workflow_node.graph
+        if graph is None:
+            raise Exception("Node has no graph")
 
-            if executor is None:
-                executor = ThreadPoolExecutor()
-            print("===================================")
+        if executor is None:
+            executor = ThreadPoolExecutor()
+        print("===================================")
 
-            nodes = graph.nodes
-            runnable_nodes: list[Node] = deepcopy(graph.get_nodes(graph.roots))
-            runnable: dict[str, Node] = {node.id: node for node in runnable_nodes}
-            waiting: dict[str, Node] = {id: node for id, node in nodes.items() if id not in runnable}
-            running: dict[str, Tuple[Future, Node]] = {}
-            completed: dict[str, Node] = {}
-            outputs: dict[str, Value] = {}
-            while len(runnable) != 0 or len(running) != 0:
-                # print("[NODE]: Runnable:\n\t", runnable)
-                # Execute runnable nodes in the ThreadPool
-                for node_id, node in runnable.copy().items():
-                    # These nodes (which are wrapped tools) contain a single 
-                    # node in their graph.
-                    tool = cast(BaseCommandLineTool, node.processes[0])
-                    step_runtime_context = self.prepare_step_runtime_context(tool, runtime_context)
-                    print(f"[NODE]: Executing tool {tool.id}")
-                    future = executor.submit(
-                        tool.execute,
-                        False, 
-                        step_runtime_context, 
-                        verbose
-                    )
-                    running[node_id] = (future, node)
-                    runnable.pop(node_id)
-                
-                # Check for completed tools and move runnable children to the
-                # running queue.
-                for node_id, running_task in running.copy().items():
-                    if running_task[0].done():
-                        # print("[???]", workflow_node.id, "done:\n\t\t", node_id)
-                        # Save results from finished tool and remove tool from
-                        # the running list. Runtime_context is updated for the
-                        # next tool.
-                        result: dict[str, Value] = running_task[0].result()
-                        outputs.update(result)
-                        runtime_context.update(result)
+        nodes = graph.nodes
+        runnable_nodes: list[Node] = deepcopy(graph.get_nodes(graph.roots))
+        runnable: dict[str, Node] = {node.id: node for node in runnable_nodes}
+        waiting: dict[str, Node] = {id: node for id, node in nodes.items() if id not in runnable}
+        running: dict[str, Tuple[Future, Node]] = {}
+        completed: dict[str, Node] = {}
+        outputs: dict[str, Value] = {}
+        while len(runnable) != 0 or len(running) != 0:
+            # print("[NODE]: Runnable:\n\t", runnable)
+            # Execute runnable nodes in the ThreadPool
+            for node_id, node in runnable.copy().items():
+                # These nodes (which are wrapped tools) contain a single 
+                # node in their graph.
+                tool = cast(BaseCommandLineTool, node.processes[0])
+                step_runtime_context = self.prepare_step_runtime_context(tool, runtime_context)
+                print(f"[NODE]: Executing tool {tool.id}")
+                future = executor.submit(
+                    tool.execute,
+                    False, 
+                    step_runtime_context, 
+                    verbose
+                )
+                running[node_id] = (future, node)
+                runnable.pop(node_id)
+            
+            # Check for completed tools and move runnable children to the
+            # running queue.
+            for node_id, running_task in running.copy().items():
+                if running_task[0].done():
+                    # print("[???]", workflow_node.id, "done:\n\t\t", node_id)
+                    # Save results from finished tool and remove tool from
+                    # the running list. Runtime_context is updated for the
+                    # next tool.
+                    result: dict[str, Value] = running_task[0].result()
+                    outputs.update(result)
+                    runtime_context.update(result)
 
-                        # Move tool to finished
-                        completed[node_id] = running_task[1]
-                        running.pop(node_id)
+                    # Move tool to finished
+                    completed[node_id] = running_task[1]
+                    running.pop(node_id)
 
-                        # Add new runnable tools to queue by checking for each
-                        # child if all its parents have completed.
-                        for child_id in running_task[1].children:
-                            # Only check waiting children
-                            if child_id not in waiting:
-                                continue
+                    # Add new runnable tools to queue by checking for each
+                    # child if all its parents have completed.
+                    for child_id in running_task[1].children:
+                        # Only check waiting children
+                        if child_id not in waiting:
+                            continue
 
-                            ready = True
-                            for childs_parent_id in nodes[child_id].parents:
-                                if childs_parent_id not in completed:
-                                    ready = False
-                                    break
-                            if ready:
-                                runnable[child_id] = waiting.pop(child_id)
+                        ready = True
+                        for childs_parent_id in nodes[child_id].parents:
+                            if childs_parent_id not in completed:
+                                ready = False
+                                break
+                        if ready:
+                            runnable[child_id] = waiting.pop(child_id)
+            time.sleep(0.1)
 
-            # Check for deadlock
-            if len(runnable) == 0 and len(running) == 0 and len(waiting) != 0:
-                s = "\n\t".join([node_id for node_id in waiting.keys()])
-                raise Exception(f"Deadlock detected. Waiting nodes:\n\t{s}")
+        # Check for deadlock
+        if len(runnable) == 0 and len(running) == 0 and len(waiting) != 0:
+            s = "\n\t".join([node_id for node_id in waiting.keys()])
+            raise Exception(f"Deadlock detected. Waiting nodes:\n\t{s}")
 
-            # print(*{(k, v) for k, v in outputs.items()})
-            return outputs
+        return outputs
     
 
     def execute(
@@ -603,7 +649,7 @@ class BaseWorkflow(BaseProcess):
                     if verbose:
                         print("[WORKFLOW]: Completed node", graph.short_id[running_task[1].id])
                         lprint()
-            # time.sleep(0.1)
+            time.sleep(0.1)
         # Check for deadlock
         if len(runnable) == 0 and len(running) == 0 and len(waiting) != 0:
             s = "\n\t".join([node_id for node_id in waiting.keys()])
