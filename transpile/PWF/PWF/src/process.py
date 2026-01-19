@@ -514,10 +514,11 @@ class BaseProcess(ABC):
         #          accessed in the expression as 'inputs.input_fits'.
         # inputs = lambda: None       # Create empty object
 
-        # TODO Other CWL namespaces, like 'self', 'runtime'?
+        # TODO Other CWL namespaces, like 'runtime'?
         namespace["inputs"] = {}
 
-        for input_id, _ in self.inputs.items():
+        for input_id in self.inputs:
+        # for input_id, _ in self.inputs.items():
         # for input_id, input_dict in self.inputs.items():
             # If runtime value is Absent, value is assigned None
             source = self.input_to_source[input_id]
@@ -581,7 +582,6 @@ class BaseProcess(ABC):
 
         # 'self' is null by default.
         if 'self' not in local_vars:
-            # NOTE Should None be 'null'?
             context_vars.update({"self": None})
 
         if type(expression) is not str:
@@ -589,30 +589,35 @@ class BaseProcess(ABC):
         
         # Evaluate expression. Evaluating can return any type     
         if expression.startswith("$(") and expression.endswith(")"):
-            # Expression is a Javascript expression
-            # Build JS context with CWL namespaces
+            # Expression is a Javascript expression. Build JS context with CWL
+            # namespaces and evaluate with JS engine.
             js_context = js2py.EvalJs(context_vars)
-            # context["self"] = ... # TODO Other CWL namespaces
-
-            # Evaluate expression with JS engine
-            ret = js_context.eval(expression[2:-1])
-            if verbose: 
-                print(f"[EVAL]: '{expression}' ({type(expression)}) -> '{ret}' ({type(ret)})")
+            try:
+                ret = js_context.eval(expression[2:-1])
+            except Exception as e:
+                print(e)
+                raise Exception(e.args, expression, local_vars)
+            if isinstance(ret, js2py.base.JsObjectWrapper):
+                # NOTE: https://github.com/PiotrDabkowski/Js2Py/blob/master/js2py/base.py#L1195
+                # See link on how to check for array type.
+                # TODO Support more types, like dict. How to handle custom
+                # types?
+                if ret._obj.Class in ('Array', 'Int8Array', 'Uint8Array',
+                                 'Uint8ClampedArray', 'Int16Array',
+                                 'Uint16Array', 'Int32Array', 'Uint32Array',
+                                 'Float32Array', 'Float64Array', 'Arguments'):
+                    ret = ret.to_list()
         elif expression.startswith("$") and expression.endswith("$"):
-            # Expression is a Python expression
-            # Build context dictionary with CWL namespaces
+            # Expression is a Python expression. Build context dictionary with
+            # CWL namespaces and evaluate expression with Python eval().
             py_context = context_vars.copy()
             py_context["inputs"] = dict_to_obj(context_vars["inputs"])
-
-            # Evaluate expression with Python eval()
             ret = eval(expression[1:-1], py_context)
-            if verbose: 
-                print(f"[EVAL]: '{expression}' ({type(expression)}) -> '{ret}' ({type(ret)})")
         else:
             # Expression is a plain string and doesn't need evaluating
             ret = expression
-            if verbose: 
-                print(f"[EVAL]: '{expression}' ({type(expression)}) -> '{ret}' ({type(ret)})")
+        if verbose: 
+            print(f"[EVAL]: '{expression}' ({type(expression)}) -> '{ret}' ({type(ret)})")
 
         return ret
 

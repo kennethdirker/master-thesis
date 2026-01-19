@@ -513,7 +513,7 @@ class BaseCommandLineTool(BaseProcess):
             NotImplementedError for features not yet implemented (e.g.
             ``loadContents`` handling), or re-raises subprocess errors.
         """
-        print("Namespace: ", cwl_namespace)
+        # print("Namespace: ", cwl_namespace)
 
         # Execute tool
         print("[TOOL]: EXECUTING:", " ".join(cmd))
