@@ -134,7 +134,7 @@ class BaseProcess(ABC):
         Create and return an argument parser for command-line arguments.
 
         TODO Description (schema) of arguments
-        python process.py [--outdir OUTDIR] [--tmpdir TMPDIR] [--use_dask] input_object.yaml
+        python process.py [--outdir OUTDIR] [--tmpdir TMPDIR] [--dask] input_object.yaml
         """
         parser = argparse.ArgumentParser()
         parser.add_argument(
@@ -156,7 +156,7 @@ class BaseProcess(ABC):
             help="Directory to store temporary files in."
         )
         parser.add_argument(
-            "--use_dask",
+            "--dask",
             action="store_true",
             default=False,
             help="Execute process tasks with Dask instead of with standard system call."
@@ -204,8 +204,8 @@ class BaseProcess(ABC):
         print(f"[PROCESS]:\t{loading_context['designated_tmp_dir']}")
 
         # Configure whether Dask is used for execution
-        loading_context["use_dask"] = args.use_dask
-        print(f"[PROCESS]: Execute with Dask: {args.use_dask}")
+        loading_context["use_dask"] = args.dask
+        print(f"[PROCESS]: Execute with Dask: {args.dask}")
 
 
     def global_id(self, s: str) -> str:
@@ -598,7 +598,7 @@ class BaseProcess(ABC):
                 print(e)
                 raise Exception(e.args, expression, local_vars)
             if isinstance(ret, js2py.base.JsObjectWrapper):
-                # NOTE: https://github.com/PiotrDabkowski/Js2Py/blob/master/js2py/base.py#L1195
+                # NOTE: https://github.com/PiotrDabkowski/Js2Py/blob/master/js2py/base.py#L1248
                 # See link on how to check for array type.
                 # TODO Support more types, like dict. How to handle custom
                 # types?
