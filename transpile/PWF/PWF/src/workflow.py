@@ -243,7 +243,7 @@ class BaseWorkflow(BaseProcess):
                     if is_static:
                         # Input comes from default or valueFrom
                         process.input_to_source[input_id] = _process.global_id(_step_id + "/" + input_id)
-                        print(f"[ASSIGN] {source} -> {process.input_to_source[input_id]}")
+                        # print(f"[ASSIGN] {source} -> {process.input_to_source[input_id]}")
                         if source is None:
                             value = Absent("Value comes from valueFrom and is not yet filled in")
                         else:
@@ -284,13 +284,9 @@ class BaseWorkflow(BaseProcess):
         if tool.parent_process_id is None or tool.step_id is None:
             raise ValueError("Tool must have parent_process_id and step_id defined")
         # Add workflow inputs to namespace
-        # namespace = {}
         namespace = tool.build_namespace()
-        # print(f"[NAMESPACE]", [f"{k}:{v}"], sep='\n\t')
-        print(f"[NAMESPACE]: {namespace}")
 
         # Add step inputs to namespace
-        # namespace["inputs"] = {}
         if tool.step_id is None:
             raise ValueError("tool.step_id cannot be None")
         
@@ -330,23 +326,6 @@ class BaseWorkflow(BaseProcess):
                 namespace["inputs"][in_id] = v.value
             else:
                 raise Exception(f"Found unsupported type '{v.type}")
-
-            # if "file" in input_dict["type"] and not is_array:
-            #     # Single file. Create built-in file properties used in CWL 
-            #     # expressions.
-            #     print("[VALUE]", value)
-            #     # if isinstance(value, List):
-            #         # value = value[0]
-            #     namespace["inputs"][in_id] = FileObject(value)
-            # if "file[]" in input_dict["type"] and is_array:
-            #     # File array. Create built-in file properties used in CWL 
-            #     # expressions.
-            #     file_objects = [FileObject(p) for p in value]
-            #     namespace["inputs"][in_id] = file_objects
-            # elif "string" in input_dict["type"]:
-            #     namespace["inputs"][in_id] = value
-            # else:
-            #     raise NotImplementedError(f"Input type {input_dict['type']} not supported")
                 
         return namespace
     
@@ -368,7 +347,6 @@ class BaseWorkflow(BaseProcess):
         # Create a copy to prevent replacing source values with valueFrom values
         step_runtime_context: dict[str, Value] = runtime_context.copy()
 
-        # TODO Update all tool inputs of the step:
         # Create cwl_namespace with step ins and runtime_namespace
         cwl_namespace = self.build_step_namespace(tool, runtime_context)
 
@@ -386,7 +364,6 @@ class BaseWorkflow(BaseProcess):
             cwl_namespace["self"] = value
             expression = parent_process.steps[tool.step_id]["in"][input_id]["valueFrom"]
             expr_result = self.eval(expression, cwl_namespace)
-            # print(f"[EXPR_RESULT]: {expr_result}")
             # Evaluated expression needs to be wrapped
             # NOTE TO SELF: If string overlap with files and dirs is handled in commandlinetool, skip it here?
             # BUG js2py returns lists and dicts as js2py.base.JsObjectWrapper.
@@ -476,7 +453,6 @@ class BaseWorkflow(BaseProcess):
 
         if executor is None:
             executor = ThreadPoolExecutor()
-        print("===================================")
 
         nodes = graph.nodes
         runnable_nodes: list[Node] = deepcopy(graph.get_nodes(graph.roots))
@@ -486,7 +462,6 @@ class BaseWorkflow(BaseProcess):
         completed: dict[str, Node] = {}
         outputs: dict[str, Value] = {}
         while len(runnable) != 0 or len(running) != 0:
-            # print("[NODE]: Runnable:\n\t", runnable)
             # Execute runnable nodes in the ThreadPool
             for node_id, node in runnable.copy().items():
                 # These nodes (which are wrapped tools) contain a single 
@@ -507,7 +482,6 @@ class BaseWorkflow(BaseProcess):
             # running queue.
             for node_id, running_task in running.copy().items():
                 if running_task[0].done():
-                    # print("[???]", workflow_node.id, "done:\n\t\t", node_id)
                     # Save results from finished tool and remove tool from
                     # the running list. Runtime_context is updated for the
                     # next tool.
