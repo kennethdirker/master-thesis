@@ -38,7 +38,6 @@ class BaseCommandLineTool(BaseProcess):
             loading_context: Optional[dict[str, str]] = None,
             parent_process_id: Optional[str] = None,
             step_id: Optional[str] = None,
-            # with_dask: bool = False,
             PATH: Optional[str] = None,
         ):
         """ TODO: class description """
@@ -683,8 +682,11 @@ class BaseCommandLineTool(BaseProcess):
             runtime_context: Optional[dict[str, Any]] = None,
             verbose: Optional[bool] = True,
             client: Optional[Client] = None,
-        ) -> dict[str, Value]:
-        """Top-level execution entrypoint for the tool.
+            scatter_info: Optional[Tuple] = None,
+        ) -> Tuple[dict[str, Value], Tuple | None]:
+        """
+        TODO Add info about scatter_info 
+        Top-level execution entrypoint for the tool.
 
         This method prepares the runtime namespace and context, builds the
         command line and environment, and executes the tool either locally
@@ -742,7 +744,8 @@ class BaseCommandLineTool(BaseProcess):
 
         print(f"[TOOL]: Outputs:")
         for k, v in new_state.items():
-            print(f"[TOOL]: \t- {k}: {v}")
+            if k not in ("stdout", "stderr"):
+                print(f"[TOOL]: \t- {k}: {v}")
 
         # Print stderr/stdout
         # FIXME TODO Redirect to configured stdout/stderr
@@ -752,4 +755,4 @@ class BaseCommandLineTool(BaseProcess):
         if "stderr" in new_state:
             print(new_state["stderr"], file=sys.stderr)
 
-        return new_state
+        return new_state, scatter_info
