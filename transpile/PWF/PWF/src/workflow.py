@@ -15,7 +15,7 @@ from typing import Any, cast, List, Mapping, Optional, Tuple, TypeAlias, Union
 
 from .commandlinetool import BaseCommandLineTool
 from .process import BaseProcess, Graph, Node
-from .utils import Absent, FileObject, DirectoryObject, pretty_print_dict, Value, CWL_PY_T_MAPPING, PY_CWL_T_MAPPING
+from .utils import Absent, FileObject, DirectoryObject, Scatter, get_scatter_gather, pretty_print_dict, Value, CWL_PY_T_MAPPING, PY_CWL_T_MAPPING
 
 Future: TypeAlias = concurrent.futures.Future | dask.distributed.Future
 
@@ -27,7 +27,7 @@ class BaseWorkflow(BaseProcess):
             runtime_context: Optional[dict] = None,
             loading_context: Optional[dict[str, str]] = None,
             parent_process_id: Optional[str] = None,
-            step_id: Optional[str] = None
+            step_id: Optional[str] = None,
         ):
         """
         TODO: class description 
@@ -38,7 +38,7 @@ class BaseWorkflow(BaseProcess):
             runtime_context = runtime_context,
             loading_context = loading_context,
             parent_process_id = parent_process_id,
-            step_id = step_id
+            step_id = step_id,
         )
 
         # TODO Decide if this is the way, see set_groups()
@@ -56,13 +56,15 @@ class BaseWorkflow(BaseProcess):
         # self.set_outputs()
         # self.set_requirements()
         self.set_steps()
+        self.load_step_processes()
 
         # Only the main process executes the workflow.
         if main:
-            self.create_dependency_graph()
             self.register_step_sources()
-            self.optimize_dependency_graph()
             self.register_input_sources()
+            self.set_scatters_gathers()
+            self.create_dependency_graph()
+            self.optimize_dependency_graph()
             self.execute(self.loading_context["use_dask"])
 
 
@@ -111,43 +113,23 @@ class BaseWorkflow(BaseProcess):
         """
         pass
 
-    
-    def create_dependency_graph(self) -> None:
-        """ 
-        TODO Description
-        FIXME Not accurate anymore
-        Create a Dask task graph with the sub-processes of this workflow. 
-        Can be overwritten to alter execution behaviour. 
+
+    def load_step_processes(self) -> None:
         """
-        processes: dict[str, BaseProcess] = self.loading_context["processes"]
-        graph: Graph = self.loading_context["graph"]
-
-        # Recursively load all processes from steps
-        print("[WORKFLOW]: Loading process files:")
+        Load all sub-processes into self.loading_context["processes"]. 
+        Because the BaseWorkflow constructor calls this function, all
+        sub-processes of the main workflow class are loaded recursively.
+        """
         for step_id, step_dict in self.steps.items():
-            step_process = self._load_process_from_uri(step_dict["run"], step_id)
-            processes[step_process.id] = step_process
-            self.step_id_to_process[step_id] = step_process
-            node = Node(
-                id = step_process.id,
-                processes = [step_process],
-                is_tool_node = False
-            )
-            graph.add_node(node)
-
-        # Add tool nodes to the dependency graph
-        for tool in processes.values():
-            if issubclass(type(tool), BaseCommandLineTool):
-                tool = cast(BaseCommandLineTool, tool)
-                graph.connect_node(
-                    node_id = tool.id,
-                    parents = get_process_parents(tool),
-                )
+            sub_process = self._load_process_from_uri(step_dict["run"], step_id)
+            self.loading_context["processes"][sub_process.id] = sub_process
 
 
     def register_step_sources(self) -> None:
         """
-                TODO Desc
+        Fill all step outputs of all workflow processes with an Absent value.
+        This way we can later check if the runtime was actually filled with an
+        value. Also makes it so absent values dont crash the runner.
         """
         for process in self.loading_context["processes"].values():
             if not issubclass(type(process), BaseWorkflow):
@@ -165,22 +147,14 @@ class BaseWorkflow(BaseProcess):
                 else:
                     raise NotImplementedError("Encountered unsupported type", type(step_dict["out"]))
     
-
-
-    def optimize_dependency_graph(self) -> None:
-        """
-        TODO Description
-        """
-        pass
-
-
+    
     def register_input_sources(self) -> None:
         """
-        Register the global source of each tool input in the workflow. The
-        source is stored in the tool's input_to_source dictionary. The source
-        is a key in the runtime_context dictionary that contains the actual
-        value of the input. 
-        NOTE: Only called from the main process.
+        Register each tool input as a global source for all processes in the 
+        workflow. Sources are stored in the tool's input_to_source dictionary. 
+        In turn, sources are keys in runtime_context dictionaries that contains
+        the actual value of the input. 
+        NOTE: Should only be called from the main process.
 
         """
         if not self.is_main:
@@ -272,6 +246,74 @@ class BaseWorkflow(BaseProcess):
                         _step_id = _process.step_id
                         
                         _process = processes[cast(str, _process.parent_process_id)]
+
+
+    def set_scatters_gathers(self) -> None:
+        for process in self.loading_context["processes"]:
+            if not isinstance(process, BaseWorkflow):
+                continue
+            for step_id, step_dict in process.steps.items():
+                if not "scatter" in step_dict:
+                    continue
+
+                child_proc = process.step_id_to_process
+                # TODO Decide which inputs get a scatter
+                # TODO Decie which outputs get a scatter
+                
+                # Normalize scatter targets to list of input IDs
+                scatter_targets = step_dict["scatter"]
+                if isinstance(scatter_targets, str):
+                    scatter_targets = [scatter_targets]
+
+                method = None
+                if "scatterMethod" in step_dict:
+                    method = step_dict["scatterMethod"]
+                scatter, gather = get_scatter_gather(method)
+                     
+
+
+
+    def create_dependency_graph(self) -> None:
+        """ 
+        TODO Description
+        FIXME Not accurate anymore
+        Create a Dask task graph with the sub-processes of this workflow. 
+        Can be overwritten to alter execution behaviour. 
+        """
+        processes: dict[str, BaseProcess] = self.loading_context["processes"]
+        graph: Graph = self.loading_context["graph"]
+
+        # Recursively load all processes from steps. If the process is a tool,
+        # add it to the dependency graph. Workflows essentially describe the
+        # edges between the tool nodes, thus workflows are not added as nodes.
+        print("[WORKFLOW]: Loading process files:")
+        for step_id, step_dict in self.steps.items():
+            step_process = self._load_process_from_uri(step_dict["run"], step_id)
+            processes[step_process.id] = step_process
+            self.step_id_to_process[step_id] = step_process
+            if issubclass(type(step_process), BaseCommandLineTool):
+                node = Node(
+                    id = step_process.id,
+                    processes = [step_process],
+                    is_tool_node = False
+                )
+                graph.add_node(node)
+
+        # Add tool nodes to the dependency graph
+        for tool in processes.values():
+            if issubclass(type(tool), BaseCommandLineTool):
+                tool = cast(BaseCommandLineTool, tool)
+                graph.connect_node(
+                    node_id = tool.id,
+                    parents = get_process_parents(tool),
+                )
+
+
+    def optimize_dependency_graph(self) -> None:
+        """
+        TODO Description
+        """
+        pass
 
     
     def build_step_namespace(
@@ -467,6 +509,7 @@ class BaseWorkflow(BaseProcess):
                 # These nodes (which are wrapped tools) contain a single 
                 # node in their graph.
                 tool = cast(BaseCommandLineTool, node.processes[0])
+                # if tool.scatter TODO
                 step_runtime_context = self.prepare_step_runtime_context(tool, runtime_context)
                 print(f"[NODE]: Executing tool {tool.id}")
                 future = executor.submit(
@@ -480,22 +523,25 @@ class BaseWorkflow(BaseProcess):
             
             # Check for completed tools and move runnable children to the
             # running queue.
-            for node_id, running_task in running.copy().items():
-                if running_task[0].done():
+            for node_id, task in running.copy().items():
+                if task[0].done():
+                    future, finished_node = task
+                    # xxxxxxx = cast(BaseCommandLineTool, finished_node.processes[0]) 
+
                     # Save results from finished tool and remove tool from
                     # the running list. Runtime_context is updated for the
                     # next tool.
-                    result: dict[str, Value] = running_task[0].result()
+                    result: dict[str, Value] = future.result()
                     outputs.update(result)
                     runtime_context.update(result)
 
                     # Move tool to finished
-                    completed[node_id] = running_task[1]
+                    completed[node_id] = finished_node
                     running.pop(node_id)
 
                     # Add new runnable tools to queue by checking for each
                     # child if all its parents have completed.
-                    for child_id in running_task[1].children:
+                    for child_id in finished_node.children:
                         # Only check waiting children
                         if child_id not in waiting:
                             continue
@@ -635,7 +681,8 @@ class BaseWorkflow(BaseProcess):
     def _load_process_from_uri(
             self, 
             uri: str,
-            step_id: str
+            step_id: str,
+            # scatter: Optional[Scatter]
         ) -> BaseProcess:
         """
         Dynamic Process loading from file. Raises an exception if no valid 
@@ -680,7 +727,8 @@ class BaseWorkflow(BaseProcess):
                 runtime_context = self.runtime_context,
                 loading_context = self.loading_context,
                 parent_process_id = self.id,
-                step_id = step_id
+                step_id = step_id,
+                scatter = scatter
             )
         raise Exception(f"{uri} does not contain a BaseProcess subclass")
     

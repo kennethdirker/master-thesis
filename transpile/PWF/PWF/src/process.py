@@ -19,10 +19,13 @@ from .utils import (
     Absent,
     DirectoryObject,
     FileObject,
+    Value,
+    Scatter,
+    Gather,
     CWL_PY_T_MAPPING,
     PY_CWL_T_MAPPING,
-    Value,
-    dict_to_obj
+    dict_to_obj,
+    JsObjectWrapper_is_list,
 )
 
 
@@ -33,7 +36,8 @@ class BaseProcess(ABC):
             runtime_context: Optional[dict[str, Any]] = None,
             loading_context: Optional[dict[str, Any]] = None,
             parent_process_id: Optional[str] = None,
-            step_id: Optional[str] = None
+            step_id: Optional[str] = None,
+            # scatter: Optional[Scatter] = None,
         ) -> None:
         """ 
         TODO: class description. Which vars are accessable?
@@ -52,8 +56,8 @@ class BaseProcess(ABC):
         self.is_main: bool = main
 
         # Unique identity of a process instance. The id looks as follows:
-        #   "{path/to/process/script/file}:{uuid}"  
-        # FIXME: IDs could be made of {uuid} only, but the path adds debugging clarity.
+        #   "{path/to/process/script/file}:{uuid}"
+        # Where {uuid} has the format of {8x-4x-4x-6x} and x is a hex number 
         self.short_id: str = str(uuid.uuid4())
         self.process_path: str = str(Path(inspect.getfile(type(self))).resolve())
         self.id = self.process_path + ":" + self.short_id
@@ -68,11 +72,8 @@ class BaseProcess(ABC):
 
         # Assign metadata attributes. Override in self.set_metadata().
         self.metadata: dict[str, str] = {}
-        # self.label: str = "" # Human readable process name.
-        # self.doc:   str = "" # Human readable process explaination.
         
         # Assign input/output dictionary attributes.
-        # FIXME: dicts could use custom types like CWLTool does, instead of dicts.
         self.inputs:  dict = {} # Override in set_inputs()
         self.outputs: dict = {} # Override in set_outputs()
 
@@ -98,7 +99,6 @@ class BaseProcess(ABC):
         # YAML from a file. Non-root processes get a reference to the
         # dictionary loaded in the main process.
         self.runtime_context: dict[str, Value | Absent] = {}
-        # self.runtime_context: dict[str, Any] = {}
         if main:
             self.loading_context = {}
             self.loading_context["graph"] = Graph() # Used in create_dependency_graph()
@@ -106,7 +106,6 @@ class BaseProcess(ABC):
             self.process_cli_args(self.loading_context)
 
             # The YAML file uri comes from the first command-line argument.
-            # self.runtime_context = self._load_input_object(sys.argv[1])
             self.runtime_context = self._load_input_object(self.loading_context["input_object"])
             # Copy system PATH environment variable
             self.loading_context["PATH"] = os.environ.get("PATH")
@@ -121,12 +120,9 @@ class BaseProcess(ABC):
         # Register this process in the global cache
         self.loading_context["processes"][self.id] = self
 
-        # Set runtime environment variables from main process
-        # if main:
-
-
-            # TODO is this used anywhere?
-            # self.main_path = os.getcwd()
+        # Dict that contains information of the scatters that this process is
+        # part of. Defaults to an empty dict.
+        # self.scatter = scatter if scatter else {}
 
 
     def create_parser(self) -> argparse.ArgumentParser:
@@ -602,10 +598,11 @@ class BaseProcess(ABC):
                 # See link on how to check for array type.
                 # TODO Support more types, like dict. How to handle custom
                 # types?
-                if ret._obj.Class in ('Array', 'Int8Array', 'Uint8Array',
-                                 'Uint8ClampedArray', 'Int16Array',
-                                 'Uint16Array', 'Int32Array', 'Uint32Array',
-                                 'Float32Array', 'Float64Array', 'Arguments'):
+                # if ret._obj.Class in ('Array', 'Int8Array', 'Uint8Array',
+                #                  'Uint8ClampedArray', 'Int16Array',
+                #                  'Uint16Array', 'Int32Array', 'Uint32Array',
+                #                  'Float32Array', 'Float64Array', 'Arguments'):
+                if JsObjectWrapper_is_list(ret):
                     ret = ret.to_list()
         elif expression.startswith("$") and expression.endswith("$"):
             # Expression is a Python expression. Build context dictionary with

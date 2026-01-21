@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, List, Optional, Type, Sequence, Mapping, Union
-from types import NoneType
-# from .Process import BaseProcess
+from enum import Enum
 from pathlib import Path
+from typing import Any, List, Optional, Tuple, Type, Sequence, Mapping, Union
+from types import NoneType
+from js2py.base import JsObjectWrapper
 
 class Absent:
     """ 
@@ -22,13 +23,6 @@ class Absent:
         return f'Absent("{self.string}")'
 
 
-
-# def get_or_default(d: dict, default_value: Any) -> Any:
-#     if not isinstance(d, dict):
-#         raise TypeError(f"Expected dict, but has type {type(d)}")
-#     if default_value in d:
-#         return d[default_value]
-#     return default_value
 class NestedObject:
     pass
 
@@ -47,17 +41,6 @@ def dict_to_obj(d: dict) -> Any:
     obj = NestedObject()
     helper(obj, d)
     return obj
-
-
-# def print_obj(obj: object, indent: int = 0):
-#     for key in dir(obj):
-#         if not key.startswith("__"):
-#             value = getattr(obj, key)
-#             if type(value) is NestedObject:
-#                 print("\t" * indent, f"{key}:")
-#                 print_obj(value, indent + 1)
-#             else:
-#                 print("\t" * indent, f"{key}: {value}")
 
 
 def print_obj(obj: object, indent: int = 0, filter: Optional[Sequence] = None):
@@ -233,3 +216,89 @@ class Value:
     
     def __repr__(self) -> str:
         return f"Value({self.value}, {self.type}, {self.cwltype})"
+    
+
+
+class ScatterMethod(Enum):
+    DOTPRODUCT = "dotproduct"
+    NESTED_CROSSPRODUCT = "nested_crossproduct"
+    FLAT_CROSSPRODUCT = "flat_crossproduct"
+
+class Scatter:
+    gather: Gather
+    input_ids: List[str]   # Input IDs linked to the scatter
+    step_uid: str
+    method: ScatterMethod
+
+    def __init__(
+            self,
+            input_ids: List[str],
+            step_uid: str,
+            method: ScatterMethod = ScatterMethod.DOTPRODUCT
+        ):
+        if not isinstance(input_ids, List):
+            raise Exception(f"Expected list, but found {type(input_ids)}")
+        if len(input_ids) == 0:
+            raise Exception("List of associated inputs cant be empty")
+        if not isinstance(input_ids[0], str):
+            raise Exception(f"Expected list of 'str', but found list of {type(input_ids[0])}")
+        if not isinstance(step_uid, str):
+            raise Exception(f"Expected 'str', but found '{type(step_uid)}'")
+        if not isinstance(method, ScatterMethod):
+            raise Exception(f"Expected 'ScatterMethod' enum, but found '{type(method)}'")
+        
+        self.input_ids = input_ids
+        self.step_uid = step_uid
+        self.method = method
+
+
+class Gather:
+    scatter: Scatter
+    step_uid: str
+    method: ScatterMethod
+    gathered: int
+    total_items: int
+    active: bool
+
+    def __init__(
+            self,
+            scatter: Scatter
+        ):
+        self.method = scatter.method
+
+
+    def done(self):
+        return self.gathered == self.total_items
+    
+
+    def retrieve(self) -> dict[str, Value]:
+        ...
+
+
+    def add(self, items, loc) -> bool:
+
+        return self.done()
+
+
+def get_scatter_gather(
+        method: Optional[str] = None
+    ) -> Tuple[Scatter, Gather]:
+    
+    scatter = Scatter()
+    gather = Gather()
+
+    # Link scatter and gather
+    # scatter.gather = gather
+    # gather.scatter = scatter
+    return scatter, gather
+
+
+
+JsArrayTypes = ('Array', 'Int8Array', 'Uint8Array', 'Uint8ClampedArray', 
+                'Int16Array', 'Uint16Array', 'Int32Array', 'Uint32Array',
+                'Float32Array', 'Float64Array', 'Arguments')
+
+def JsObjectWrapper_is_list(obj: JsObjectWrapper):
+    if not isinstance(obj, JsObjectWrapper):
+        raise Exception(f"Expected JsObjectWrapper, but found '{type(obj)}'")
+    return obj._obj.Class in JsArrayTypes # type: ignore
