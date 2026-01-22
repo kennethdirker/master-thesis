@@ -60,7 +60,7 @@ class BaseWorkflow(BaseProcess):
 
         # Only the main process executes the workflow.
         if main:
-            self.register_step_sources()
+            self.register_step_output_sources()
             self.register_input_sources()
             self.set_scatters_gathers()
             self.create_dependency_graph()
@@ -125,7 +125,7 @@ class BaseWorkflow(BaseProcess):
             self.loading_context["processes"][sub_process.id] = sub_process
 
 
-    def register_step_sources(self) -> None:
+    def register_step_output_sources(self) -> None:
         """
         Fill all step outputs of all workflow processes with an Absent value.
         This way we can later check if the runtime was actually filled with an
@@ -258,7 +258,7 @@ class BaseWorkflow(BaseProcess):
 
                 child_proc = process.step_id_to_process
                 # TODO Decide which inputs get a scatter
-                # TODO Decie which outputs get a scatter
+                # TODO Decide which outputs get a scatter
                 
                 # Normalize scatter targets to list of input IDs
                 scatter_targets = step_dict["scatter"]
@@ -275,31 +275,27 @@ class BaseWorkflow(BaseProcess):
 
     def create_dependency_graph(self) -> None:
         """ 
-        TODO Description
-        FIXME Not accurate anymore
-        Create a Dask task graph with the sub-processes of this workflow. 
-        Can be overwritten to alter execution behaviour. 
+        Build the dependency graph for this workflow. The graph's nodes are 
+        execution groups, each containing a sub-dependency graph of 
+        tool-containing nodes. Tools within an execution group are executed
+        together on the same compute node. Workflow processes essentially
+        describe the edges between the tool nodes and are not added as
+        executable nodes themselves.
         """
         processes: dict[str, BaseProcess] = self.loading_context["processes"]
         graph: Graph = self.loading_context["graph"]
 
-        # Recursively load all processes from steps. If the process is a tool,
-        # add it to the dependency graph. Workflows essentially describe the
-        # edges between the tool nodes, thus workflows are not added as nodes.
-        print("[WORKFLOW]: Loading process files:")
-        for step_id, step_dict in self.steps.items():
-            step_process = self._load_process_from_uri(step_dict["run"], step_id)
-            processes[step_process.id] = step_process
-            self.step_id_to_process[step_id] = step_process
-            if issubclass(type(step_process), BaseCommandLineTool):
+        # Add all tool processes to the dependency graph
+        for tool in processes.values():
+            if issubclass(type(tool), BaseCommandLineTool):
                 node = Node(
-                    id = step_process.id,
-                    processes = [step_process],
+                    id = tool.id,
+                    processes = [tool],
                     is_tool_node = False
                 )
                 graph.add_node(node)
 
-        # Add tool nodes to the dependency graph
+        # Add a node to the dependency graph from each tool to its parents
         for tool in processes.values():
             if issubclass(type(tool), BaseCommandLineTool):
                 tool = cast(BaseCommandLineTool, tool)
