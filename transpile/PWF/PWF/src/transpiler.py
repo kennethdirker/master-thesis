@@ -615,10 +615,33 @@ def parse_steps(
         lines.append(indent('},', 4))
 
         # out
-        lines.append(indent(f'"out": [', 4))
-        for out in step.out:
-            lines.append(indent(f'"{out.id.split("/")[-1]}",', 5))
-        lines.append(indent('],', 4))
+        if len(step.out) < 2:
+            out = "".join([f'"{o.id.split("/")[-1]}"' for o in step.out])
+            lines.append(indent(f'"out": [{out}],', 4))
+        else:
+            lines.append(indent(f'"out": [', 4))
+            for out in step.out:
+                lines.append(indent(f'"{out.id.split("/")[-1]}",', 5))
+            lines.append(indent('],', 4))
+
+        # scatter
+        if hasattr(step, "scatter") and step.scatter is not None:
+            if isinstance(step.scatter, List):
+                scatter = step.scatter
+            else:
+                scatter = [step.scatter]
+            if len(scatter) < 2:
+                s = "".join([f'"{input.split("/")[-1]}"' for input in scatter])
+                lines.append(indent(f'"scatter": {s},', 4))
+            else:
+                lines.append(indent(f'"scatter": [', 4))
+                for input in scatter:
+                    lines.append(indent(f'"{input.split("/")[-1]}",', 5))
+                lines.append(indent('],', 4))
+
+        # scatterMethod
+        if hasattr(step, "scatterMethod") and step.scatterMethod is not None:
+            lines.append(indent(f'"scatterMethod": "{step.scatterMethod}",', 4))
             
         # run
         run_uri: str = resolve_run_uri(step.run, step.id)
