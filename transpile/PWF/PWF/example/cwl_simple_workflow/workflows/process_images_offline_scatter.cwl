@@ -38,6 +38,7 @@ steps:
     label: noiseremover
     scatter:
       - input
+    scatterMethod: dotproduct
   - id: after_plot_inspect
     in:
       - id: input_fits
