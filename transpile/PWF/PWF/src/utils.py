@@ -4,6 +4,7 @@ from typing import Any, List, Optional, Type, Sequence, Mapping, Union
 from types import NoneType
 # from .Process import BaseProcess
 from pathlib import Path
+from copy import deepcopy
 
 class Absent:
     """ 
@@ -109,9 +110,11 @@ class FileObject:
     nameroot: str = ""
     nameext: str = ""
     
-    def __init__(self, file_path: str | FileObject):
+    def __init__(self, file_path: str | Path | FileObject):
         if isinstance(file_path, str):
-            path: Path = Path(file_path).resolve()
+            file_path = Path(file_path)
+        if isinstance(file_path, Path):
+            path: Path = file_path.resolve()
             self.path = str(path)
             self.basename = path.name
             self.dirname = str(path.parent)
@@ -124,7 +127,7 @@ class FileObject:
             self.nameroot = file_path.nameroot
             self.nameext = file_path.nameext
         else:
-            raise Exception(f"FileObject expects 'str' or 'FileObject', but found '{type(file_path)}'")
+            raise Exception(f"FileObject expects 'str' | 'Path' | 'FileObject', but found '{type(file_path)}'")
 
     def __str__(self) -> str:
         return self.path
@@ -144,20 +147,30 @@ class DirectoryObject:
     location: str   # TODO
     path: str
     basename: str
-    listing: List[Union[FileObject, 'DirectoryObject']]
+    listing: List[Union[FileObject, DirectoryObject]]
     
-    def __init__(self, file_path: str):
-        path: Path = Path(file_path).resolve()
-        self.path = str(path)
-        self.basename = path.name
-        # location: str = #TODO
-
-        self.listing = []
-        for p in path.iterdir():
-            if p.is_dir():
-                self.listing.append(DirectoryObject(str(p)))
-            if p.is_file():
-                self.listing.append(FileObject(str(p)))
+    def __init__(self, file_path: str | Path | DirectoryObject):
+        if isinstance(file_path, str):
+            file_path = Path(file_path)
+        if isinstance(file_path, Path):
+            path: Path = file_path.resolve()
+            self.path = str(path)
+            self.basename = path.name
+            # location: str = #TODO
+            # NOTE Does this need to be recursive? 
+            self.listing = []
+            for p in path.iterdir():
+                if p.is_dir():
+                    self.listing.append(DirectoryObject(str(p)))
+                if p.is_file():
+                    self.listing.append(FileObject(str(p)))
+        elif isinstance(file_path, DirectoryObject):
+            self.path = file_path.path
+            self.basename = file_path.basename
+            self.listing = deepcopy(file_path.listing)
+            # self.location = file_path.location    # TODO
+        else:
+            raise Exception(f"DirectoryObject expects 'str' | 'Path' | 'DirectoryObject', but found '{type(file_path)}'")
 
     def __str__(self) -> str:
         return self.path
