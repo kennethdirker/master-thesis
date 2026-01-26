@@ -1,10 +1,11 @@
 import argparse
-import glob
+# import glob
 import os
 import textwrap
 
 from pathlib import Path
 from typing import Any, List, Mapping, Optional, TextIO, Tuple, Union
+from uuid import uuid4
 
 from cwl_utils.parser import load_document_by_uri
 
@@ -50,7 +51,7 @@ def format_dict_key_string(
     """
     if max_length <= 0:
         raise ValueError("max_length must be greater than 0")
-    extra_length = 7  # for "{key}": "{value}",
+    extra_length = 7  # for "{key}": "{value}", symbols
     if indents * 4 + len(key) + len(string) + extra_length <= max_length:
         # The entire string fits on one line
         return [indent(f'"{key}": "{string}",', indents)]
@@ -88,11 +89,11 @@ def normalize(string: str) -> str:
         # String does not have an expression or not contain a
         # matching closing parenthesis
         return string
-    
+    # print("[NORMALIZE]", string)
     count = string.count("$(")
     substrings: list[str] = []
     ss = string
-    for _ in range(count):
+    for i in range(count):
         s, ss = ss.split("$(", 1)
         if len(s):
             # Here, s is always a plain string and needs quotation
@@ -104,9 +105,12 @@ def normalize(string: str) -> str:
             substrings[-1] = s + "$(" + ss
             break
 
-        s, ss = ss.split(")", 1)
         # Here, s is always an expression, with ss being the remaining tail
+        s, ss = ss.split(")", 1)
+        # print(ss)
         substrings.append(s)
+        if i == count - 1 and ss != "":
+            substrings.append(f"'{ss}'")
     
     return '$(' + " + ".join(substrings) + ')'
 
@@ -295,22 +299,26 @@ def parse_inputs(
     out_file.writelines(lines)
 
 
-def get_output_type(type_: Any) -> list[str]:
+def get_output_type(types: Any | List[Any]) -> list[str]:
     """
     Parse output types and transform to PWF format.
     Returns:
-        List of strings representing lines to write to file.
+        List of strings representing types.
     """
-    lines: list[str] = []
+    ret: list[str] = []
 
-    if isinstance(type_, CommandOutputArraySchema):
-        lines.append(indent(f'"type": "{type_.items.lower()}[]",', 4))
-    elif isinstance(type_, str):
-        lines.append(indent(f'"type": "{type_.lower()}",', 4))
-    else:
-        raise NotImplementedError(f"Found unsuppored type {type(type_)}")
+    if not isinstance(types, List):
+        types = [types]
 
-    return lines
+    for t in types:
+        if isinstance(t, CommandOutputArraySchema):
+            ret.append(f'{t.items.lower()}[]')
+        elif isinstance(t, str):
+            ret.append(f'{t.lower()}')
+        else:
+            raise NotImplementedError(f"Found unsuppored type {type(t)}")
+
+    return ret
 
 
 # def get_glob(glob: str) -> str:
@@ -364,12 +372,53 @@ def parse_outputs(
         for output in outputs:
             # ID
             # NOTE Force id field in cwl file?
-            lines.append(indent(f'"{output.id.split("/")[-1]}": {{', 3))
+            output_id = output.id.replace("/", "#").split("#")[-1]
+            lines.append(indent(f'"{output_id}": {{', 3))
 
             # Type
-            type_: list[str] = get_output_type(output.type_)
-            lines.extend(type_)
-            
+            types: list[str] = get_output_type(output.type_)
+            if len(types) > 1:
+                lines.append(indent(f'"type": ["{", ".join(types)}"],', 4))
+            else:
+                lines.append(indent(f'"type": "{types[0]}",', 4))
+
+            # Stdout is a special case that needs to be normalized
+            if "stdout" in types:
+                if len(types) > 1:
+                    raise Exception(f"Type stdout must be the only type of an output, but {output_id} has multiple")
+                # Collect cwl.stdout
+                cwl_stdout_file: str | None = None
+                if hasattr(cwl, "stdout"):
+                    cwl_stdout_file = cwl.stdout    # type: ignore
+
+                # Collect output.outputBinding.glob
+                output_stdout_file: str | None = None
+                if (hasattr(output, "outputBinding") and 
+                    hasattr(output.outputBinding, "glob")):
+                    output_stdout_file = output.outputBinding.glob
+
+                random_glob = output_id + str(uuid4())
+                glob: str
+
+                # Add the filename as glob. Set cwl.stdout if it is missing.
+                if cwl_stdout_file == output_stdout_file:
+                    if cwl_stdout_file is None:
+                        setattr(cwl, "stdout", random_glob)
+                        glob = random_glob
+                    else:
+                        glob = normalize(cwl_stdout_file)
+                elif cwl_stdout_file and output_stdout_file is None:
+                    glob = normalize(cwl_stdout_file)
+                elif cwl_stdout_file is None and output_stdout_file:
+                    glob = normalize(output_stdout_file)
+                    setattr(cwl, "stdout", glob)
+                else:
+                    raise Exception("idk, shouldnt reach", cwl_stdout_file, output_stdout_file)                
+                lines.append(indent(f'"glob": "{glob}",', 4))
+                lines.append(indent('"streamable": True,', 4))
+                lines.append(indent("}", 3))
+                continue
+
             if hasattr(output, "outputBinding"):
                 binding = output.outputBinding
                 # Glob
@@ -378,14 +427,20 @@ def parse_outputs(
                     lines.append(indent(f'"glob": "{glob}",', 4))
                 # loadContents
                 # TODO
+                if hasattr(binding, "loadContents") and binding.loadContents is not None:
+                    print("\t[INFO] outputs.outputBinding.loadContents not yet supported")
                 # outputEval
                 if hasattr(binding, "outputEval") and binding.outputEval is not None:
                     outputEval = normalize(binding.outputEval)
                     lines.append(indent(f'"outputEval": "{outputEval}",', 4))
                 # secondaryFiles
                 # TODO
+                if hasattr(binding, "secondaryFiles") and binding.secondaryFiles is not None:
+                    print("\t[INFO] outputs.outputBinding.secondaryFiles not yet supported")
             # Streamable
             # TODO
+            if hasattr(output, "streamable") and output.streamable is not None:
+                lines.append(indent(f'"streamable": {output.streamable},', 4))
 
             # Label
             if hasattr(output, "label") and output.label is not None:
@@ -471,8 +526,36 @@ def parse_tool_requirements(
                 # TODO
                 print("\t[INFO] DockerRequirement not yet supported")
             case "InitialWorkDirRequirement":
-                # TODO
-                print("\t[INFO] InitialWorkDirRequirement not yet supported")
+                if isinstance(req.listing, str):
+                    lines.append(indent(f'"InitialWorkDirRequirement": "{req.listing}",', 3))
+                else: 
+                    lines.append(indent('"InitialWorkDirRequirement": [', 3))
+                    for e in req.listing:
+                        lines.append(indent('{', 4))
+                        lines.append(indent(f'"entryname": "{e.entryname}",', 5))
+                        if hasattr(e, "entry") and e.entry is not None:
+                            # Multiline entry scripts are put into lists of
+                            # lines to keep it simple.
+                            lines.append(indent('"entry": [', 5))
+
+                            # NOTE I am not sure if the following works for all
+                            # possible content, we'll have to see.
+
+                            # YAML uses some character escaping that doesnt 
+                            # work in python strings. They must be removed from
+                            # the literal string.
+                            entry_lines = bytes(e.entry.replace(r"\$", "$"), "utf-8").decode("unicode_escape")
+                            # Because we need to encase strings in double 
+                            # quotation marks, we need to add escapes.
+                            entry_lines = entry_lines.replace('"', r'\"').split("\n")
+                            entry_lines = [normalize(l) for l in entry_lines]
+                            # print(entry_lines)
+                            lines.extend([indent(f'"{l}",', 6) for l in entry_lines])
+                            lines.append(indent('],', 5))
+                        if hasattr(e, "writable") and e.writable is not None:
+                            lines.append(indent(f'"writable": "{e.writable}",', 5))
+                        lines.append(indent('},', 4))
+                    lines.append(indent("],", 3))
             case "EnvVarRequirement":
                 lines.append(indent('"EnvVarRequirement": {', 3))
                 for var in req.envDef:
@@ -500,6 +583,12 @@ def parse_tool_requirements(
 
     lines.append(indent("}", 2))
 
+    if len(lines) == 4:
+        lines.clear()
+        lines.append("")
+        lines.append(indent("def set_requirements(self):", 1))
+        lines.append(indent("self.requirements = {}", 2))
+
     # Add newlines to each string
     lines = [line + "\n" for line in lines]
     out_file.writelines(lines)
@@ -521,6 +610,9 @@ def parse_io(
         lines.append(indent(f'"stdin": "{normalize(cwl.stdin)}",', 3))
     if hasattr(cwl, "stdout") and cwl.stdout is not None:
         lines.append(indent(f'"stdout": "{normalize(cwl.stdout)}",', 3))
+    # else:
+        # for output in cwl.outputs.values():
+            # if output.
     if hasattr(cwl, "stderr") and cwl.stderr is not None:
         lines.append(indent(f'"stderr": "{normalize(cwl.stderr)}",', 3))
     if hasattr(cwl, "successCodes") and cwl.successCodes is not None:
