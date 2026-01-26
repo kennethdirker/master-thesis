@@ -3,15 +3,13 @@ import copy
 import inspect
 import js2py
 import os
+import shutil
 import sys
 import uuid
 import yaml
 
 from abc import ABC, abstractmethod
 from copy import deepcopy
-# from dask.delayed import Delayed
-from dask.distributed import Client
-from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping, List, Optional, Type, Union, cast
 
@@ -42,6 +40,17 @@ class BaseProcess(ABC):
         main
         # TODO Explain runtime_context
         # TODO Explain loading_context
+            - graph (Graph)
+            - processes (list[Process])
+            - input_object dict[str, Any]
+            - PATH (str)
+            - init_work_dir (Path)
+            - designated_out_dir (Path)
+            - init_out_dir_empty (bool)
+            - designated_tmp_dir (Path)
+            - init_tmp_dir_empty (bool)
+            - preserve_tmp (bool)
+            - use_dask  (bool)
 
         Implementation NOTE: BaseProcess __init__ must be called from the
         subclass __init__ before any other state is touched.
@@ -84,7 +93,7 @@ class BaseProcess(ABC):
         self.requirements:  dict = {}
 
         # NOTE: Not sure if I want to support hints, force requirements only?
-        self.hints: dict = {}   
+        # self.hints: dict = {}   
         
         # Digest basic process attributes
         self.set_metadata()
@@ -110,6 +119,8 @@ class BaseProcess(ABC):
             self.runtime_context = self._load_input_object(self.loading_context["input_object"])
             # Copy system PATH environment variable
             self.loading_context["PATH"] = os.environ.get("PATH")
+            # Save the path to the initial current work directory
+            self.loading_context["init_work_dir"] = Path(os.getcwd())
         else:
             if runtime_context is None:
                 raise Exception(f"Subprocess {type(self)}({self.id}) is not initialized as root process, but lacks runtime context")
@@ -121,20 +132,13 @@ class BaseProcess(ABC):
         # Register this process in the global cache
         self.loading_context["processes"][self.id] = self
 
-        # Set runtime environment variables from main process
-        # if main:
-
-
-            # TODO is this used anywhere?
-            # self.main_path = os.getcwd()
-
 
     def create_parser(self) -> argparse.ArgumentParser:
         """
         Create and return an argument parser for command-line arguments.
 
         TODO Description (schema) of arguments
-        python process.py [--outdir OUTDIR] [--tmpdir TMPDIR] [--dask] input_object.yaml
+        python PWF.py [--outdir OUTDIR, --tmpdir TMPDIR, --preserve_tmp, --dask] input_object.yaml
         """
         parser = argparse.ArgumentParser()
         parser.add_argument(
@@ -154,6 +158,12 @@ class BaseProcess(ABC):
             type = str,
             default = "/tmp/" + str(uuid.uuid4()),
             help="Directory to store temporary files in."
+        )
+        parser.add_argument(
+            "--preserve_tmp",
+            action="store_true",
+            default = False,
+            help="Preserve temporary files and directories created for tool execution instead of deleting them."
         )
         parser.add_argument(
             "--dask",
@@ -185,7 +195,7 @@ class BaseProcess(ABC):
         out_dir_path = Path(args.outdir).absolute()
         if out_dir_path.exists() and not out_dir_path.is_dir():
             raise Exception(f"Output directory {out_dir_path} is not a directory")
-        out_dir_path.mkdir(parents=True, exist_ok=True)            # Create tmp dir
+        out_dir_path.mkdir(parents=True, exist_ok=True)            # Create out dir
         is_empty = not any(out_dir_path.iterdir())  # Check if out dir is empty
         loading_context["init_out_dir_empty"] = is_empty
         loading_context["designated_out_dir"] = out_dir_path
@@ -200,8 +210,10 @@ class BaseProcess(ABC):
         is_empty = not any(tmp_dir_path.iterdir())  # Check if tmp dir is empty
         loading_context["init_tmp_dir_empty"] = is_empty
         loading_context["designated_tmp_dir"] = tmp_dir_path
-        print(f"[Process]: Designated temporary directory:")
-        print(f"[PROCESS]:\t{loading_context['designated_tmp_dir']}")
+        loading_context["preserve_tmp"] = args.preserve_tmp
+        s = "" if args.preserve_tmp else "not "
+        print(f"[Process]: Designated temporary directory ({s}preserved):")
+        print(f"[PROCESS]:\t{tmp_dir_path}")
 
         # Configure whether Dask is used for execution
         loading_context["use_dask"] = args.dask
@@ -210,7 +222,7 @@ class BaseProcess(ABC):
 
     def global_id(self, s: str) -> str:
         """
-        Concatenate the process ID and another string, split by a colon.
+        Concatenate the process UID and another string, split by a colon.
         """
         return self.id  + ":" + s
 
@@ -620,6 +632,32 @@ class BaseProcess(ABC):
             print(f"[EVAL]: '{expression}' ({type(expression)}) -> '{ret}' ({type(ret)})")
 
         return ret
+
+
+    def publish_output(self):
+        """
+        Copy the output files to the designated output directory.
+        """
+        # TODO
+
+
+    def delete_temps(self):
+        if self.loading_context["preserve_tmp"]: return
+        if not self.loading_context["init_tmp_dir_empty"]:
+            # Designated temporary directory was not empty on start, so we 
+            # cannot savely delete the directory without deleting files from
+            # other sources.
+            print("[PROCESS]: Skip clearing temporary directory as it was initially not empty")
+            return
+        
+        print("[PROCESS]: Clearing temporary directory")
+        shutil.rmtree(self.loading_context["designated_out_dir"])
+        
+
+
+    def finalize(self):
+        self.publish_output()
+        self.delete_temps()
 
 
 

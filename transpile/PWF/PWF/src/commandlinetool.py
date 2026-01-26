@@ -2,6 +2,7 @@
 import glob
 import os
 # import subprocess
+import shutil
 import sys
 
 from abc import abstractmethod
@@ -9,6 +10,7 @@ from contextlib import chdir
 from dask.distributed import Client
 from pathlib import Path
 from subprocess import run, CompletedProcess
+from uuid import uuid4
 
 from types import NoneType
 from typing import (
@@ -68,6 +70,7 @@ class BaseCommandLineTool(BaseProcess):
         if main:
             self.register_input_sources()
             self.execute(self.loading_context["use_dask"], verbose=True)
+            self.finalize()
 
 
     def set_metadata(self):
@@ -662,7 +665,6 @@ class BaseCommandLineTool(BaseProcess):
                 else:
                     outputs[global_output_id] = Value(_type(value), _type, value_type)
 
-
             # secondaryFiles
             if ("secondaryFiles" in output_dict and output_dict["outputEval"] is not None):
                 if not any(["file" in type_ for type_ in expected_types]):
@@ -675,7 +677,64 @@ class BaseCommandLineTool(BaseProcess):
                 #     ???
             
         return outputs
+    
 
+    def stage_files(
+            self, 
+            tmp_path: Path, 
+            # runtime_copy: dict[str, Any],
+        ) -> None:
+        # ) -> dict[str, str]:
+        # stage_mapping: dict[str, str] = {}
+        # Stage files from InitialWorkDirRequirement
+        if "InitialWorkDirRequirement" in self.requirements:
+            ...
+        # TODO
+
+        # Stage files from input object
+        for input_id, input_dict in self.inputs.items():
+            types = input_dict["types"]
+            if not isinstance(types, List):
+                types = [types]
+            path_likes = ["file", "file[]", "directory", "directory[]"]
+            if not any(t in types for t in path_likes):
+                continue
+
+            source = self.input_to_source[input_id]
+            value_wrapper = self.runtime_context[source]
+            if isinstance(value_wrapper, Absent):
+                continue
+
+            type_: Type = value_wrapper.type
+            if not isinstance(type_, (FileObject, DirectoryObject)):
+                # TODO FIXME Error or skip?
+                continue 
+
+            is_dir = isinstance(type_, DirectoryObject)
+            path_objects = value_wrapper.value
+            if not value_wrapper.is_array:
+                path_objects = [path_objects]
+
+            # cwd: Path = self.loading_context["init_work_dir"]
+            if "writable" in input_dict:
+                # We need to make a copy, because files are writable and
+                # otherwise overwrite original files
+                raise NotImplementedError()
+            else:
+                tmp_path_objects = []
+                for path_obj in path_objects:
+                    tmp_file_path = tmp_path / Path(path_obj.path).name
+                    tmp_file_path.symlink_to(path_obj.path, is_dir)
+                    if is_dir:
+                        tmp_path_objects.append(DirectoryObject(tmp_file_path))
+                    else:
+                        tmp_path_objects.append(FileObject(tmp_file_path))
+                if len(tmp_path_objects) == 1:
+                    tmp_path_objects = tmp_path_objects[0]
+                new_value = Value(tmp_path_objects, type_, PY_CWL_T_MAPPING[type_][0])
+                self.runtime_context[source] = new_value
+
+        # return stage_mapping
         
     def execute(
             self, 
@@ -686,10 +745,10 @@ class BaseCommandLineTool(BaseProcess):
         ) -> dict[str, Value]:
         """Top-level execution entrypoint for the tool.
 
-        This method prepares the runtime namespace and context, builds the
-        command line and environment, and executes the tool either locally
-        or via a Dask ``Client``. The outputs returned by ``run_wrapper``
-        are returned as the new runtime state.
+        This method prepares the runtime environment, builds the
+        command line, and executes the tool either locally
+        or via a Dask ``Client``. Outputs are returned in a dict with the
+        output ID as key.
 
         Args:
             use_dask: If True, submit the work to the provided or a new
@@ -706,6 +765,16 @@ class BaseCommandLineTool(BaseProcess):
         # Update runtime context
         if runtime_context is not None:
             self.runtime_context = runtime_context
+
+        # Create a temporary work directory and stage all needed files
+        tmp_path: Path = self.loading_context["designated_tmp_dir"]
+        tmp_path /= str(uuid4())
+        self.stage_files(tmp_path)
+
+        # Switch to the temp directory, which acts as the new execution
+        # environment
+        os.chdir(tmp_path)
+
 
 
         # Build the command line
