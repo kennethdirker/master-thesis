@@ -382,7 +382,15 @@ def parse_outputs(
             else:
                 lines.append(indent(f'"type": "{types[0]}",', 4))
 
-            # Stdout is a special case that needs to be normalized
+            # 4 possibilities when encountering stdout:
+            # 1) The outputBinding and io config contain matching filenames
+            #    and no extra steps are needed.
+            # 2) The outputBinding and io config contain mismatching filenames
+            #    and an exception is thrown.
+            # 3) Either the outputBinding or io stdout is missing a filename,
+            #    in which the missing value is added.
+            # 4) Both outputBinding and io stdout filenames are missing
+            #    filenames. A randomly generated name is added to both. 
             if "stdout" in types:
                 if len(types) > 1:
                     raise Exception(f"Type stdout must be the only type of an output, but {output_id} has multiple")
@@ -397,8 +405,12 @@ def parse_outputs(
                     hasattr(output.outputBinding, "glob")):
                     output_stdout_file = output.outputBinding.glob
 
-                random_glob = output_id + str(uuid4())
+                random_glob = output_id + str(uuid4())[:8]
                 glob: str
+
+                if (cwl_stdout_file and output_stdout_file and
+                    cwl_stdout_file != output_stdout_file):
+                    raise Exception(f"IO stdout and stdout outputBinding have mismatching filenames") 
 
                 # Add the filename as glob. Set cwl.stdout if it is missing.
                 if cwl_stdout_file == output_stdout_file:
@@ -438,9 +450,23 @@ def parse_outputs(
                 if hasattr(binding, "secondaryFiles") and binding.secondaryFiles is not None:
                     print("\t[INFO] outputs.outputBinding.secondaryFiles not yet supported")
             # Streamable
-            # TODO
             if hasattr(output, "streamable") and output.streamable is not None:
                 lines.append(indent(f'"streamable": {output.streamable},', 4))
+
+            # outputSource
+            if hasattr(output, "outputSource") and output.outputSource is not None:
+                source = output.outputSource
+                if isinstance(source, List) and len(source) == 1:
+                    source = source[0]
+                if isinstance(source, List):
+                    lines.append(indent('"outputSource": [', 4))
+                    for s in source:
+                        x = "/".join(s.split("/")[-2:])
+                        lines.append(indent(f'"{x}",', 5))
+                    lines.append(indent(']', 4))
+                else:
+                    x = "/".join(source.split("/")[-2:])
+                    lines.append(indent(f'"outputSource": "{x}",', 4))
 
             # Label
             if hasattr(output, "label") and output.label is not None:
@@ -537,7 +563,7 @@ def parse_tool_requirements(
                             # Multiline entry scripts are put into lists of
                             # lines to keep it simple.
                             lines.append(indent('"entry": [', 5))
-
+                            # TODO Dirent support
                             # NOTE I am not sure if the following works for all
                             # possible content, we'll have to see.
 
