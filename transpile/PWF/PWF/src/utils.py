@@ -104,17 +104,22 @@ class FileObject:
         nameext  : .ext
     """
     
-    path: str = ""
-    basename: str = ""
-    dirname: str = ""
-    nameroot: str = ""
-    nameext: str = ""
+    path: str
+    basename: str
+    dirname: str
+    nameroot: str
+    nameext: str
     
-    def __init__(self, file_path: str | Path | FileObject):
+    def __init__(self, file_path: str | Path | FileObject, verbose = False):
         if isinstance(file_path, str):
             file_path = Path(file_path)
         if isinstance(file_path, Path):
-            path: Path = file_path.resolve()
+            # path: Path = file_path.resolve() < BUG 
+            # pathlib.Path.resolve resolves symlinks, which is unwanted
+            # behaviour , as we are often pointing to symlinks. Normalizing
+            # the parent and adding the name part circumvents this.
+            path: Path = file_path.parent.resolve() / file_path.name
+            
             self.path = str(path)
             self.basename = path.name
             self.dirname = str(path.parent)
@@ -149,11 +154,16 @@ class DirectoryObject:
     basename: str
     listing: List[Union[FileObject, DirectoryObject]]
     
-    def __init__(self, file_path: str | Path | DirectoryObject):
-        if isinstance(file_path, str):
-            file_path = Path(file_path)
-        if isinstance(file_path, Path):
-            path: Path = file_path.resolve()
+    def __init__(self, dir_path: str | Path | DirectoryObject):
+        if isinstance(dir_path, str):
+            dir_path = Path(dir_path)
+        if isinstance(dir_path, Path):
+            # path: Path = dir_path.resolve() < BUG 
+            # pathlib.Path.resolve resolves symlinks, which is unwanted
+            # behaviour , as we are often pointing to symlinks. Normalizing
+            # the parent and adding the name part circumvents this.
+            path: Path = dir_path.parent.resolve() / dir_path.name
+
             self.path = str(path)
             self.basename = path.name
             # location: str = #TODO
@@ -164,13 +174,13 @@ class DirectoryObject:
                     self.listing.append(DirectoryObject(str(p)))
                 if p.is_file():
                     self.listing.append(FileObject(str(p)))
-        elif isinstance(file_path, DirectoryObject):
-            self.path = file_path.path
-            self.basename = file_path.basename
-            self.listing = deepcopy(file_path.listing)
-            # self.location = file_path.location    # TODO
+        elif isinstance(dir_path, DirectoryObject):
+            self.path = dir_path.path
+            self.basename = dir_path.basename
+            self.listing = deepcopy(dir_path.listing)
+            # self.location = dir_path.location    # TODO
         else:
-            raise Exception(f"DirectoryObject expects 'str' | 'Path' | 'DirectoryObject', but found '{type(file_path)}'")
+            raise Exception(f"DirectoryObject expects 'str' | 'Path' | 'DirectoryObject', but found '{type(dir_path)}'")
 
     def __str__(self) -> str:
         return self.path
