@@ -25,13 +25,35 @@ from .utils import (
 
 
 class BaseProcess(ABC):
+    # Process info
+    is_main: bool
+    short_id: str
+    process_path: str
+    id: str
+
+    # Parent process info
+    parent_process_id: str | None
+    step_id: str | None
+
+    # Tool/workflow info
+    metadata: dict[str, Any]
+    inputs: dict[str, Any]
+    outputs: dict[str, Any]
+    requirements: dict[str, Any]
+
+    # Runtime info
+    input_to_source: dict[str, str]
+    loading_context: dict[str, Any]
+    runtime_context: dict[str, Value | Absent]
+
     def __init__(
             self,
             main: bool = True,
             runtime_context: Optional[dict[str, Any]] = None,
             loading_context: Optional[dict[str, Any]] = None,
             parent_process_id: Optional[str] = None,
-            step_id: Optional[str] = None
+            step_id: Optional[str] = None,
+            requirements: Optional[dict[str, Any]] = None,
         ) -> None:
         """ 
         TODO: class description. Which vars are accessable?
@@ -58,13 +80,13 @@ class BaseProcess(ABC):
         # A process that is called from the command-line is root. Processes
         # that are instantiated from other another process (sub-processes)
         # are not root.
-        self.is_main: bool = main
+        self.is_main = main
 
         # Unique identity of a process instance. The id looks as follows:
         #   "{path/to/process/script/file}:{uuid}"  
         # FIXME: IDs could be made of {uuid} only, but the path adds debugging clarity.
-        self.short_id: str = str(uuid.uuid4())
-        self.process_path: str = str(Path(inspect.getfile(type(self))).resolve())
+        self.short_id = str(uuid.uuid4())
+        self.process_path = str(Path(inspect.getfile(type(self))).resolve())
         self.id = self.process_path + ":" + self.short_id
 
         # ID of the step and process from which this process is called.
@@ -72,25 +94,25 @@ class BaseProcess(ABC):
         if main:
             step_id = None
             parent_process_id = None
-        self.parent_process_id: str | None = parent_process_id
-        self.step_id: str | None = step_id
+        self.parent_process_id = parent_process_id
+        self.step_id = step_id
 
         # Assign metadata attributes. Override in self.set_metadata().
-        self.metadata: dict[str, str] = {}
+        self.metadata = {}
         # self.label: str = "" # Human readable process name.
         # self.doc:   str = "" # Human readable process explaination.
         
         # Assign input/output dictionary attributes.
         # FIXME: dicts could use custom types like CWLTool does, instead of dicts.
-        self.inputs:  dict = {} # Override in set_inputs()
-        self.outputs: dict = {} # Override in set_outputs()
+        self.inputs = {} # Override in set_inputs()
+        self.outputs = {} # Override in set_outputs()
 
         # Maps input_id to its global source id, which is used as key in runtime_context
-        self.input_to_source: dict[str, str] =  {}  # {input_id, global_source_id}
+        self.input_to_source =  {}  # {input_id, global_source_id}
         
         # Assign requirements and hints.
         # Override in set_requirements().
-        self.requirements:  dict = {}
+        self.requirements = {}
 
         # NOTE: Not sure if I want to support hints, force requirements only?
         # self.hints: dict = {}   
@@ -100,13 +122,14 @@ class BaseProcess(ABC):
         self.set_inputs()
         self.set_outputs()
         self.set_requirements()
+        self.process_requirements(requirements)
         
         # TODO Update description
         # Assign a dictionary with runtime input variables and a dictionary to
         # map processes and step IDs. Only the root process must load the input
         # YAML from a file. Non-root processes get a reference to the
         # dictionary loaded in the main process.
-        self.runtime_context: dict[str, Value | Absent] = {}
+        self.runtime_context = {}
         # self.runtime_context: dict[str, Any] = {}
         if main:
             self.loading_context = {}
@@ -504,12 +527,36 @@ class BaseProcess(ABC):
     @abstractmethod
     def register_input_sources(self) -> None:
         """
-        TODO
         Cache the source of each input with an ID unique to each Process 
         instance. The mapping is saved under self.input_to_sources. The key of
         each input can be found by using self.global_id().
         """
         pass
+
+
+    def process_requirements(
+            self,
+            requirements: Optional[dict[str, Any]] = None,
+        ) -> None:
+        """
+        TODO Finish
+        Combine inherited requirements with the process' own requirements.
+        Processes can inherit certain requirements from their parents.
+        Child processes can overwrite these inherited requirements, but
+        in some cases inherited requirements should be added to, instead of
+        completely replaced.
+        """
+        if requirements is None:
+            return
+        
+        final_reqs: dict[str, Any] = {}
+        #  TODO Which requirements can be inherited?
+        #     - InitialWorkDirRequirement
+        #     -
+        #     -
+        #     -
+        #     -
+        self.requirements = final_reqs
 
 
     def build_namespace(self) -> dict[str, Any]:
