@@ -2,6 +2,7 @@ import argparse
 import copy
 import inspect
 import js2py
+import json
 import os
 import shutil
 import sys
@@ -681,12 +682,45 @@ class BaseProcess(ABC):
         return ret
 
 
-    def publish_output(self):
+    def publish_output(self, outputs: dict[str, Any]) -> str:
         """
-        Copy the output files to the designated output directory.
+        Copy the output files to the designated output directory and return a
+        JSON string containing the outputs.
         """
-        # TODO
+        copy_alert = True
+        new_outputs: dict[str, Any] = {}
+        for output_id, value_wrapper in outputs.items():
+            output_id = output_id.split(":")[-1]
+            type_ = value_wrapper.type
+            if type_ == FileObject or type_ == DirectoryObject:
+                # Files and directories need to be moved to the output directory
+                if copy_alert:
+                    print("[PROCESS]: Moving output to designated output directory:")
+                    copy_alert = False
 
+                values: List[Any]
+                if value_wrapper.is_array:
+                    values = value_wrapper.value
+                else:
+                    values = [value_wrapper.value]
+
+                new_paths: List[str] = []
+                for path_object in values:
+                    old_path = Path(path_object.path)
+                    new_path = self.loading_context["designated_out_dir"] / old_path.name
+                    new_paths.append(str(new_path))
+                    print(f"[PROCESS]:\t- {output_id}: {old_path} >> {new_path}")
+                    
+                    if type_ == FileObject:
+                        shutil.copy(old_path, new_path)
+                    else:        
+                        shutil.copytree(old_path, new_path)
+                new_outputs[output_id] = new_paths
+                if not value_wrapper.is_array:
+                    new_outputs[output_id] = new_paths[0]
+            else:
+                new_outputs[output_id] = value_wrapper.value
+        return json.dumps(new_outputs, indent = 4)
 
     def delete_temps(self):
         if self.loading_context["preserve_tmp"]: return
@@ -694,17 +728,20 @@ class BaseProcess(ABC):
             # Designated temporary directory was not empty on start, so we 
             # cannot savely delete the directory without deleting files from
             # other sources.
-            print("[PROCESS]: Skip clearing temporary directory as it was initially not empty")
+            print("[PROCESS]: Skip deleting temporary directory as it was initially not empty")
             return
         
-        print("[PROCESS]: Clearing temporary directory")
-        shutil.rmtree(self.loading_context["designated_out_dir"])
+        print("[PROCESS]: Deleting temporary directory:")
+        print(f"[PROCESS]:\t{self.loading_context['designated_tmp_dir']}")
+        shutil.rmtree(self.loading_context["designated_tmp_dir"])
         
 
 
-    def finalize(self):
-        self.publish_output()
+    def finalize(self, outputs: dict[str, Any]):
+        print()
+        outputs_json = self.publish_output(outputs)
         self.delete_temps()
+        print(outputs_json)
 
 
 

@@ -2,7 +2,7 @@
 cwlVersion: v1.2
 class: CommandLineTool
 baseCommand: echo
-# stdout: output.txt
+stdout: output.txt
 inputs:
   message:
     type: string
@@ -11,6 +11,7 @@ inputs:
 outputs:
   example_out:
     type: stdout
+    streamable: true
     outputBinding:
         glob: output.txt
     
