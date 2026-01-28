@@ -110,13 +110,13 @@ class FileObject:
     nameroot: str
     nameext: str
     
-    def __init__(self, file_path: str | Path | FileObject, verbose = False):
+    def __init__(self, file_path: str | Path | FileObject):
         if isinstance(file_path, str):
             file_path = Path(file_path)
         if isinstance(file_path, Path):
             # path: Path = file_path.resolve() < BUG 
             # pathlib.Path.resolve resolves symlinks, which is unwanted
-            # behaviour , as we are often pointing to symlinks. Normalizing
+            # behaviour, as we are sometimes pointing to symlinks. Normalizing
             # the parent and adding the name part circumvents this.
             path: Path = file_path.parent.resolve() / file_path.name
             
@@ -133,6 +133,13 @@ class FileObject:
             self.nameext = file_path.nameext
         else:
             raise Exception(f"FileObject expects 'str' | 'Path' | 'FileObject', but found '{type(file_path)}'")
+
+
+    def resolve(self) -> FileObject:
+        return FileObject(Path(self.path).resolve())
+    
+    def resolve_as_str(self) -> str:
+        return str(Path(self.path).resolve())
 
     def __str__(self) -> str:
         return self.path
@@ -160,7 +167,7 @@ class DirectoryObject:
         if isinstance(dir_path, Path):
             # path: Path = dir_path.resolve() < BUG 
             # pathlib.Path.resolve resolves symlinks, which is unwanted
-            # behaviour , as we are often pointing to symlinks. Normalizing
+            # behaviour, as we are sometimes pointing to symlinks. Normalizing
             # the parent and adding the name part circumvents this.
             path: Path = dir_path.parent.resolve() / dir_path.name
 
@@ -181,6 +188,12 @@ class DirectoryObject:
             # self.location = dir_path.location    # TODO
         else:
             raise Exception(f"DirectoryObject expects 'str' | 'Path' | 'DirectoryObject', but found '{type(dir_path)}'")
+
+    def resolve(self) -> DirectoryObject:
+        return DirectoryObject(Path(self.path).resolve())
+    
+    def resolve_as_str(self) -> str:
+        return str(Path(self.path).resolve())
 
     def __str__(self) -> str:
         return self.path
