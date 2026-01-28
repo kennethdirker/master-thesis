@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, List, Optional, Tuple, Type, Sequence, Mapping, Union
 from types import NoneType
 from js2py.base import JsObjectWrapper
+from copy import deepcopy
 
 class Absent:
     """ 
@@ -86,15 +87,22 @@ class FileObject:
         nameext  : .ext
     """
     
-    path: str = ""
-    basename: str = ""
-    dirname: str = ""
-    nameroot: str = ""
-    nameext: str = ""
+    path: str
+    basename: str
+    dirname: str
+    nameroot: str
+    nameext: str
     
-    def __init__(self, file_path: str | FileObject):
+    def __init__(self, file_path: str | Path | FileObject):
         if isinstance(file_path, str):
-            path: Path = Path(file_path).resolve()
+            file_path = Path(file_path)
+        if isinstance(file_path, Path):
+            # path: Path = file_path.resolve() < BUG 
+            # pathlib.Path.resolve resolves symlinks, which is unwanted
+            # behaviour, as we are sometimes pointing to symlinks. Normalizing
+            # the parent and adding the name part circumvents this.
+            path: Path = file_path.parent.resolve() / file_path.name
+            
             self.path = str(path)
             self.basename = path.name
             self.dirname = str(path.parent)
@@ -107,7 +115,14 @@ class FileObject:
             self.nameroot = file_path.nameroot
             self.nameext = file_path.nameext
         else:
-            raise Exception(f"FileObject expects 'str' or 'FileObject', but found '{type(file_path)}'")
+            raise Exception(f"FileObject expects 'str' | 'Path' | 'FileObject', but found '{type(file_path)}'")
+
+
+    def resolve(self) -> FileObject:
+        return FileObject(Path(self.path).resolve())
+    
+    def resolve_as_str(self) -> str:
+        return str(Path(self.path).resolve())
 
     def __str__(self) -> str:
         return self.path
@@ -127,20 +142,41 @@ class DirectoryObject:
     location: str   # TODO
     path: str
     basename: str
-    listing: List[Union[FileObject, 'DirectoryObject']]
+    listing: List[Union[FileObject, DirectoryObject]]
     
-    def __init__(self, file_path: str):
-        path: Path = Path(file_path).resolve()
-        self.path = str(path)
-        self.basename = path.name
-        # location: str = #TODO
+    def __init__(self, dir_path: str | Path | DirectoryObject):
+        if isinstance(dir_path, str):
+            dir_path = Path(dir_path)
+        if isinstance(dir_path, Path):
+            # path: Path = dir_path.resolve() < BUG 
+            # pathlib.Path.resolve resolves symlinks, which is unwanted
+            # behaviour, as we are sometimes pointing to symlinks. Normalizing
+            # the parent and adding the name part circumvents this.
+            path: Path = dir_path.parent.resolve() / dir_path.name
 
-        self.listing = []
-        for p in path.iterdir():
-            if p.is_dir():
-                self.listing.append(DirectoryObject(str(p)))
-            if p.is_file():
-                self.listing.append(FileObject(str(p)))
+            self.path = str(path)
+            self.basename = path.name
+            # location: str = #TODO
+            # NOTE Does this need to be recursive? 
+            self.listing = []
+            for p in path.iterdir():
+                if p.is_dir():
+                    self.listing.append(DirectoryObject(str(p)))
+                if p.is_file():
+                    self.listing.append(FileObject(str(p)))
+        elif isinstance(dir_path, DirectoryObject):
+            self.path = dir_path.path
+            self.basename = dir_path.basename
+            self.listing = deepcopy(dir_path.listing)
+            # self.location = dir_path.location    # TODO
+        else:
+            raise Exception(f"DirectoryObject expects 'str' | 'Path' | 'DirectoryObject', but found '{type(dir_path)}'")
+
+    def resolve(self) -> DirectoryObject:
+        return DirectoryObject(Path(self.path).resolve())
+    
+    def resolve_as_str(self) -> str:
+        return str(Path(self.path).resolve())
 
     def __str__(self) -> str:
         return self.path

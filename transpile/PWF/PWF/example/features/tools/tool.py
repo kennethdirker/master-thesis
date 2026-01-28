@@ -98,7 +98,7 @@ class tool_PWF(BaseCommandLineTool):
 			},
 			"logfile": {
 				"type": "file[]",
-				"glob": "$('applycal_' + inputs.type)",
+				"glob": "$('applycal_' + inputs.type + '*.log')",
 			},
 		}
 
@@ -110,6 +110,15 @@ class tool_PWF(BaseCommandLineTool):
 	def set_requirements(self):
 		self.requirements = {
 			"InplaceUpdateRequirement": True,
+			"InitialWorkDirRequirement": [
+				{
+					"entryname": "None",
+					"entry": [
+						"$(inputs.msin)",
+					],
+					"writable": "True",
+				},
+			],
 			"ResourceRequirement": {
 				"coresMin": "$(inputs.max_dp3_threads)",
 			},
@@ -121,8 +130,8 @@ class tool_PWF(BaseCommandLineTool):
 
 	def set_io(self):
 		self.io = {
-			"stdout": "$('applycal_' + inputs.type)",
-			"stderr": "$('applycal_' + inputs.type)",
+			"stdout": "$('applycal_' + inputs.type + '.log')",
+			"stderr": "$('applycal_' + inputs.type + '_err.log')",
 		}
 
 if __name__ == "__main__":

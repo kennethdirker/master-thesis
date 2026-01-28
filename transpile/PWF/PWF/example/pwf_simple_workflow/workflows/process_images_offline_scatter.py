@@ -18,9 +18,11 @@ class process_images_offline_scatter_PWF(BaseWorkflow):
 		self.outputs = {
 			"before_noise_remover": {
 				"type": "file",
+				"outputSource": "imageplotter/output",
 			},
 			"after_noise_remover_plot": {
 				"type": "file",
+				"outputSource": "after_plot_inspect/output",
 			},
 		}
 

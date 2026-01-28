@@ -2,6 +2,7 @@
 import glob
 import os
 # import subprocess
+import shutil
 import sys
 
 from abc import abstractmethod
@@ -9,6 +10,7 @@ from contextlib import chdir
 from dask.distributed import Client
 from pathlib import Path
 from subprocess import run, CompletedProcess
+from uuid import uuid4
 
 from types import NoneType
 from typing import (
@@ -30,6 +32,9 @@ from .utils import Absent, FileObject, DirectoryObject, Value, PY_CWL_T_MAPPING,
 
 
 class BaseCommandLineTool(BaseProcess):
+    # Tool info
+    io: dict[str, Any]
+    base_command: list[str] | str | None
 
     def __init__(
             self,
@@ -38,6 +43,7 @@ class BaseCommandLineTool(BaseProcess):
             loading_context: Optional[dict[str, str]] = None,
             parent_process_id: Optional[str] = None,
             step_id: Optional[str] = None,
+            inherited_requirements: Optional[dict[str, Any]] = None,
             PATH: Optional[str] = None,
         ):
         """ TODO: class description """
@@ -48,25 +54,24 @@ class BaseCommandLineTool(BaseProcess):
             runtime_context = runtime_context,
             loading_context = loading_context,
             parent_process_id = parent_process_id,
-            step_id = step_id
+            step_id = step_id,
+            # requirements = requirements,
         )
 
         # Prepare properties
-        self.base_command: list[str] | str | None = None
+        self.base_command = None
         if PATH is None:
             PATH = os.environ.get("PATH", "")
-        # self.env: dict[str, Any] = {}
 
         # Digest CommandlineTool file
-        # self.set_metadata()
-        # self.set_inputs()
-        # self.set_outputs()
-        # self.set_requirements()
         self.set_base_command()
+        self.set_io()
+        self.process_requirements(inherited_requirements)
         
         if main:
             self.register_input_sources()
-            self.execute(self.loading_context["use_dask"], verbose=True)
+            outputs = self.execute(self.loading_context["use_dask"], verbose=True)
+            self.finalize(outputs)
 
 
     def set_metadata(self):
@@ -83,7 +88,8 @@ class BaseCommandLineTool(BaseProcess):
     @abstractmethod
     # FIXME: Better function name
     def set_base_command(self) -> None:
-        """Set the tool's base command.
+        """
+        Set the tool's base command.
 
         Implementations should assign ``self.base_command`` to either a
         string (single command) or a list of strings (command plus fixed
@@ -94,13 +100,50 @@ class BaseCommandLineTool(BaseProcess):
         Example implementations:
             - ``self.base_command = "ls -l"``
             - ``self.base_command = ["ls", "-l"]``
-
-        No return value; raise an exception on invalid configuration.
         """
-        # Example:
-        # self.base_command = "ls -l"
-        # self.base_command = ["ls", "-l"]
         pass
+
+
+    def set_io(self) -> None:
+        """
+        Set the tool's IO options.
+        """
+        pass
+
+
+    def process_requirements(
+            self,
+            inherited_requirements: dict[str, Any] | None
+        ) -> None:
+        """
+        Set the requirements dict with tool-compatible inhertited requirements
+        and override them if present in this tool.
+        """
+        if inherited_requirements is None:
+            return
+        
+        TOOL_REQS = (
+            "InlineJavascriptRequirement",
+            "SchemaDefRequirement",
+            "DockerRequirement",
+            "SoftwareRequirement",
+            "InitialWorkDirRequirement",
+            "EnvVarRequirement",
+            "ShellCommandRequirement",
+            "ResourceRequirement",
+            "LoadListingRequirement",
+            "WorkReuse",
+            "InplaceUpdateRequirement",
+            "ToolTimeLimit"
+        )
+
+        updated_reqs = {}
+        for req_key, req_dict in inherited_requirements.items():
+            if req_key in TOOL_REQS:
+                updated_reqs[req_key] = req_dict
+        for req_key, req_body in self.requirements.items():
+            updated_reqs[req_key] = req_body
+        self.requirements = updated_reqs
 
 
     def register_input_sources(self) -> None:
@@ -114,6 +157,77 @@ class BaseCommandLineTool(BaseProcess):
         
         for input_id in self.inputs:
             self.input_to_source[input_id] = self.global_id(input_id)
+
+
+    def stage_initial_work_dir_requirement(self, tmp_path: Path) -> None:
+        # Stage files from InitialWorkDirRequirement
+        if "InitialWorkDirRequirement" in self.requirements:
+            ...
+        # TODO
+
+
+    def stage_input_files(self, tmp_path: Path) -> None:
+        """
+        """
+        # Stage files and directories from input object
+        for input_id, input_dict in self.inputs.items():
+            types = input_dict["type"]
+            if not isinstance(types, List):
+                types = [types]
+            path_likes = ["file", "file[]", "directory", "directory[]"]
+            if not any(t in path_likes for t in types):
+                continue
+
+            source = self.input_to_source[input_id]
+            value_wrapper = self.runtime_context[source]
+            if isinstance(value_wrapper, Absent):
+                continue
+
+            type_: Type = value_wrapper.type
+            if type_ not in (FileObject, DirectoryObject):
+                # TODO FIXME Error or skip?
+                continue 
+            
+            is_dir = type_ == DirectoryObject
+
+            path_objects = value_wrapper.value
+            if not value_wrapper.is_array:
+                path_objects = [path_objects]
+ 
+            tmp_path_objects = []
+            for path_obj in path_objects:
+                tmp_file_path = tmp_path / Path(path_obj.path).name
+                
+                # Writable files need to be copied to prevent overwriting.
+                # For read-only files creating a symlink suffices.
+                if "writable" in input_dict:
+                    if is_dir:
+                        shutil.copytree(path_obj.path, tmp_file_path)
+                    else:
+                        shutil.copy(path_obj.path, tmp_file_path)
+                else:
+                    tmp_file_path.symlink_to(path_obj.path, is_dir)
+
+                # Save new path
+                tmp_path_objects.append(type_(tmp_file_path))
+
+            # Flatten if needed
+            if not value_wrapper.is_array:
+                tmp_path_objects = tmp_path_objects[0]
+
+            new_value = Value(tmp_path_objects, type_, PY_CWL_T_MAPPING[type_][0])
+            self.runtime_context[source] = new_value
+
+
+    def stage_files(
+            self, 
+            tmp_path: Path, 
+        ) -> None:
+        """
+        TODO Description
+        """
+        self.stage_initial_work_dir_requirement(tmp_path)
+        self.stage_input_files(tmp_path)
 
 
     def prepare_runtime_context(self, cwl_namespace: dict[str, Any]):
@@ -181,7 +295,8 @@ class BaseCommandLineTool(BaseProcess):
             cwl_value_t: str,
             input_dict: dict[str, Any]
         ) -> list[str]:
-        """Compose command-line tokens for an array-typed CWL input.
+        """
+        Compose command-line tokens for an array-typed CWL input.
 
         This function converts a single value or a list of values into the
         appropriate sequence of command-line tokens according to CWL's
@@ -193,8 +308,7 @@ class BaseCommandLineTool(BaseProcess):
                 command line. If a non-list is provided it will be wrapped
                 into a one-element list.
             cwl_value_t: The CWL runtime type string for the items (for
-                example: ``"string"``, ``"file"``, ``"int"``, or the
-                corresponding array form like ``"string[]"``). If the type
+                example: ``"string"``, ``"file"``, ``"int"``. If the type
                 is ``"null"`` or the list is empty, an empty list is
                 returned.
             input_dict: The CWL input definition (inputBinding) which may
@@ -292,8 +406,7 @@ class BaseCommandLineTool(BaseProcess):
             empty list if the value is considered absent.
 
         Notes:
-            For boolean inputs with a prefix, this function currently
-            treats the prefix as a flag (prefix only).
+            Booleans with prefix act as flags.
         """
         # Head of array will be used to format the argument
         if isinstance(value, List):
@@ -418,15 +531,18 @@ class BaseCommandLineTool(BaseProcess):
                     raise Exception(f"Tool input '{input_id}' supports CWL types [{', '.join(expected_types)}], but found CWL types '{value_cwl_t} (from '{type(value)}')")
                 continue
 
-            expects_array: bool = value_cwl_t + "[]" in expected_types and is_array
-            # If we get array data, prioritize array type over single type,
-            # Unless we have an array with 1 item and expected type supports
-            # both single and array, in which case we choose single.
-            # expects_array: bool = value_cwl_t + "[]" in expected_types
-            # if  isinstance(value, List) and len(value) == 1 and value_cwl_t in expected_types:
-                # expects_array = False
+            if v.type in (FileObject, DirectoryObject):
+                if is_array:
+                    resolved = []
+                    for elem in value:
+                        resolved.append(elem.resolve())
+                    value = resolved
+                else:
+                    value = value.resolve()
 
-            if expects_array:
+            # expects_array: bool = value_cwl_t + "[]" in expected_types and is_array
+            # Check whether an array is expected or not
+            if value_cwl_t + "[]" in expected_types and is_array:
                 # Compose argument with array data
                 cmd.extend(self.compose_array_arg(value, value_cwl_t, input_dict))
             else:
@@ -484,8 +600,7 @@ class BaseCommandLineTool(BaseProcess):
             cwl_namespace: dict[str, Any],
             output_schema: dict[str, Any],
             env: dict[str, Any],
-            # stdout: Optional[IO[AnyStr]], # TODO
-            # stderr: Optional[IO[AnyStr]], # TODO
+            cwd: Path,
         ) -> dict[str, Value]:
         """Execute the command and produce CWL-typed outputs.
 
@@ -512,33 +627,35 @@ class BaseCommandLineTool(BaseProcess):
             NotImplementedError for features not yet implemented (e.g.
             ``loadContents`` handling), or re-raises subprocess errors.
         """
-        # print("Namespace: ", cwl_namespace)
-
         # Execute tool
         print("[TOOL]: EXECUTING:", " ".join(cmd))
         try:
+            stdin = sys.stdin
+            stdout = sys.stdout
+            stderr = sys.stderr
+            if "stdin" in self.io:
+                stdin = open(self.io["stdin"], "r")
+            if "stdout" in self.io:
+                stdout = open(self.io["stdout"], "w")
+            if "stderr" in self.io:
+                stderr = open(self.io["stderr"], "w")
+
             completed: CompletedProcess = run(
                 cmd,
-                # stdout = stdout,  # TODO
-                # stderr = stderr,  # TODO
-                capture_output=True,
-                env = env
+                stdin = stdin,
+                stdout = stdout,
+                stderr = stderr,
+                env = env,
+                cwd = cwd,
             )
         except Exception as e:
             raise e
 
-        # Capture stdout and stderr from command. 
-        # FIXME: stdout and stderr should be redirected instead of captured
-        # TODO Maybe wrap in Value object (later on)?
-        outputs: dict = {
-            "stdout": completed.stdout,
-            "stderr": completed.stderr
-        }
-        
         # Process outputs.
         # Command outputs are matched against the tool's output schema. Tool 
         # outputs are generated based on the output bindings defined in the
         # output schema.
+        outputs: dict[str, Any] = {}
         for output_id, output_dict in output_schema.items():
             global_output_id = self.global_id(output_id)
             
@@ -578,19 +695,21 @@ class BaseCommandLineTool(BaseProcess):
                     if not isinstance(g, str):
                         raise Exception(f"Output '{output_id}' has glob '{g}' that should be 'str', but is '{type(g)}'")
                     
-                # Collect matched files
+                # Collect matching files. Because not CWD but a tmp CWD is,
+                # the tmp CWD path needs to be prefixed. 
                 output_file_paths: List[str] = []
                 for g in globs:
-                    output_file_paths.extend(glob.glob(g))
-                    # output_file_paths.extend(glob.glob(g, root_dir = self.loading_context["designated_out_dir"])) # FIXME Uncomment when out dir is used correctly 
-                
+                    for match in glob.glob(g, root_dir = cwd):
+                        match_path = Path(cwd) / Path(match)
+                        output_file_paths.append(str(match_path))
+                        
                 # Set 'self' for outputEval and loadContents
                 cwl_namespace["self"] = output_file_paths
 
                 # Set glob matches as output value
                 if len(output_file_paths) == 0:
                     outputs[global_output_id] = None
-                elif "file" in expected_types:
+                elif "file" in expected_types or "stdout" in expected_types:
                     outputs[global_output_id] = Value(FileObject(output_file_paths[0]), FileObject, "file")
                 elif "file[]" in expected_types:
                     outputs[global_output_id] = Value([FileObject(p) for p in output_file_paths], FileObject, "file")
@@ -604,21 +723,20 @@ class BaseCommandLineTool(BaseProcess):
                     outputs[global_output_id] = Value(output_file_paths, str, "string")
 
             # loadContents
-            if ("loadContents" in output_dict and output_dict["outputEval"] is not None):
+            if ("loadContents" in output_dict and
+                output_dict["outputEval"] is not None):
                 if not any(["file" in type_ for type_ in expected_types]):
                     raise Exception(f"loadContents must only be used on 'file' or 'file[]' type")
                 # TODO
                 raise NotImplementedError()
 
             # outputEval
-            if (
-                "outputEval" in output_dict and 
-                output_dict["outputEval"] is not None
-            ):
+            if ("outputEval" in output_dict and 
+                output_dict["outputEval"] is not None):
                 # Evaluated expression might yield any type, so validation is needed
                 value = self.eval(output_dict["outputEval"], cwl_namespace)
 
-                # TODO Match received and expected CWL types of output
+                # Match received and expected CWL types of output
                 is_array: bool = False
                 if isinstance(value, List):
                     # Value is an array
@@ -661,7 +779,6 @@ class BaseCommandLineTool(BaseProcess):
                 else:
                     outputs[global_output_id] = Value(_type(value), _type, value_type)
 
-
             # secondaryFiles
             if ("secondaryFiles" in output_dict and output_dict["outputEval"] is not None):
                 if not any(["file" in type_ for type_ in expected_types]):
@@ -688,10 +805,10 @@ class BaseCommandLineTool(BaseProcess):
         TODO Add info about scatter_info 
         Top-level execution entrypoint for the tool.
 
-        This method prepares the runtime namespace and context, builds the
-        command line and environment, and executes the tool either locally
-        or via a Dask ``Client``. The outputs returned by ``run_wrapper``
-        are returned as the new runtime state.
+        This method prepares the runtime environment, builds the
+        command line, and executes the tool either locally
+        or via a Dask ``Client``. Outputs are returned in a dict with the
+        output ID as key.
 
         Args:
             use_dask: If True, submit the work to the provided or a new
@@ -709,11 +826,15 @@ class BaseCommandLineTool(BaseProcess):
         if runtime_context is not None:
             self.runtime_context = runtime_context
 
+        # Create a temporary work directory and stage all needed files
+        tmp_path: Path = self.loading_context["designated_tmp_dir"]
+        tmp_path /= str(uuid4())
+        tmp_path.mkdir()
+        self.stage_files(tmp_path)
 
         # Build the command line
         cwl_namespace = self.build_namespace()
         self.prepare_runtime_context(cwl_namespace)
-        # self.match_inputs()
         cmd: list[str] = self.build_commandline()
 
         # Build the execution environment
@@ -731,6 +852,7 @@ class BaseCommandLineTool(BaseProcess):
                 cwl_namespace,
                 self.outputs,
                 env,
+                cwd = tmp_path,
                 pure = False
             )
             new_state = future.result()
@@ -739,20 +861,8 @@ class BaseCommandLineTool(BaseProcess):
                 cmd,
                 cwl_namespace,
                 self.outputs,
-                env
+                env,
+                cwd = tmp_path,
             )
-
-        print(f"[TOOL]: Outputs:")
-        for k, v in new_state.items():
-            if k not in ("stdout", "stderr"):
-                print(f"[TOOL]: \t- {k}: {v}")
-
-        # Print stderr/stdout
-        # FIXME TODO Redirect to configured stdout/stderr
-        if "stdout" in new_state:
-            print(new_state["stdout"], file=sys.stdout)
-
-        if "stderr" in new_state:
-            print(new_state["stderr"], file=sys.stderr)
 
         return new_state, scatter_info

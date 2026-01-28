@@ -21,6 +21,10 @@ Future: TypeAlias = concurrent.futures.Future | dask.distributed.Future
 
 
 class BaseWorkflow(BaseProcess):
+    # Step info
+    step_id_to_process: dict[str, BaseProcess]
+    steps: dict[str, dict[str, Any]]
+
     def __init__(
             self,
             main: bool = True,
@@ -28,6 +32,7 @@ class BaseWorkflow(BaseProcess):
             loading_context: Optional[dict[str, str]] = None,
             parent_process_id: Optional[str] = None,
             step_id: Optional[str] = None,
+            inherited_requirements: Optional[dict[str, Any]] = None
         ):
         """
         TODO: class description 
@@ -39,24 +44,22 @@ class BaseWorkflow(BaseProcess):
             loading_context = loading_context,
             parent_process_id = parent_process_id,
             step_id = step_id,
+            # requirements = requirements
         )
 
         # TODO Decide if this is the way, see set_groups()
         # self.groupings = ...
 
         # Mapping of a step ID to its child BaseProcess object
-        self.step_id_to_process: dict[str, BaseProcess] = {}
+        self.step_id_to_process = {}
 
         # Must be overridden in set_steps().
-        self.steps: dict[str, dict[str, Any]] = {}
+        self.steps = {}
 
         # Digest workflow file
-        # self.set_metadata()
-        # self.set_inputs()
-        # self.set_outputs()
-        # self.set_requirements()
         self.set_steps()
         self.load_step_processes()
+        self.process_requirements(inherited_requirements)
 
         # Only the main process executes the workflow.
         if main:
@@ -65,7 +68,8 @@ class BaseWorkflow(BaseProcess):
             self.set_scatters_gathers()
             self.create_dependency_graph()
             self.optimize_dependency_graph()
-            self.execute(self.loading_context["use_dask"])
+            outputs = self.execute(self.loading_context["use_dask"])
+            self.finalize(outputs)
 
 
     @abstractmethod
@@ -105,6 +109,23 @@ class BaseWorkflow(BaseProcess):
         pass
 
 
+    def process_requirements(
+            self,
+            inherited_requirements: dict[str, Any] | None
+        ) -> None:
+        """
+        Set the requirements dict with inhertited requirements and override
+        them if present in this tool.
+        """
+        if inherited_requirements is None:
+            return
+
+        updated_reqs = inherited_requirements
+        for req_key, req_body in self.requirements.items():
+            updated_reqs[req_key] = req_body
+        self.requirements = updated_reqs
+
+
     def set_groups(self) -> None:
         """
         Override to declare which steps should be grouped and executed
@@ -121,7 +142,7 @@ class BaseWorkflow(BaseProcess):
         sub-processes of the main workflow class are loaded recursively.
         """
         for step_id, step_dict in self.steps.items():
-            sub_process = self._load_process_from_uri(step_dict["run"], step_id)
+            sub_process = self._load_process_from_uri(step_dict["run"], step_id, self.requirements)
             self.loading_context["processes"][sub_process.id] = sub_process
 
 
@@ -217,7 +238,6 @@ class BaseWorkflow(BaseProcess):
                     if is_static:
                         # Input comes from default or valueFrom
                         process.input_to_source[input_id] = _process.global_id(_step_id + "/" + input_id)
-                        # print(f"[ASSIGN] {source} -> {process.input_to_source[input_id]}")
                         if source is None:
                             value = Absent("Value comes from valueFrom and is not yet filled in")
                         else:
@@ -420,56 +440,7 @@ class BaseWorkflow(BaseProcess):
                 if not type(expr_result) in PY_CWL_T_MAPPING:
                     raise Exception(f"Found unsupported type: '{type(expr_result)}'")
                 value = Value(expr_result, type(expr_result), PY_CWL_T_MAPPING[type(expr_result)][0])
-                
             step_runtime_context[source] = value
-
-        # for input_id, input_dict in tool.inputs.items():
-        #     expected_types = input_dict["type"]
-        #     source = tool.input_to_source[input_id]
-        #     parent_id = ":".join(source.split(":")[:2]) # Get parent workflow ID
-
-        #     value = step_runtime_context[source].value
-        #     if not isinstance(value, str):
-        #         continue
-
-        #     expr = value
-        #     if (expr.startswith("$") and expr.endswith("$") or  # Python
-        #         expr.startswith("$(") and expr.endswith(")")):  # JS
-        #         # Input is an expression from a valueFrom field
-        #         process: BaseWorkflow = self.loading_context["processes"][parent_id]
-                
-        #         # Build CWL namespace for expression evaluation and evaluate
-        #         cwl_namespace = process.build_step_namespace(tool, step_runtime_context)
-        #         value = self.eval(expr, cwl_namespace)
-                
-        #         # Wrap the return value of the expression in a Value instance.
-        #         if isinstance(value, str):
-        #             if "file" in expected_types:
-        #                 value = Value(FileObject(value), FileObject, "file")
-        #             elif "directory" in expected_types:
-        #                 value = Value(DirectoryObject(value), DirectoryObject, "directory")
-        #             else:
-        #                 value = Value(value, str, "string")
-        #         elif isinstance(value, List):
-        #             expected_types = [t.replace("[]", "") for t in expected_types if "[]" in t] 
-        #             if len(value) == 0:
-        #                 # TODO Empty array can have any type...
-        #                 raise NotImplementedError()
-        #                 # value = Value([], ..., ...)   #   Implement an Any type? 
-
-        #             if isinstance(value[0], str):
-        #                 if "file" in expected_types:
-        #                     value = Value([FileObject(v) for v in value], FileObject, "file")
-        #                 elif "directory" in expected_types:
-        #                     value = Value([DirectoryObject(v) for v in value], DirectoryObject, "file")
-        #                 else:
-        #                     value = Value(value, str, "string")
-        #             else:
-        #                 value = Value(value, type(value[0]), PY_CWL_T_MAPPING[type(value[0])][0])
-        #         else:
-        #             value = Value(value, type(value), PY_CWL_T_MAPPING[type(value)][0])
-                    
-        #         step_runtime_context[source] = value
         return step_runtime_context
 
 
@@ -483,7 +454,7 @@ class BaseWorkflow(BaseProcess):
         ) -> dict[str, Any]:
         """
         Execute the tasks of this node. 
-        TODO Untested!            
+        TODO Only tested on nodes containing a single tool node!
         """
         graph = workflow_node.graph
         if graph is None:
@@ -666,12 +637,21 @@ class BaseWorkflow(BaseProcess):
                         print("[WORKFLOW]: Completed node", graph.short_id[running_task[1].id])
                         lprint()
             time.sleep(0.1)
+
         # Check for deadlock
         if len(runnable) == 0 and len(running) == 0 and len(waiting) != 0:
             s = "\n\t".join([node_id for node_id in waiting.keys()])
             raise Exception(f"Deadlock detected. Waiting nodes:\n\t{s}")
-            
-        return outputs
+        
+        # Output keys are prefixed with the global ID of the tool that created
+        # the outputs, resulting in a mismatch between that key  
+        new_outputs: dict[str, Any] = {}
+        for output_id, output_dict in self.outputs.items():
+            step_id, step_output_id = output_dict["outputSource"].split("/")
+            value = outputs[self.step_id_to_process[step_id].global_id(step_output_id)]
+            new_outputs[self.global_id(output_id)] = value
+
+        return new_outputs
 
 
     def _load_process_from_uri(
@@ -679,6 +659,7 @@ class BaseWorkflow(BaseProcess):
             uri: str,
             step_id: str,
             # scatter: Optional[Scatter]
+            requirements,
         ) -> BaseProcess:
         """
         Dynamic Process loading from file. Raises an exception if no valid 
@@ -724,7 +705,8 @@ class BaseWorkflow(BaseProcess):
                 loading_context = self.loading_context,
                 parent_process_id = self.id,
                 step_id = step_id,
-                scatter = scatter
+                # scatter = scatter,
+                inherited_requirements = requirements
             )
         raise Exception(f"{uri} does not contain a BaseProcess subclass")
     

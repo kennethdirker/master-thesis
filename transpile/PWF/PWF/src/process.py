@@ -2,16 +2,15 @@ import argparse
 import copy
 import inspect
 import js2py
+import json
 import os
+import shutil
 import sys
 import uuid
 import yaml
 
 from abc import ABC, abstractmethod
 from copy import deepcopy
-# from dask.delayed import Delayed
-from dask.distributed import Client
-from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping, List, Optional, Type, Union, cast
 
@@ -30,6 +29,27 @@ from .utils import (
 
 
 class BaseProcess(ABC):
+    # Process info
+    is_main: bool
+    short_id: str
+    process_path: str
+    id: str
+
+    # Parent process info
+    parent_process_id: str | None
+    step_id: str | None
+
+    # Tool/workflow info
+    metadata: dict[str, Any]
+    inputs: dict[str, Any]
+    outputs: dict[str, Any]
+    requirements: dict[str, Any]
+
+    # Runtime info
+    input_to_source: dict[str, str]
+    loading_context: dict[str, Any]
+    runtime_context: dict[str, Value | Absent]
+
     def __init__(
             self,
             main: bool = True,
@@ -37,6 +57,7 @@ class BaseProcess(ABC):
             loading_context: Optional[dict[str, Any]] = None,
             parent_process_id: Optional[str] = None,
             step_id: Optional[str] = None,
+            inherited_requirements: Optional[dict[str, Any]] = None,
             # scatter: Optional[Scatter] = None,
         ) -> None:
         """ 
@@ -46,6 +67,17 @@ class BaseProcess(ABC):
         main
         # TODO Explain runtime_context
         # TODO Explain loading_context
+            - graph (Graph)
+            - processes (list[Process])
+            - input_object dict[str, Any]
+            - PATH (str)
+            - init_work_dir (Path)
+            - designated_out_dir (Path)
+            - init_out_dir_empty (bool)
+            - designated_tmp_dir (Path)
+            - init_tmp_dir_empty (bool)
+            - preserve_tmp (bool)
+            - use_dask  (bool)
 
         Implementation NOTE: BaseProcess __init__ must be called from the
         subclass __init__ before any other state is touched.
@@ -53,13 +85,13 @@ class BaseProcess(ABC):
         # A process that is called from the command-line is root. Processes
         # that are instantiated from other another process (sub-processes)
         # are not root.
-        self.is_main: bool = main
+        self.is_main = main
 
         # Unique identity of a process instance. The id looks as follows:
         #   "{path/to/process/script/file}:{uuid}"
         # Where {uuid} has the format of {8x-4x-4x-6x} and x is a hex number 
-        self.short_id: str = str(uuid.uuid4())
-        self.process_path: str = str(Path(inspect.getfile(type(self))).resolve())
+        self.short_id = str(uuid.uuid4())
+        self.process_path = str(Path(inspect.getfile(type(self))).resolve())
         self.id = self.process_path + ":" + self.short_id
 
         # ID of the step and process from which this process is called.
@@ -67,38 +99,42 @@ class BaseProcess(ABC):
         if main:
             step_id = None
             parent_process_id = None
-        self.parent_process_id: str | None = parent_process_id
-        self.step_id: str | None = step_id
+        self.parent_process_id = parent_process_id
+        self.step_id = step_id
 
         # Assign metadata attributes. Override in self.set_metadata().
-        self.metadata: dict[str, str] = {}
+        self.metadata = {}
+        # self.label: str = "" # Human readable process name.
+        # self.doc:   str = "" # Human readable process explaination.
         
         # Assign input/output dictionary attributes.
-        self.inputs:  dict = {} # Override in set_inputs()
-        self.outputs: dict = {} # Override in set_outputs()
+        # FIXME: dicts could use custom types like CWLTool does, instead of dicts.
+        self.inputs = {} # Override in set_inputs()
+        self.outputs = {} # Override in set_outputs()
 
         # Maps input_id to its global source id, which is used as key in runtime_context
-        self.input_to_source: dict[str, str] =  {}  # {input_id, global_source_id}
+        self.input_to_source =  {}  # {input_id, global_source_id}
         
         # Assign requirements and hints.
         # Override in set_requirements().
-        self.requirements:  dict = {}
+        self.requirements = {}
 
         # NOTE: Not sure if I want to support hints, force requirements only?
-        self.hints: dict = {}   
+        # self.hints: dict = {}   
         
         # Digest basic process attributes
         self.set_metadata()
         self.set_inputs()
         self.set_outputs()
         self.set_requirements()
+        # self.process_requirements(requirements)
         
         # TODO Update description
         # Assign a dictionary with runtime input variables and a dictionary to
         # map processes and step IDs. Only the root process must load the input
         # YAML from a file. Non-root processes get a reference to the
         # dictionary loaded in the main process.
-        self.runtime_context: dict[str, Value | Absent] = {}
+        self.runtime_context = {}
         if main:
             self.loading_context = {}
             self.loading_context["graph"] = Graph() # Used in create_dependency_graph()
@@ -109,6 +145,8 @@ class BaseProcess(ABC):
             self.runtime_context = self._load_input_object(self.loading_context["input_object"])
             # Copy system PATH environment variable
             self.loading_context["PATH"] = os.environ.get("PATH")
+            # Save the path to the initial current work directory
+            self.loading_context["init_work_dir"] = Path(os.getcwd())
         else:
             if runtime_context is None:
                 raise Exception(f"Subprocess {type(self)}({self.id}) is not initialized as root process, but lacks runtime context")
@@ -130,7 +168,7 @@ class BaseProcess(ABC):
         Create and return an argument parser for command-line arguments.
 
         TODO Description (schema) of arguments
-        python process.py [--outdir OUTDIR] [--tmpdir TMPDIR] [--dask] input_object.yaml
+        python PWF.py [--outdir OUTDIR, --tmpdir TMPDIR, --preserve_tmp, --dask] input_object.yaml
         """
         parser = argparse.ArgumentParser()
         parser.add_argument(
@@ -150,6 +188,12 @@ class BaseProcess(ABC):
             type = str,
             default = "/tmp/" + str(uuid.uuid4()),
             help="Directory to store temporary files in."
+        )
+        parser.add_argument(
+            "--preserve_tmp",
+            action="store_true",
+            default = False,
+            help="Preserve temporary files and directories created for tool execution instead of deleting them."
         )
         parser.add_argument(
             "--dask",
@@ -181,7 +225,7 @@ class BaseProcess(ABC):
         out_dir_path = Path(args.outdir).absolute()
         if out_dir_path.exists() and not out_dir_path.is_dir():
             raise Exception(f"Output directory {out_dir_path} is not a directory")
-        out_dir_path.mkdir(parents=True, exist_ok=True)            # Create tmp dir
+        out_dir_path.mkdir(parents=True, exist_ok=True)            # Create out dir
         is_empty = not any(out_dir_path.iterdir())  # Check if out dir is empty
         loading_context["init_out_dir_empty"] = is_empty
         loading_context["designated_out_dir"] = out_dir_path
@@ -196,8 +240,10 @@ class BaseProcess(ABC):
         is_empty = not any(tmp_dir_path.iterdir())  # Check if tmp dir is empty
         loading_context["init_tmp_dir_empty"] = is_empty
         loading_context["designated_tmp_dir"] = tmp_dir_path
-        print(f"[Process]: Designated temporary directory:")
-        print(f"[PROCESS]:\t{loading_context['designated_tmp_dir']}")
+        loading_context["preserve_tmp"] = args.preserve_tmp
+        s = "" if args.preserve_tmp else "not "
+        print(f"[Process]: Designated temporary directory ({s}preserved):")
+        print(f"[PROCESS]:\t{tmp_dir_path}")
 
         # Configure whether Dask is used for execution
         loading_context["use_dask"] = args.dask
@@ -206,7 +252,7 @@ class BaseProcess(ABC):
 
     def global_id(self, s: str) -> str:
         """
-        Concatenate the process ID and another string, split by a colon.
+        Concatenate the process UID and another string, split by a colon.
         """
         return self.id  + ":" + s
 
@@ -488,12 +534,36 @@ class BaseProcess(ABC):
     @abstractmethod
     def register_input_sources(self) -> None:
         """
-        TODO
         Cache the source of each input with an ID unique to each Process 
         instance. The mapping is saved under self.input_to_sources. The key of
         each input can be found by using self.global_id().
         """
         pass
+
+
+    def process_requirements(
+            self,
+            requirements: Optional[dict[str, Any]] = None,
+        ) -> None:
+        """
+        TODO Finish
+        Combine inherited requirements with the process' own requirements.
+        Processes can inherit certain requirements from their parents.
+        Child processes can overwrite these inherited requirements, but
+        in some cases inherited requirements should be added to, instead of
+        completely replaced.
+        """
+        if requirements is None:
+            return
+        
+        final_reqs: dict[str, Any] = {}
+        #  TODO Which requirements can be inherited?
+        #     - InitialWorkDirRequirement
+        #     -
+        #     -
+        #     -
+        #     -
+        self.requirements = final_reqs
 
 
     def build_namespace(self) -> dict[str, Any]:
@@ -617,6 +687,66 @@ class BaseProcess(ABC):
             print(f"[EVAL]: '{expression}' ({type(expression)}) -> '{ret}' ({type(ret)})")
 
         return ret
+
+
+    def publish_output(self, outputs: dict[str, Any]) -> str:
+        """
+        Copy the output files to the designated output directory and return a
+        JSON string containing the outputs.
+        """
+        copy_alert = True
+        new_outputs: dict[str, Any] = {}
+        for output_id in self.outputs:
+            value_wrapper = outputs[self.global_id(output_id)]
+            type_ = value_wrapper.type
+            if type_ in (FileObject, DirectoryObject):
+                # Files and directories need to be moved to the output directory
+                if copy_alert:
+                    print("[PROCESS]: Moving output to designated output directory:")
+                    copy_alert = False
+
+                values: List[Any]
+                if value_wrapper.is_array:
+                    values = value_wrapper.value
+                else:
+                    values = [value_wrapper.value]
+
+                # Move the outputs to the output directory
+                new_paths: List[str] = []
+                for path_object in values:
+                    old_path = Path(path_object.path)
+                    out_dir = self.loading_context["designated_out_dir"]
+                    new_path = shutil.move(old_path, out_dir)
+                    new_paths.append(str(new_path))
+                    print(f"[PROCESS]:\t- {output_id}: {old_path} >> {new_path}")
+
+                new_outputs[output_id] = new_paths
+                if not value_wrapper.is_array:
+                    new_outputs[output_id] = new_paths[0]
+            else:
+                new_outputs[output_id] = value_wrapper.value
+        return json.dumps(new_outputs, indent = 4)
+
+
+    def delete_temps(self):
+        if self.loading_context["preserve_tmp"]: return
+        if not self.loading_context["init_tmp_dir_empty"]:
+            # Designated temporary directory was not empty on start, so we 
+            # cannot savely delete the directory without deleting files from
+            # other sources.
+            print("[PROCESS]: Skip deleting temporary directory as it was initially not empty")
+            return
+        
+        print("[PROCESS]: Deleting temporary directory:")
+        print(f"[PROCESS]:\t{self.loading_context['designated_tmp_dir']}")
+        shutil.rmtree(self.loading_context["designated_tmp_dir"])
+
+
+    def finalize(self, outputs: dict[str, Any]):
+        print()
+        outputs_json = self.publish_output(outputs)
+        self.delete_temps()
+        print(outputs_json)
 
 
 
