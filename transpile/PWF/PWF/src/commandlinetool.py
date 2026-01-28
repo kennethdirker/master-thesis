@@ -62,13 +62,8 @@ class BaseCommandLineTool(BaseProcess):
         self.base_command = None
         if PATH is None:
             PATH = os.environ.get("PATH", "")
-        # self.env: dict[str, Any] = {}
 
         # Digest CommandlineTool file
-        # self.set_metadata()
-        # self.set_inputs()
-        # self.set_outputs()
-        # self.set_requirements()
         self.set_base_command()
         self.set_io()
         
@@ -126,27 +121,25 @@ class BaseCommandLineTool(BaseProcess):
         
         for input_id in self.inputs:
             self.input_to_source[input_id] = self.global_id(input_id)
-    
 
-    def stage_files(
-            self, 
-            tmp_path: Path, 
-            # runtime_copy: dict[str, Any],
-        ) -> None:
-        # ) -> dict[str, str]:
-        # stage_mapping: dict[str, str] = {}
+
+    def stage_initial_work_dir_requirement(self, tmp_path: Path) -> None:
         # Stage files from InitialWorkDirRequirement
         if "InitialWorkDirRequirement" in self.requirements:
             ...
         # TODO
 
-        # Stage files from input object
+
+    def stage_input_files(self, tmp_path: Path) -> None:
+        """
+        """
+        # Stage files and directories from input object
         for input_id, input_dict in self.inputs.items():
             types = input_dict["type"]
             if not isinstance(types, List):
                 types = [types]
             path_likes = ["file", "file[]", "directory", "directory[]"]
-            if not any(t in types for t in path_likes):
+            if not any(t in path_likes for t in types):
                 continue
 
             source = self.input_to_source[input_id]
@@ -155,33 +148,50 @@ class BaseCommandLineTool(BaseProcess):
                 continue
 
             type_: Type = value_wrapper.type
-            if not isinstance(type_, (FileObject, DirectoryObject)):
+            if type_ not in (FileObject, DirectoryObject):
                 # TODO FIXME Error or skip?
                 continue 
+            
+            is_dir = type_ == DirectoryObject
 
-            is_dir = isinstance(type_, DirectoryObject)
             path_objects = value_wrapper.value
             if not value_wrapper.is_array:
                 path_objects = [path_objects]
-
-            # cwd: Path = self.loading_context["init_work_dir"]
-            if "writable" in input_dict:
-                # We need to make a copy, because files are writable and
-                # otherwise overwrite original files
-                raise NotImplementedError()
-            else:
-                tmp_path_objects = []
-                for path_obj in path_objects:
-                    tmp_file_path = tmp_path / Path(path_obj.path).name
-                    tmp_file_path.symlink_to(path_obj.path, is_dir)
+ 
+            tmp_path_objects = []
+            for path_obj in path_objects:
+                tmp_file_path = tmp_path / Path(path_obj.path).name
+                
+                # Writable files need to be copied to prevent overwriting.
+                # For read-only files creating a symlink suffices.
+                if "writable" in input_dict:
                     if is_dir:
-                        tmp_path_objects.append(DirectoryObject(tmp_file_path))
+                        shutil.copytree(path_obj.path, tmp_file_path)
                     else:
-                        tmp_path_objects.append(FileObject(tmp_file_path))
-                if len(tmp_path_objects) == 1:
-                    tmp_path_objects = tmp_path_objects[0]
-                new_value = Value(tmp_path_objects, type_, PY_CWL_T_MAPPING[type_][0])
-                self.runtime_context[source] = new_value
+                        shutil.copy(path_obj.path, tmp_file_path)
+                else:
+                    tmp_file_path.symlink_to(path_obj.path, is_dir)
+
+                # Save new path
+                tmp_path_objects.append(type_(tmp_file_path))
+
+            # Flatten if needed
+            if not value_wrapper.is_array:
+                tmp_path_objects = tmp_path_objects[0]
+
+            new_value = Value(tmp_path_objects, type_, PY_CWL_T_MAPPING[type_][0])
+            self.runtime_context[source] = new_value
+
+
+    def stage_files(
+            self, 
+            tmp_path: Path, 
+        ) -> None:
+        """
+        TODO Description
+        """
+        self.stage_initial_work_dir_requirement(tmp_path)
+        self.stage_input_files(tmp_path)
 
 
     def prepare_runtime_context(self, cwl_namespace: dict[str, Any]):
@@ -485,15 +495,18 @@ class BaseCommandLineTool(BaseProcess):
                     raise Exception(f"Tool input '{input_id}' supports CWL types [{', '.join(expected_types)}], but found CWL types '{value_cwl_t} (from '{type(value)}')")
                 continue
 
-            expects_array: bool = value_cwl_t + "[]" in expected_types and is_array
-            # If we get array data, prioritize array type over single type,
-            # Unless we have an array with 1 item and expected type supports
-            # both single and array, in which case we choose single.
-            # expects_array: bool = value_cwl_t + "[]" in expected_types
-            # if  isinstance(value, List) and len(value) == 1 and value_cwl_t in expected_types:
-                # expects_array = False
+            if v.type in (FileObject, DirectoryObject):
+                if is_array:
+                    resolved = []
+                    for elem in value:
+                        resolved.append(elem.resolve())
+                    value = resolved
+                else:
+                    value = value.resolve()
 
-            if expects_array:
+            # expects_array: bool = value_cwl_t + "[]" in expected_types and is_array
+            # Check whether an array is expected or not
+            if value_cwl_t + "[]" in expected_types and is_array:
                 # Compose argument with array data
                 cmd.extend(self.compose_array_arg(value, value_cwl_t, input_dict))
             else:
@@ -551,8 +564,7 @@ class BaseCommandLineTool(BaseProcess):
             cwl_namespace: dict[str, Any],
             output_schema: dict[str, Any],
             env: dict[str, Any],
-            # stdout: Optional[IO[AnyStr]], # TODO
-            # stderr: Optional[IO[AnyStr]], # TODO
+            cwd: Path,
         ) -> dict[str, Value]:
         """Execute the command and produce CWL-typed outputs.
 
@@ -579,8 +591,6 @@ class BaseCommandLineTool(BaseProcess):
             NotImplementedError for features not yet implemented (e.g.
             ``loadContents`` handling), or re-raises subprocess errors.
         """
-        # print("Namespace: ", cwl_namespace)
-
         # Execute tool
         print("[TOOL]: EXECUTING:", " ".join(cmd))
         try:
@@ -599,19 +609,12 @@ class BaseCommandLineTool(BaseProcess):
                 stdin = stdin,
                 stdout = stdout,
                 stderr = stderr,
-                env = env
+                env = env,
+                cwd = cwd,
             )
         except Exception as e:
             raise e
 
-        # Capture stdout and stderr from command. 
-        # FIXME: stdout and stderr should be redirected instead of captured
-        # TODO Maybe wrap in Value object (later on)?
-        # outputs: dict = {
-        #     "stdout": completed.stdout,
-        #     "stderr": completed.stderr
-        # }
-        
         # Process outputs.
         # Command outputs are matched against the tool's output schema. Tool 
         # outputs are generated based on the output bindings defined in the
@@ -656,12 +659,14 @@ class BaseCommandLineTool(BaseProcess):
                     if not isinstance(g, str):
                         raise Exception(f"Output '{output_id}' has glob '{g}' that should be 'str', but is '{type(g)}'")
                     
-                # Collect matched files
+                # Collect matching files. Because not CWD but a tmp CWD is,
+                # the tmp CWD path needs to be prefixed. 
                 output_file_paths: List[str] = []
                 for g in globs:
-                    output_file_paths.extend(glob.glob(g))
-                    # output_file_paths.extend(glob.glob(g, root_dir = self.loading_context["designated_out_dir"])) # FIXME Uncomment when out dir is used correctly 
-                
+                    for match in glob.glob(g, root_dir = cwd):
+                        match_path = Path(cwd) / Path(match)
+                        output_file_paths.append(str(match_path))
+                        
                 # Set 'self' for outputEval and loadContents
                 cwl_namespace["self"] = output_file_paths
 
@@ -682,21 +687,20 @@ class BaseCommandLineTool(BaseProcess):
                     outputs[global_output_id] = Value(output_file_paths, str, "string")
 
             # loadContents
-            if ("loadContents" in output_dict and output_dict["outputEval"] is not None):
+            if ("loadContents" in output_dict and
+                output_dict["outputEval"] is not None):
                 if not any(["file" in type_ for type_ in expected_types]):
                     raise Exception(f"loadContents must only be used on 'file' or 'file[]' type")
                 # TODO
                 raise NotImplementedError()
 
             # outputEval
-            if (
-                "outputEval" in output_dict and 
-                output_dict["outputEval"] is not None
-            ):
+            if ("outputEval" in output_dict and 
+                output_dict["outputEval"] is not None):
                 # Evaluated expression might yield any type, so validation is needed
                 value = self.eval(output_dict["outputEval"], cwl_namespace)
 
-                # TODO Match received and expected CWL types of output
+                # Match received and expected CWL types of output
                 is_array: bool = False
                 if isinstance(value, List):
                     # Value is an array
@@ -789,14 +793,9 @@ class BaseCommandLineTool(BaseProcess):
         tmp_path.mkdir()
         self.stage_files(tmp_path)
 
-        # Switch to the temp directory, which acts as the new execution
-        # environment
-        os.chdir(tmp_path)
-
         # Build the command line
         cwl_namespace = self.build_namespace()
         self.prepare_runtime_context(cwl_namespace)
-        # self.match_inputs()
         cmd: list[str] = self.build_commandline()
 
         # Build the execution environment
@@ -814,6 +813,7 @@ class BaseCommandLineTool(BaseProcess):
                 cwl_namespace,
                 self.outputs,
                 env,
+                cwd = tmp_path,
                 pure = False
             )
             new_state = future.result()
@@ -822,7 +822,7 @@ class BaseCommandLineTool(BaseProcess):
                 cmd,
                 cwl_namespace,
                 self.outputs,
-                env
+                env,
+                cwd = tmp_path,
             )
-            
         return new_state

@@ -689,10 +689,10 @@ class BaseProcess(ABC):
         """
         copy_alert = True
         new_outputs: dict[str, Any] = {}
-        for output_id, value_wrapper in outputs.items():
-            output_id = output_id.split(":")[-1]
+        for output_id in self.outputs:
+            value_wrapper = outputs[self.global_id(output_id)]
             type_ = value_wrapper.type
-            if type_ == FileObject or type_ == DirectoryObject:
+            if type_ in (FileObject, DirectoryObject):
                 # Files and directories need to be moved to the output directory
                 if copy_alert:
                     print("[PROCESS]: Moving output to designated output directory:")
@@ -704,23 +704,22 @@ class BaseProcess(ABC):
                 else:
                     values = [value_wrapper.value]
 
+                # Move the outputs to the output directory
                 new_paths: List[str] = []
                 for path_object in values:
                     old_path = Path(path_object.path)
-                    new_path = self.loading_context["designated_out_dir"] / old_path.name
+                    out_dir = self.loading_context["designated_out_dir"]
+                    new_path = shutil.move(old_path, out_dir)
                     new_paths.append(str(new_path))
                     print(f"[PROCESS]:\t- {output_id}: {old_path} >> {new_path}")
-                    
-                    if type_ == FileObject:
-                        shutil.copy(old_path, new_path)
-                    else:        
-                        shutil.copytree(old_path, new_path)
+
                 new_outputs[output_id] = new_paths
                 if not value_wrapper.is_array:
                     new_outputs[output_id] = new_paths[0]
             else:
                 new_outputs[output_id] = value_wrapper.value
         return json.dumps(new_outputs, indent = 4)
+
 
     def delete_temps(self):
         if self.loading_context["preserve_tmp"]: return
@@ -734,7 +733,6 @@ class BaseProcess(ABC):
         print("[PROCESS]: Deleting temporary directory:")
         print(f"[PROCESS]:\t{self.loading_context['designated_tmp_dir']}")
         shutil.rmtree(self.loading_context["designated_tmp_dir"])
-        
 
 
     def finalize(self, outputs: dict[str, Any]):
