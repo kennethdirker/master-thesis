@@ -54,7 +54,7 @@ class BaseProcess(ABC):
             loading_context: Optional[dict[str, Any]] = None,
             parent_process_id: Optional[str] = None,
             step_id: Optional[str] = None,
-            requirements: Optional[dict[str, Any]] = None,
+            inherited_requirements: Optional[dict[str, Any]] = None,
         ) -> None:
         """ 
         TODO: class description. Which vars are accessable?
@@ -123,7 +123,7 @@ class BaseProcess(ABC):
         self.set_inputs()
         self.set_outputs()
         self.set_requirements()
-        self.process_requirements(requirements)
+        # self.process_requirements(requirements)
         
         # TODO Update description
         # Assign a dictionary with runtime input variables and a dictionary to

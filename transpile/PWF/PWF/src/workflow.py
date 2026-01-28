@@ -32,7 +32,7 @@ class BaseWorkflow(BaseProcess):
             loading_context: Optional[dict[str, str]] = None,
             parent_process_id: Optional[str] = None,
             step_id: Optional[str] = None,
-            requirements: Optional[dict[str, Any]] = None
+            inherited_requirements: Optional[dict[str, Any]] = None
         ):
         """
         TODO: class description 
@@ -44,7 +44,7 @@ class BaseWorkflow(BaseProcess):
             loading_context = loading_context,
             parent_process_id = parent_process_id,
             step_id = step_id,
-            requirements = requirements
+            # requirements = requirements
         )
 
         # TODO Decide if this is the way, see set_groups()
@@ -62,6 +62,7 @@ class BaseWorkflow(BaseProcess):
         # self.set_outputs()
         # self.set_requirements()
         self.set_steps()
+        self.process_requirements(inherited_requirements)
 
         # Only the main process executes the workflow.
         if main:
@@ -108,6 +109,23 @@ class BaseWorkflow(BaseProcess):
         #     }
         # }
         pass
+
+
+    def process_requirements(
+            self,
+            inherited_requirements: dict[str, Any] | None
+        ) -> None:
+        """
+        Set the requirements dict with inhertited requirements and override
+        them if present in this tool.
+        """
+        if inherited_requirements is None:
+            return
+
+        updated_reqs = inherited_requirements
+        for req_key, req_body in self.requirements.items():
+            updated_reqs[req_key] = req_body
+        self.requirements = updated_reqs
 
 
     def set_groups(self) -> None:
@@ -601,7 +619,8 @@ class BaseWorkflow(BaseProcess):
     def _load_process_from_uri(
             self, 
             uri: str,
-            step_id: str
+            step_id: str,
+            requirements,
         ) -> BaseProcess:
         """
         Dynamic Process loading from file. Raises an exception if no valid 
@@ -646,7 +665,8 @@ class BaseWorkflow(BaseProcess):
                 runtime_context = self.runtime_context,
                 loading_context = self.loading_context,
                 parent_process_id = self.id,
-                step_id = step_id
+                step_id = step_id,
+                inherited_requirements = requirements
             )
         raise Exception(f"{uri} does not contain a BaseProcess subclass")
     

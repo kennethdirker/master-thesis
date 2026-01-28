@@ -43,7 +43,7 @@ class BaseCommandLineTool(BaseProcess):
             loading_context: Optional[dict[str, str]] = None,
             parent_process_id: Optional[str] = None,
             step_id: Optional[str] = None,
-            requirements: Optional[dict[str, Any]] = None,
+            inherited_requirements: Optional[dict[str, Any]] = None,
             PATH: Optional[str] = None,
         ):
         """ TODO: class description """
@@ -55,7 +55,7 @@ class BaseCommandLineTool(BaseProcess):
             loading_context = loading_context,
             parent_process_id = parent_process_id,
             step_id = step_id,
-            requirements = requirements,
+            # requirements = requirements,
         )
 
         # Prepare properties
@@ -66,6 +66,7 @@ class BaseCommandLineTool(BaseProcess):
         # Digest CommandlineTool file
         self.set_base_command()
         self.set_io()
+        self.process_requirements(inherited_requirements)
         
         if main:
             self.register_input_sources()
@@ -108,6 +109,41 @@ class BaseCommandLineTool(BaseProcess):
         Set the tool's IO options.
         """
         pass
+
+
+    def process_requirements(
+            self,
+            inherited_requirements: dict[str, Any] | None
+        ) -> None:
+        """
+        Set the requirements dict with tool-compatible inhertited requirements
+        and override them if present in this tool.
+        """
+        if inherited_requirements is None:
+            return
+        
+        TOOL_REQS = (
+            "InlineJavascriptRequirement",
+            "SchemaDefRequirement",
+            "DockerRequirement",
+            "SoftwareRequirement",
+            "InitialWorkDirRequirement",
+            "EnvVarRequirement",
+            "ShellCommandRequirement",
+            "ResourceRequirement",
+            "LoadListingRequirement",
+            "WorkReuse",
+            "InplaceUpdateRequirement",
+            "ToolTimeLimit"
+        )
+
+        updated_reqs = {}
+        for req_key, req_dict in inherited_requirements.items():
+            if req_key in TOOL_REQS:
+                updated_reqs[req_key] = req_dict
+        for req_key, req_body in self.requirements.items():
+            updated_reqs[req_key] = req_body
+        self.requirements = updated_reqs
 
 
     def register_input_sources(self) -> None:
