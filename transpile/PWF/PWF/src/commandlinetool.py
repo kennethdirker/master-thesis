@@ -145,6 +145,14 @@ class BaseCommandLineTool(BaseProcess):
             updated_reqs[req_key] = req_body
         self.requirements = updated_reqs
 
+        # $include tokens need to be replaced with the contents of the
+        # file pointed to by its url.
+        if "InlineJavascriptRequirement" in self.requirements:
+                js_req = self.requirements["InlineJavascriptrequirement"]
+                for i, chunk in enumerate(js_req.copy()):
+                    if "$include" in chunk:
+                        include = chunk.strip().removeprefix("$include").strip()
+                        js_req[i] = self.inline_include(include)
 
     def register_input_sources(self) -> None:
         """
@@ -159,10 +167,23 @@ class BaseCommandLineTool(BaseProcess):
             self.input_to_source[input_id] = self.global_id(input_id)
 
 
-    def stage_initial_work_dir_requirement(self, tmp_path: Path) -> None:
+    def stage_initial_work_dir_requirement(
+            self, 
+            tmp_path: Path,
+            cwl_namespace: dict[str, Any]
+        ) -> None:
         # Stage files from InitialWorkDirRequirement
-        if "InitialWorkDirRequirement" in self.requirements:
-            ...
+        if not "InitialWorkDirRequirement" in self.requirements:
+            return
+        
+        if isinstance(self.requirements["InitialWorkDirRequirement"], str):
+            # Listing is a sole string
+        
+        # for listing in self.requirements:
+        #     if isinstance(listing, str):
+        #         # L
+        #     elif isinstance(listing, dict):
+            pass
         # TODO
 
 
@@ -221,12 +242,13 @@ class BaseCommandLineTool(BaseProcess):
 
     def stage_files(
             self, 
-            tmp_path: Path, 
+            tmp_path: Path,
+            cwl_namespace: dict[str, Any]
         ) -> None:
         """
         TODO Description
         """
-        self.stage_initial_work_dir_requirement(tmp_path)
+        self.stage_initial_work_dir_requirement(tmp_path, cwl_namespace)
         self.stage_input_files(tmp_path)
 
 
@@ -823,14 +845,15 @@ class BaseCommandLineTool(BaseProcess):
         if runtime_context is not None:
             self.runtime_context = runtime_context
 
+        cwl_namespace = self.build_namespace()
+
         # Create a temporary work directory and stage all needed files
         tmp_path: Path = self.loading_context["designated_tmp_dir"]
         tmp_path /= str(uuid4())
         tmp_path.mkdir()
-        self.stage_files(tmp_path)
+        self.stage_files(tmp_path, cwl_namespace)
 
         # Build the command line
-        cwl_namespace = self.build_namespace()
         self.prepare_runtime_context(cwl_namespace)
         cmd: list[str] = self.build_commandline()
 

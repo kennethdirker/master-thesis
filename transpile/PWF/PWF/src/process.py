@@ -652,6 +652,22 @@ class BaseProcess(ABC):
             # Expression is a Javascript expression. Build JS context with CWL
             # namespaces and evaluate with JS engine.
             js_context = js2py.EvalJs(context_vars)
+
+            # InlineJavascriptRequirement may contain JS code that must be
+            # executed before the expressions evaluated. This JS code can be
+            # referenced in JS expressions.
+            if "InlineJavascriptRequirement" in self.requirements:
+                js_req = self.requirements["InlineJavascriptRequirement"]
+                for chunk in js_req:
+                    # The $include is handled tools.
+                    # if "$include" in chunk:
+                        # include = chunk.strip().removeprefix("$include:").strip()
+                        # include = self.inline_include(include)
+                        # js_context.execute(include)
+                    # else:
+                        # js_context.execute(chunk)
+                    js_context.execute(chunk)
+
             try:
                 ret = js_context.eval(expression[2:-1])
             except Exception as e:
@@ -680,6 +696,23 @@ class BaseProcess(ABC):
             print(f"[EVAL]: '{expression}' ({type(expression)}) -> '{ret}' ({type(ret)})")
 
         return ret
+    
+
+    def inline_include(self, file_url: str):
+        """
+        TODO Every field of every document needs to be checked for $include
+        statements.... TODO
+        Return a string containing the contents of the file.
+        """
+        # BUG FIXME
+        # Inherited InlineJavascriptRequirement $include probably points to
+        # files relatively to the parent that provides the requirement.
+        path = Path(file_url).resolve()
+        if not path.is_file():
+            raise Exception(f"{path} cant be included because it does not exist")
+
+        with open(file_url, "r") as f:
+            return f.read()
 
 
     def publish_output(self, outputs: dict[str, Any]) -> str:
