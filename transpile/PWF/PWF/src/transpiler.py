@@ -4,6 +4,7 @@ import os
 import textwrap
 
 from pathlib import Path
+from types import NoneType
 from typing import Any, List, Mapping, Optional, TextIO, Tuple, Union
 from uuid import uuid4
 
@@ -14,6 +15,7 @@ from cwl_utils.parser.cwl_v1_2 import (
     CommandInputArraySchema,
     InputArraySchema,
     WorkflowStepOutput,
+    Dirent,
 )
 
 # Import CWL Process types
@@ -84,36 +86,54 @@ def normalize(string: str) -> str:
     Returns:
         The normalized string.
     """
+    parts = []
+    
     start = string.find("$(")
     if start < 0 or ")" not in string[start + 2:]:
         # String does not have an expression or not contain a
         # matching closing parenthesis
         return string
-    # print("[NORMALIZE]", string)
-    count = string.count("$(")
-    substrings: list[str] = []
-    ss = string
-    for i in range(count):
-        s, ss = ss.split("$(", 1)
-        if len(s):
-            # Here, s is always a plain string and needs quotation
-            substrings.append(f"'{s}'")
 
-        if ")" not in ss:
-            # String does not contain a matching closing parenthesis
-            # Add remaining string tail to last substring
-            substrings[-1] = s + "$(" + ss
-            break
+    for sub in string.split("$("):
+        if sub != "" and sub.find(")") < 0:
+            # not a matching ) in this substring
+            parts.append(f"'{sub}'")
 
-        # Here, s is always an expression, with ss being the remaining tail
-        s, ss = ss.split(")", 1)
-        # print(ss)
-        substrings.append(s)
-        if i == count - 1 and ss != "":
-            substrings.append(f"'{ss}'")
-    
-    return '$(' + " + ".join(substrings) + ')'
+        # For each split
+        pos = 0
+        opened = 0
+        for pos, char in enumerate(sub):
+            # check characters for matching )
+            if char == ")":
+                if opened == 0:
+                    split_point = pos
+                    parts.append(sub[:split_point])
+                    rest = sub[split_point + 1:]
+                    if len(rest) > 0:
+                        parts.append(f"'{rest}'")
+                    break
+                else:
+                    opened -= 1
+            elif char == "(":
+                opened += 1    
+    return "$(" + " + ".join(parts) + ")"
 
+
+def multiline_to_list(string: str, normalize_js_expr: bool = True):
+    """
+    Convert multi-line YAML strings (indicated by '- |') to a list of normal
+    strings.
+    """
+    # YAML uses some character escaping that doesnt work in python strings.
+    # They must be removed from the literal string.
+    lines = bytes(string.replace(r"\$", "$"), "utf-8").decode("unicode_escape")
+
+    # Because we need to encase strings in double quotation marks, we need to
+    # add escapes.
+    lines = lines.replace('"', r'\"').split("\n")
+    if normalize_js_expr:
+        lines = [normalize(l) for l in lines]
+    return lines
 
 
 def parse_prefix(
@@ -546,41 +566,58 @@ def parse_tool_requirements(
     for req in cwl.requirements:
         match req.class_:
             case "InlineJavascriptRequirement":
-                # We do not need to handle this requirement
-                pass
+                # This requirement is parsed when it adds context to the JS
+                # execution context.
+                if (hasattr(req, "expressionLib") and
+                    isinstance(req.expressionLib, List)):
+                    # Multiline entry scripts are put into lists of lines to
+                    # keep it simple.
+                    lines.append(indent('"InlineJavascriptRequirement": [', 3))
+                    concat: str = ""
+                    for expr in req.expressionLib:
+                        if concat == "":
+                            concat = expr
+                        else:
+                            concat += expr
+                    js_lines = multiline_to_list(concat)
+                    lines.extend([indent(f'"{l}",', 4) for l in js_lines])
+                    lines.append(indent("],", 3))
             case "DockerRequirement":
                 # TODO
                 print("\t[INFO] DockerRequirement not yet supported")
             case "InitialWorkDirRequirement":
                 if isinstance(req.listing, str):
-                    lines.append(indent(f'"InitialWorkDirRequirement": "{req.listing}",', 3))
+                    # Listing is an expression
+                    expr = normalize(req.listing)
+                    lines.append(indent(f'"InitialWorkDirRequirement": "{expr}",', 3))
                 else: 
                     lines.append(indent('"InitialWorkDirRequirement": [', 3))
                     for e in req.listing:
-                        lines.append(indent('{', 4))
-                        lines.append(indent(f'"entryname": "{e.entryname}",', 5))
-                        if hasattr(e, "entry") and e.entry is not None:
-                            # Multiline entry scripts are put into lists of
-                            # lines to keep it simple.
-                            lines.append(indent('"entry": [', 5))
-                            # TODO Dirent support
-                            # NOTE I am not sure if the following works for all
-                            # possible content, we'll have to see.
-
-                            # YAML uses some character escaping that doesnt 
-                            # work in python strings. They must be removed from
-                            # the literal string.
-                            entry_lines = bytes(e.entry.replace(r"\$", "$"), "utf-8").decode("unicode_escape")
-                            # Because we need to encase strings in double 
-                            # quotation marks, we need to add escapes.
-                            entry_lines = entry_lines.replace('"', r'\"').split("\n")
-                            entry_lines = [normalize(l) for l in entry_lines]
-                            # print(entry_lines)
-                            lines.extend([indent(f'"{l}",', 6) for l in entry_lines])
-                            lines.append(indent('],', 5))
-                        if hasattr(e, "writable") and e.writable is not None:
-                            lines.append(indent(f'"writable": "{e.writable}",', 5))
-                        lines.append(indent('},', 4))
+                        if isinstance(e, str):
+                            # Listing is an expression
+                            expr = normalize(e)
+                            lines.append(indent(f'"{expr}",', 4))
+                        elif isinstance(e, Dirent):
+                            lines.append(indent('{', 4))
+                            if hasattr(e, "entryname") and e.entryname is not None:
+                                lines.append(indent(f'"entryname": "{e.entryname}",', 5))
+                            if hasattr(e, "entry") and e.entry is not None:
+                                # Multiline entry scripts are put into lists of
+                                # lines to keep it simple.
+                                entry_lines = multiline_to_list(e.entry)
+                                if len(entry_lines) > 1:
+                                    lines.append(indent('"entry": [', 5))
+                                    lines.extend([indent(f'"{l}",', 6) for l in entry_lines])
+                                    lines.append(indent('],', 5))
+                                elif len(entry_lines) == 1:
+                                    lines.append(indent(f'"entry": "{entry_lines[0]}",', 5))
+                            if hasattr(e, "writable") and e.writable is not None:
+                                lines.append(indent(f'"writable": "{e.writable}",', 5))
+                            lines.append(indent('},', 4))
+                        elif isinstance(e, NoneType):
+                            pass
+                        else:
+                            raise NotImplementedError(f"Encountered unsupported type {type(e)}")
                     lines.append(indent("],", 3))
             case "EnvVarRequirement":
                 lines.append(indent('"EnvVarRequirement": {', 3))
