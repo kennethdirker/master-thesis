@@ -109,22 +109,22 @@ class tool_PWF(BaseCommandLineTool):
 
 	def set_requirements(self):
 		self.requirements = {
-			"InplaceUpdateRequirement": True,
-			"InitialWorkDirRequirement": [
-				{
-					"entryname": "None",
-					"entry": [
-						"$(inputs.msin)",
-					],
-					"writable": "True",
-				},
-			],
-			"ResourceRequirement": {
-				"coresMin": "$(inputs.max_dp3_threads)",
-			},
 			"EnvVarRequirement": {
 				"DP3_CACHE_DIR": "$(inputs.storagemanager)",
 				"DP3_DATA_DIR": "/data",
+			},
+			"InitialWorkDirRequirement": [
+				{
+					"entry": "$(inputs.msin)",
+					"writable": "True",
+				},
+				"$('wat_gaat_er_in_' + we_weten_het_niet.blah() + '_.txt')",
+			],
+			"InlineJavascriptRequirement": [
+				"$include: utils.js",
+			],
+			"ResourceRequirement": {
+				"coresMin": "$(inputs.max_dp3_threads)",
 			},
 		}
 

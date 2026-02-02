@@ -1,3 +1,5 @@
+# The purpose of this tool is to showcase transpilation to PWF and is not runnable!
+
 class: CommandLineTool
 cwlVersion: v1.2
 id: applybeam
@@ -97,17 +99,19 @@ stderr: applycal_$(inputs.type)_err.log
 arguments:
   - 'steps=[applybeam,count]'
   - msout=.
+
 requirements:
-  - class: InplaceUpdateRequirement
-    inplaceUpdate: true
-  - class: InitialWorkDirRequirement
+  InitialWorkDirRequirement:
     listing:
       - entry: $(inputs.msin)
         writable: true
-  - class: InlineJavascriptRequirement
-  - class: ResourceRequirement
+      - "wat_gaat_er_in_$(we_weten_het_niet.blah())_.txt"
+  InlineJavascriptRequirement:
+    expressionLib:
+      - "$include: utils.js"
+  ResourceRequirement:
     coresMin: $(inputs.max_dp3_threads)
-  - class: EnvVarRequirement
+  EnvVarRequirement:
     envDef:
       DP3_DATA_DIR: /data
       DP3_CACHE_DIR: $(inputs.storagemanager)
