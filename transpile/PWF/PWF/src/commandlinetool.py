@@ -1,5 +1,6 @@
 # import dask.delayed
 import glob
+import json
 import os
 # import subprocess
 import shutil
@@ -18,13 +19,14 @@ from typing import (
     AnyStr,
     Callable,
     cast,
+    Dict,
     IO,
     List,
     TextIO,
     Optional,
     Tuple,
     Type,
-    Union
+    Union,
 )
 
 from .process import BaseProcess
@@ -185,30 +187,87 @@ class BaseCommandLineTool(BaseProcess):
             if isinstance(listing, str):
                 # Listing is expression
                 ret = self.eval(listing, cwl_namespace)
-                if isinstance(ret, NoneType): continue
-                raise NotImplementedError(f"Found unsupported type {type(ret)}")
+                
+                # Normalize
+                if not isinstance(ret, List):
+                    ret = [ret]
+                if isinstance(ret, NoneType) or len(ret) == 0: 
+                    continue
+                
+                # Copy Files to working directory
+                for x in ret:
+                    if isinstance(x, str):
+                        # NOTE Path?
+                        path = Path(x)
+                    elif isinstance(x, (FileObject, DirectoryObject)):
+                        path = Path(x.path)
+                    else:
+                        raise NotImplementedError(x, type(x))
+                    
+                    if path.is_file():
+                        shutil.copy(path, tmp_path)
+                    elif path.is_dir():
+                        shutil.copytree(path, tmp_path)
 
             elif isinstance(listing, dict):
                 if "entry" in listing:
+                    print(listing["entry"])
+
                     # Dirent
+                    # Evaluate 'entry' field
                     entry = listing["entry"]
-                    print(entry)
+                    contents: str | None = None
+                    is_file: bool = False
+                    is_dir: bool = False
                     if isinstance(entry, NoneType): continue
-                    if isinstance(entry, List):
+                    if isinstance(entry, str): 
+                        ret = self.eval(line, cwl_namespace)
+                        if isinstance(ret, str):
+                            is_file = True
+                            contents = ret
+                        elif isinstance(ret, FileObject):
+                            is_file = True
+                            raise NotImplementedError()
+                        elif isinstance(ret, DirectoryObject):
+                            is_dir = True
+                            raise NotImplementedError()
+                        else:
+                            is_file = True
+                            contents = json.dumps(ret, indent = 4)
+                    elif isinstance(entry, List):
                         # Multiline, each needs evaluation and then form file.contents together
+                        is_file = True
                         eval_lines = []
                         for line in entry:
-                            eval_lines = self.eval(line, cwl_namespace)
+                            eval_lines.append(self.eval(line, cwl_namespace))
                         contents = "\n".join(eval_lines)
+                    else:
+                        raise Exception(entry, type(entry))
+
+                    # Evaluate "entryname" field
                     if "entryname" in listing:
-                        entryname_ret = self.eval(listing["entry"], cwl_namespace)
-                        if not isinstance(entryname_ret, str):
-                            raise Exception("Cant create file without an entryname")
-                        # new_file = FileObject(tmp_path / Path(entryname_ret))
-                        # new_file.create(entry_ret)
+                        entryname = self.eval(listing["entryname"], cwl_namespace)
+                        if isinstance(entryname, str):
+                            # TODO
+                            # Must be relative path within tmp CWD
+                            entry_path = tmp_path / Path(entryname)
+                            entry_path = entry_path.resolve()
+                            print(entry_path)
+                            print(tmp_path)
+                            if not entry_path.is_relative_to(tmp_path):
+                                raise Exception("Must create file/directory within working folder")
+                    
+                    # Create files/directories
+                    if is_file:
+                        FileObject(entry_path).create(contents)
+                    elif is_dir:
+                        DirectoryObject(entry_path).create()
+                    else:
+                        raise Exception("Listing is neither a file or a directory")
                 else:
                     raise NotImplementedError(listing)
-            # TODO WIP
+            else:
+                raise NotImplementedError(listing)
 
 
     def stage_input_files(self, tmp_path: Path) -> None:

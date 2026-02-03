@@ -205,6 +205,9 @@ class DirectoryObject:
     
     def resolve_as_str(self) -> str:
         return str(Path(self.path).resolve())
+    
+    def create(self) -> None:
+        Path(self.path).mkdir(parents = True)
 
     def __str__(self) -> str:
         return self.path
