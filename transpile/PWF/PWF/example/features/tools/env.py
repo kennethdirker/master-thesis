@@ -10,10 +10,6 @@ class env_PWF(BaseCommandLineTool):
 			"message": {
 				"type": "string",
 			},
-			"message2": {
-				"type": "string",
-				"default": "WORLD",
-			},
 		}
 
 	def set_outputs(self):

@@ -7,7 +7,4 @@ requirements:
       HELLO: $(inputs.message)
 inputs:
   message: string
-  message2:
-    type: string
-    default: "WORLD"
 outputs: []
