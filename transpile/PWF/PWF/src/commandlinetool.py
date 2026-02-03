@@ -35,18 +35,18 @@ from .utils import Absent, FileObject, DirectoryObject, Value, PY_CWL_T_MAPPING,
 
 class BaseCommandLineTool(BaseProcess):
     # Tool info
-    io: dict[str, Any]
-    base_command: list[str] | str | None
-    arguments: list[str] | None
+    io: Dict[str, Any]
+    base_command: List[str] | str | None
+    arguments: List[Union[str, Dict[str, Union[str, int]]]]
 
     def __init__(
             self,
             main: bool = True,
-            runtime_context: Optional[dict] = None,
-            loading_context: Optional[dict[str, str]] = None,
+            runtime_context: Optional[Dict] = None,
+            loading_context: Optional[Dict[str, str]] = None,
             parent_process_id: Optional[str] = None,
             step_id: Optional[str] = None,
-            inherited_requirements: Optional[dict[str, Any]] = None,
+            inherited_requirements: Optional[Dict[str, Any]] = None,
             PATH: Optional[str] = None,
         ):
         """ TODO: class description """

@@ -20,9 +20,9 @@ from cwl_utils.parser import load_document_by_uri
 from cwl_utils.parser.cwl_v1_2 import (
     CommandOutputArraySchema, 
     CommandInputArraySchema,
-    InputArraySchema,
-    WorkflowStepOutput,
+    CommandLineBinding,
     Dirent,
+    InputArraySchema,
 )
 
 # Import CWL Process types
@@ -556,26 +556,32 @@ def parse_arguments(
         for arg in cwl.arguments:
             if isinstance(arg, str):
                 lines.append(indent(f'"{arg}",', 3))
-            # TODO Inputbinding
-            # if hasattr(arg, "inputBinding"):
-            #     binding = arg.inputBinding
+            elif isinstance(arg, CommandLineBinding):
+                solo = not (hasattr(arg, "position") and arg.position is not None or
+                        hasattr(arg, "prefix") and arg.prefix is not None)
+                
+                # valueFrom
+                valueFrom = normalize(arg.valueFrom)    # type: ignore
+                if solo:
+                    lines.append(indent(f'"{valueFrom}",', 3))
+                    continue
+                else:
+                    lines.append(indent('{', 3))
+                    lines.append(indent(f'"valueFrom": "{valueFrom}",', 4))
+                    
+                # Position
+                if hasattr(arg, "position") and arg.position is not None:
+                    lines.append(indent(f'"position": {arg.position},', 4))
+                    solo = False
 
-            #     # Used to indicate that the input appears on the command line
-            #     if binding is not None:
-            #         lines.append(indent('"bound": True,', 4))
+                # Prefix
+                if hasattr(arg, "prefix") and arg.prefix is not None:
+                    lines.append(indent(f'"prefix": "{arg.prefix}",', 4))
+                    solo = False
 
-            #     # Position
-            #     if hasattr(binding, "position") and binding.position is not None:
-            #         lines.append(indent(f'"position": {binding.position},', 4))
-
-            #     # Prefix
-            #     if hasattr(binding, "prefix") and binding.prefix is not None:
-            #         lines.append(indent(f'"prefix": "{binding.prefix}",', 4))
-
-            #     # valueFrom
-            #     if hasattr(binding, "valueFrom") and binding.valueFrom is not None:
-            #         valueFrom = normalize(binding.valueFrom)
-            #         lines.append(indent(f'"valueFrom": "{valueFrom}",', 4))
+                lines.append(indent('},', 3))
+            else:
+                raise NotImplementedError(arg, type(arg))
         
     lines.append(indent("]", 2))
 
