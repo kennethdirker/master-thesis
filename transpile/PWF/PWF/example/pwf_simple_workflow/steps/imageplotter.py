@@ -35,6 +35,9 @@ class imageplotter_PWF(BaseCommandLineTool):
 			"/home/kennethdirker/Leiden/2024-2025/Thesis/transpile/PWF/PWF/example/cwl_simple_workflow/scripts/imageplotter.py",
 		]
 
+	def set_requirements(self):
+		self.requirements = {}
+
 	def set_io(self):
 		self.io = {}
 
