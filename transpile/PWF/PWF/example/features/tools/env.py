@@ -31,8 +31,5 @@ class env_PWF(BaseCommandLineTool):
 			},
 		}
 
-	def set_io(self):
-		self.io = {}
-
 if __name__ == "__main__":
 	env_PWF()

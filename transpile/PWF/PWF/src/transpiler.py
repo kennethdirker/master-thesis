@@ -541,6 +541,55 @@ def parse_base_command(
     lines = [line + "\n" for line in lines]
     out_file.writelines(lines)
 
+def parse_arguments(
+        cwl: CommandLineTool,
+        out_file: TextIO
+    ) -> None:
+    """
+    
+    """
+    lines: list[str] = [""]
+    lines.append(indent("def set_arguments(self):", 1))
+    lines.append(indent("self.arguments = [", 2))
+    
+    if hasattr(cwl, "arguments") and cwl.arguments is not None:
+        for arg in cwl.arguments:
+            if isinstance(arg, str):
+                lines.append(indent(f'"{arg}",', 3))
+            # TODO Inputbinding
+            # if hasattr(arg, "inputBinding"):
+            #     binding = arg.inputBinding
+
+            #     # Used to indicate that the input appears on the command line
+            #     if binding is not None:
+            #         lines.append(indent('"bound": True,', 4))
+
+            #     # Position
+            #     if hasattr(binding, "position") and binding.position is not None:
+            #         lines.append(indent(f'"position": {binding.position},', 4))
+
+            #     # Prefix
+            #     if hasattr(binding, "prefix") and binding.prefix is not None:
+            #         lines.append(indent(f'"prefix": "{binding.prefix}",', 4))
+
+            #     # valueFrom
+            #     if hasattr(binding, "valueFrom") and binding.valueFrom is not None:
+            #         valueFrom = normalize(binding.valueFrom)
+            #         lines.append(indent(f'"valueFrom": "{valueFrom}",', 4))
+        
+    lines.append(indent("]", 2))
+
+    if len(lines) == 4:
+        return
+        # lines.clear()
+        # lines.append("")
+        # lines.append(indent("def set_arguments(self):", 1))
+        # lines.append(indent("self.arguments = []", 2))
+
+    # Add newlines to each string
+    lines = [line + "\n" for line in lines]
+    out_file.writelines(lines)
+
 
 def parse_tool_requirements(
         cwl: CommandLineTool,
@@ -651,10 +700,11 @@ def parse_tool_requirements(
     lines.append(indent("}", 2))
 
     if len(lines) == 4:
-        lines.clear()
-        lines.append("")
-        lines.append(indent("def set_requirements(self):", 1))
-        lines.append(indent("self.requirements = {}", 2))
+        return
+        # lines.clear()
+        # lines.append("")
+        # lines.append(indent("def set_requirements(self):", 1))
+        # lines.append(indent("self.requirements = {}", 2))
 
     # Add newlines to each string
     lines = [line + "\n" for line in lines]
@@ -693,10 +743,11 @@ def parse_io(
     if len(lines) == 4:
         # Special case: no stdin, stdout, stderr, successCodes, 
         # temporaryFailCodes, permanentFailCodes
-        lines.clear()
-        lines.append("")
-        lines.append(indent("def set_io(self):", 1))
-        lines.append(indent("self.io = {}", 2))
+        return
+        # lines.clear()
+        # lines.append("")
+        # lines.append(indent("def set_io(self):", 1))
+        # lines.append(indent("self.io = {}", 2))
 
     # Add newlines to each string
     lines = [line + "\n" for line in lines]
@@ -855,6 +906,7 @@ def parse_cwl(
         # if "CommandLineTool" in cwl.class_:
         if isinstance(cwl, CommandLineTool):
             parse_base_command(cwl, f)
+            parse_arguments(cwl, f)
             parse_tool_requirements(cwl, f)
             parse_io(cwl, f)
         # elif "Workflow" in cwl.class_:

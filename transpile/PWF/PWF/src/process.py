@@ -466,13 +466,14 @@ class BaseProcess(ABC):
         return runtime_context
 
 
-    @abstractmethod
+    # @abstractmethod
     def set_metadata(self) -> None:
         """
         TODO Better description
         Must be overridden to assign process metadata attributes.
         """
-        pass
+        # pass
+        self.metadata = {}
 
 
     # @abstractmethod
@@ -518,6 +519,7 @@ class BaseProcess(ABC):
         requirements are essentially optional, it is not requried to override
         this method.
         """
+        self.requirements = {}
         # Example:
         # 
         # 

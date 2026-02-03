@@ -135,6 +135,8 @@ class BaseWorkflow(BaseProcess):
         NOTE: Not sure if this is the way to do this...
         """
         pass
+        # self.groups = {}
+        # self.groups = []
 
     
     def create_dependency_graph(self) -> None:

@@ -107,6 +107,12 @@ class tool_PWF(BaseCommandLineTool):
 			"DP3",
 		]
 
+	def set_arguments(self):
+		self.arguments = [
+			"steps=[applybeam,count]",
+			"msout=.",
+		]
+
 	def set_requirements(self):
 		self.requirements = {
 			"EnvVarRequirement": {

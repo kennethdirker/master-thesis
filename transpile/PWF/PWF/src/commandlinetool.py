@@ -37,6 +37,7 @@ class BaseCommandLineTool(BaseProcess):
     # Tool info
     io: dict[str, Any]
     base_command: list[str] | str | None
+    arguments: list[str] | None
 
     def __init__(
             self,
@@ -67,6 +68,7 @@ class BaseCommandLineTool(BaseProcess):
 
         # Digest CommandlineTool file
         self.set_base_command()
+        self.set_arguments()
         self.set_io()
         self.process_requirements(inherited_requirements)
         
@@ -85,7 +87,7 @@ class BaseCommandLineTool(BaseProcess):
             - self.doc: Human readable process explaination.
             - TODO: Add more fields if needed!
         """
-        pass        
+        self.metadata = {}
 
     @abstractmethod
     # FIXME: Better function name
@@ -105,12 +107,18 @@ class BaseCommandLineTool(BaseProcess):
         """
         pass
 
+    def set_arguments(self) -> None:
+        """
+        TODO
+        """
+        self.arguments = []
+
 
     def set_io(self) -> None:
         """
         Set the tool's IO options.
         """
-        pass
+        self.io = {}
 
 
     def process_requirements(
@@ -576,6 +584,13 @@ class BaseCommandLineTool(BaseProcess):
 
         # TODO FIXME
         # Aside from 'baseCommand' and 'inputs', we need to parse 'arguments'!
+        # if isinstance(self.arguments, List): 
+            # for arg in self.arguments:
+                # if isinstance(arg, str):
+                    # key_inputs.append(arg)
+                # elif:
+
+
 
         # Split positional arguments and key arguments
         for input_id, input_dict in self.inputs.items():

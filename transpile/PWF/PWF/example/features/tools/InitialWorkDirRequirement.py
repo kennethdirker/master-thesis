@@ -35,8 +35,5 @@ class InitialWorkDirRequirement_PWF(BaseCommandLineTool):
 			],
 		}
 
-	def set_io(self):
-		self.io = {}
-
 if __name__ == "__main__":
 	InitialWorkDirRequirement_PWF()
