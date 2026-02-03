@@ -150,7 +150,7 @@ class BaseWorkflow(BaseProcess):
         # Recursively load all processes from steps
         print("[WORKFLOW]: Loading process files:")
         for step_id, step_dict in self.steps.items():
-            step_process = self._load_process_from_uri(step_dict["run"], step_id)
+            step_process = self._load_process_from_uri(step_dict["run"], step_id, self.requirements.copy)
             processes[step_process.id] = step_process
             self.step_id_to_process[step_id] = step_process
             node = Node(
