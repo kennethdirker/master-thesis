@@ -1,11 +1,18 @@
 import argparse
-# import glob
 import os
 import textwrap
 
 from pathlib import Path
 from types import NoneType
-from typing import Any, List, Mapping, Optional, TextIO, Tuple, Union
+from typing import (
+    Any,
+    List,
+    Mapping,
+    Optional,
+    TextIO,
+    Tuple,
+    Union
+)
 from uuid import uuid4
 
 from cwl_utils.parser import load_document_by_uri
@@ -544,9 +551,6 @@ def parse_tool_requirements(
     """
     # No requirements to parse
     if not hasattr(cwl, "requirements") or cwl.requirements is None or len(cwl.requirements) == 0:
-        return
-    # Only obsolite requirement, dont parse
-    if len(cwl.requirements) == 1 and "InlineJavascriptRequirement" in cwl.requirements[0].class_:
         return
     
     def quote(value: Any) -> str:
