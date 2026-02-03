@@ -559,7 +559,7 @@ class BaseCommandLineTool(BaseProcess):
         return args
 
 
-    def build_commandline(self) -> list[str]:
+    def build_commandline(self) -> List[str]:
         """Construct the full command line for the tool from runtime input values.
 
         The method iterates over the tool's inputs, orders positional
@@ -579,20 +579,28 @@ class BaseCommandLineTool(BaseProcess):
         Raises:
             Exception on missing required inputs or type mismatches.
         """
-        pos_inputs: list[Tuple[str, dict[str, Any]]] = []
-        key_inputs: list[Tuple[str, dict[str, Any]]] = []
+        args: List = []
+        pos_args: List = []
 
-        # TODO FIXME
-        # Aside from 'baseCommand' and 'inputs', we need to parse 'arguments'!
-        # if isinstance(self.arguments, List): 
-            # for arg in self.arguments:
-                # if isinstance(arg, str):
-                    # key_inputs.append(arg)
-                # elif:
+        # [(input_id, input_dict), ...]
+        pos_inputs: List[Tuple[str, Dict[str, Any]]] = []
+        key_inputs: List[Tuple[str, Dict[str, Any]]] = []
+
+        # Split ordered arguments from unordered arguments
+        for arg in self.arguments:
+            if isinstance(arg, str):
+                args.append(arg)
+            else:
+                if "position" in arg:
+                    pos_args.append(arg)
+                else:
+                    args.append(arg)
+
+        # TODO Sort ordered arguments with inputs
+        # HOW 
 
 
-
-        # Split positional arguments and key arguments
+        # Split positional inputs and key inputs
         for input_id, input_dict in self.inputs.items():
             # Skip unbound (without input binding) inputs
             if "bound" in input_dict and input_dict["bound"]:
@@ -601,19 +609,19 @@ class BaseCommandLineTool(BaseProcess):
                 else:
                     key_inputs.append((input_id, input_dict))
 
-        # Order the arguments
-        inputs: list[Tuple[str, dict]] = sorted(pos_inputs, key=lambda x: x[1]["position"])
+        # Order the inputs
+        inputs: List[Tuple[str, Dict]] = sorted(pos_inputs, key=lambda x: x[1]["position"])
         inputs += key_inputs
 
-        # Match arguments with runtime input values
-        cmd: list[str] = []
+        # Match inputs with runtime input values
+        cmd: List[str] = []
         for input_id, input_dict  in inputs:
 
             # Normalize expected input types into a list of CWL types
-            expected_types: list[str] = []
+            expected_types: List[str] = []
             if isinstance(input_dict["type"], str):
                 expected_types = [input_dict["type"]]
-            elif isinstance(input_dict["type"], list):
+            elif isinstance(input_dict["type"], List):
                 expected_types = input_dict["type"]
             else:
                 raise Exception(f"Unexpected type(input_dict['type']). Should be 'str' or 'list', but found '{type(input_dict['type'])}'")
@@ -671,17 +679,17 @@ class BaseCommandLineTool(BaseProcess):
 
         # Combine the base command with the arguments
         if hasattr(self, "base_command"):
-            if isinstance(self.base_command, list):
-                cmd = [*self.base_command] + cmd
+            if isinstance(self.base_command, List):
+                cmd = [*self.base_command] + args + cmd
             elif isinstance(self.base_command, str):
-                cmd = [self.base_command] + cmd
+                cmd = [self.base_command] + args + cmd
             else:
                 raise Exception(f"base_command should be 'str' or 'list[str]',"
                                 f"but found '{type(self.base_command)}'")
         return cmd
     
 
-    def build_env(self, cwl_namespace) -> dict[str, Any]:
+    def build_env(self, cwl_namespace) -> Dict[str, Any]:
         """
         Build the execution environment for the command line tool. The 
         environment is new dictionary filled as follows:
