@@ -176,15 +176,39 @@ class BaseCommandLineTool(BaseProcess):
         if not "InitialWorkDirRequirement" in self.requirements:
             return
         
-        if isinstance(self.requirements["InitialWorkDirRequirement"], str):
-            # Listing is a sole string
+        requirement = self.requirements["InitialWorkDirRequirement"]
+        # Normalize if expression
+        if isinstance(requirement, str):
+            requirement = [requirement]
         
-        # for listing in self.requirements:
-        #     if isinstance(listing, str):
-        #         # L
-        #     elif isinstance(listing, dict):
-            pass
-        # TODO
+        for listing in requirement:
+            if isinstance(listing, str):
+                # Listing is expression
+                ret = self.eval(listing, cwl_namespace)
+                if isinstance(ret, NoneType): continue
+                raise NotImplementedError(f"Found unsupported type {type(ret)}")
+
+            elif isinstance(listing, dict):
+                if "entry" in listing:
+                    # Dirent
+                    entry = listing["entry"]
+                    print(entry)
+                    if isinstance(entry, NoneType): continue
+                    if isinstance(entry, List):
+                        # Multiline, each needs evaluation and then form file.contents together
+                        eval_lines = []
+                        for line in entry:
+                            eval_lines = self.eval(line, cwl_namespace)
+                        contents = "\n".join(eval_lines)
+                    if "entryname" in listing:
+                        entryname_ret = self.eval(listing["entry"], cwl_namespace)
+                        if not isinstance(entryname_ret, str):
+                            raise Exception("Cant create file without an entryname")
+                        # new_file = FileObject(tmp_path / Path(entryname_ret))
+                        # new_file.create(entry_ret)
+                else:
+                    raise NotImplementedError(listing)
+            # TODO WIP
 
 
     def stage_input_files(self, tmp_path: Path) -> None:
