@@ -109,12 +109,16 @@ class FileObject:
     dirname: str
     nameroot: str
     nameext: str
+    contents: str
+    size: int
+    # writable: bool = True
+    # MAX_SIZE: int = 64000
     
     def __init__(self, file_path: str | Path | FileObject):
         if isinstance(file_path, str):
             file_path = Path(file_path)
         if isinstance(file_path, Path):
-            # path: Path = file_path.resolve() < BUG 
+            # path: Path = file_path.resolve() < BUG dont use
             # pathlib.Path.resolve resolves symlinks, which is unwanted
             # behaviour, as we are sometimes pointing to symlinks. Normalizing
             # the parent and adding the name part circumvents this.
@@ -131,15 +135,22 @@ class FileObject:
             self.dirname = file_path.dirname
             self.nameroot = file_path.nameroot
             self.nameext = file_path.nameext
+            self.contents = file_path.contents
+            self.size = file_path.size
+
         else:
             raise Exception(f"FileObject expects 'str' | 'Path' | 'FileObject', but found '{type(file_path)}'")
-
 
     def resolve(self) -> FileObject:
         return FileObject(Path(self.path).resolve())
     
     def resolve_as_str(self) -> str:
         return str(Path(self.path).resolve())
+    
+    def create(self, contents: Optional[str] = None) -> None:
+        with open(self.path, "w") as f:
+            if contents:
+                f.write(contents)
 
     def __str__(self) -> str:
         return self.path
