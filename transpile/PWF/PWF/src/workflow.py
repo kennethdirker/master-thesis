@@ -150,7 +150,7 @@ class BaseWorkflow(BaseProcess):
         # Recursively load all processes from steps
         print("[WORKFLOW]: Loading process files:")
         for step_id, step_dict in self.steps.items():
-            step_process = self._load_process_from_uri(step_dict["run"], step_id, self.requirements.copy)
+            step_process = self._load_process_from_uri(step_dict["run"], step_id, self.requirements.copy())
             processes[step_process.id] = step_process
             self.step_id_to_process[step_id] = step_process
             node = Node(
@@ -620,7 +620,7 @@ class BaseWorkflow(BaseProcess):
             self, 
             uri: str,
             step_id: str,
-            requirements,
+            requirements: dict[str, Any],
         ) -> BaseProcess:
         """
         Dynamic Process loading from file. Raises an exception if no valid 
@@ -660,6 +660,7 @@ class BaseWorkflow(BaseProcess):
             # Instantiate and return the class
             # NOTE: more checks needed?
             print(f"\tFound process at {uri}")
+            # print("DEBUG", requirements)
             return obj(
                 main = False,
                 runtime_context = self.runtime_context,
