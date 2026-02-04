@@ -22,8 +22,5 @@ class multitype_PWF(BaseCommandLineTool):
 			"echo",
 		]
 
-	def set_io(self):
-		self.io = {}
-
 if __name__ == "__main__":
 	multitype_PWF()

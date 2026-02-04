@@ -35,11 +35,5 @@ class noiseremover_PWF(BaseCommandLineTool):
 			"/home/kennethdirker/Leiden/2024-2025/Thesis/transpile/PWF/PWF/example/cwl_simple_workflow/scripts/noiseremover.py",
 		]
 
-	def set_requirements(self):
-		self.requirements = {}
-
-	def set_io(self):
-		self.io = {}
-
 if __name__ == "__main__":
 	noiseremover_PWF()

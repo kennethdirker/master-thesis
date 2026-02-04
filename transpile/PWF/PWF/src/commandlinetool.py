@@ -35,17 +35,18 @@ from .utils import Absent, FileObject, DirectoryObject, Value, PY_CWL_T_MAPPING,
 
 class BaseCommandLineTool(BaseProcess):
     # Tool info
-    io: dict[str, Any]
-    base_command: list[str] | str | None
+    io: Dict[str, Any]
+    base_command: List[str] | str | None
+    arguments: List[Union[str, Dict[str, Union[str, int]]]]
 
     def __init__(
             self,
             main: bool = True,
-            runtime_context: Optional[dict] = None,
-            loading_context: Optional[dict[str, str]] = None,
+            runtime_context: Optional[Dict] = None,
+            loading_context: Optional[Dict[str, str]] = None,
             parent_process_id: Optional[str] = None,
             step_id: Optional[str] = None,
-            inherited_requirements: Optional[dict[str, Any]] = None,
+            inherited_requirements: Optional[Dict[str, Any]] = None,
             PATH: Optional[str] = None,
         ):
         """ TODO: class description """
@@ -67,6 +68,7 @@ class BaseCommandLineTool(BaseProcess):
 
         # Digest CommandlineTool file
         self.set_base_command()
+        self.set_arguments()
         self.set_io()
         self.process_requirements(inherited_requirements)
         
@@ -85,7 +87,7 @@ class BaseCommandLineTool(BaseProcess):
             - self.doc: Human readable process explaination.
             - TODO: Add more fields if needed!
         """
-        pass        
+        self.metadata = {}
 
     @abstractmethod
     # FIXME: Better function name
@@ -105,12 +107,18 @@ class BaseCommandLineTool(BaseProcess):
         """
         pass
 
+    def set_arguments(self) -> None:
+        """
+        TODO
+        """
+        self.arguments = []
+
 
     def set_io(self) -> None:
         """
         Set the tool's IO options.
         """
-        pass
+        self.io = {}
 
 
     def process_requirements(
@@ -335,7 +343,61 @@ class BaseCommandLineTool(BaseProcess):
         self.stage_input_files(tmp_path)
 
 
-    def prepare_runtime_context(self, cwl_namespace: dict[str, Any]):
+    def prepare_arguments(
+            self, 
+            cwl_namespace: dict[str, Any]
+        ) -> List[Dict[str, Any]]:
+        """
+        TODO Description
+        """
+        processed = []
+        # Normalize to inputBinding dicts with default fields
+        for arg in self.arguments:
+            if isinstance(arg, str):
+                value = self.eval(arg, cwl_namespace)
+                if value is None:
+                    continue
+
+                d = {
+                    "type": "argument",
+                    "valueFrom": value,
+                    "position": 0,
+                    "separate": True,
+                }
+                processed.append(d)
+            elif isinstance(arg, Dict):
+                value = self.eval(cast(str, arg["valueFrom"]), cwl_namespace)
+                if value is None:
+                    continue
+
+                arg["type"] = "argument"
+                arg["valueFrom"] = value
+                if not "position" in arg:
+                    arg["position"]
+                if not "separate" in arg:
+                    arg["separate"] = True
+                processed.append(arg)
+            else:
+                raise Exception(f"Expected 'str' or 'dict', but found '{type(arg)}'")
+        
+        # Compose the argument and save the individual parts as a list of 
+        # strings in the valueFrom field.
+        for arg in processed:
+            value = arg["valueFrom"]
+            if isinstance(value, List):
+                if len(value) == 0: 
+                    continue
+
+                cwl_value_t = PY_CWL_T_MAPPING[type(value[0])][0]
+                arg["valueFrom"] = self.compose_array_arg(value, cwl_value_t, arg)
+            else:
+                cwl_value_t = PY_CWL_T_MAPPING[type(value)][0]
+                arg["valueFrom"] = self.compose_arg(value, cwl_value_t, arg)
+        return processed
+
+
+
+    def prepare_runtime_context(self, cwl_namespace: dict[str, Any]) -> None:
         """
         Complete runtime context input values if default or valueFrom are
         specified in the input parameter. Expressions are evaluated. 
@@ -384,14 +446,6 @@ class BaseCommandLineTool(BaseProcess):
 
             value_t = type(value[0]) if isinstance(value, List) else type(value)
             self.runtime_context[global_source_id] =  Value(value, value_t, PY_CWL_T_MAPPING[value_t][0])
-
-
-    # def match_inputs(self):
-    #     """
-    #     Check if the input values match to the input schema in self.inputs. If 
-    #     not all inputs match, an exception is raised.
-    #     """
-
 
 
     def compose_array_arg(
@@ -551,7 +605,10 @@ class BaseCommandLineTool(BaseProcess):
         return args
 
 
-    def build_commandline(self) -> list[str]:
+    def build_commandline(
+            self,
+            arguments: List[Dict[str, Any]]
+        ) -> List[str]:
         """Construct the full command line for the tool from runtime input values.
 
         The method iterates over the tool's inputs, orders positional
@@ -571,13 +628,22 @@ class BaseCommandLineTool(BaseProcess):
         Raises:
             Exception on missing required inputs or type mismatches.
         """
-        pos_inputs: list[Tuple[str, dict[str, Any]]] = []
-        key_inputs: list[Tuple[str, dict[str, Any]]] = []
+        cmd: List[str] = []
 
-        # TODO FIXME
-        # Aside from 'baseCommand' and 'inputs', we need to parse 'arguments'!
+        # [(input_id, input_dict), ...]
+        pos_inputs: List[Tuple[str, Dict[str, Any]]] = []
+        key_inputs: List[Tuple[str, Dict[str, Any]]] = []
 
-        # Split positional arguments and key arguments
+        # Arguments with position 0 should be inserted before inputs with
+        # position 0. We filter arguments with pos 0 so they can be prepended
+        # later on.
+        for arg in arguments:
+            if arg["position"] == 0:
+                cmd.extend(arg["valueFrom"])
+            else:
+                pos_inputs.append(("", arg))
+
+        # Separate positional inputs from key inputs
         for input_id, input_dict in self.inputs.items():
             # Skip unbound (without input binding) inputs
             if "bound" in input_dict and input_dict["bound"]:
@@ -586,19 +652,23 @@ class BaseCommandLineTool(BaseProcess):
                 else:
                     key_inputs.append((input_id, input_dict))
 
-        # Order the arguments
-        inputs: list[Tuple[str, dict]] = sorted(pos_inputs, key=lambda x: x[1]["position"])
+        # Order the inputs
+        inputs: List[Tuple[str, Dict]] = sorted(pos_inputs, key=lambda x: x[1]["position"])
         inputs += key_inputs
 
-        # Match arguments with runtime input values
-        cmd: list[str] = []
+        # Match inputs with runtime input values, evaluate positional arguments
+        # and add them to the command-line
         for input_id, input_dict  in inputs:
+            # Handle positionals from arguments field
+            if "argument" in input_dict["type"]:
+                cmd.extend(input_dict["valueFrom"])
+                continue
 
             # Normalize expected input types into a list of CWL types
-            expected_types: list[str] = []
+            expected_types: List[str] = []
             if isinstance(input_dict["type"], str):
                 expected_types = [input_dict["type"]]
-            elif isinstance(input_dict["type"], list):
+            elif isinstance(input_dict["type"], List):
                 expected_types = input_dict["type"]
             else:
                 raise Exception(f"Unexpected type(input_dict['type']). Should be 'str' or 'list', but found '{type(input_dict['type'])}'")
@@ -645,7 +715,6 @@ class BaseCommandLineTool(BaseProcess):
                 else:
                     value = value.resolve()
 
-            # expects_array: bool = value_cwl_t + "[]" in expected_types and is_array
             # Check whether an array is expected or not
             if value_cwl_t + "[]" in expected_types and is_array:
                 # Compose argument with array data
@@ -656,7 +725,7 @@ class BaseCommandLineTool(BaseProcess):
 
         # Combine the base command with the arguments
         if hasattr(self, "base_command"):
-            if isinstance(self.base_command, list):
+            if isinstance(self.base_command, List):
                 cmd = [*self.base_command] + cmd
             elif isinstance(self.base_command, str):
                 cmd = [self.base_command] + cmd
@@ -666,7 +735,7 @@ class BaseCommandLineTool(BaseProcess):
         return cmd
     
 
-    def build_env(self, cwl_namespace) -> dict[str, Any]:
+    def build_env(self, cwl_namespace) -> Dict[str, Any]:
         """
         Build the execution environment for the command line tool. The 
         environment is new dictionary filled as follows:
@@ -739,11 +808,11 @@ class BaseCommandLineTool(BaseProcess):
             stdout = sys.stdout
             stderr = sys.stderr
             if "stdin" in self.io:
-                stdin = open(self.io["stdin"], "r")
+                stdin = open(cwd / self.io["stdin"], "r")
             if "stdout" in self.io:
-                stdout = open(self.io["stdout"], "w")
+                stdout = open(cwd / self.io["stdout"], "w")
             if "stderr" in self.io:
-                stderr = open(self.io["stderr"], "w")
+                stderr = open(cwd / self.io["stderr"], "w")
 
             completed: CompletedProcess = run(
                 cmd,
@@ -804,6 +873,7 @@ class BaseCommandLineTool(BaseProcess):
                 # the tmp CWD path needs to be prefixed. 
                 output_file_paths: List[str] = []
                 for g in globs:
+                    print("DEBUG", g, cwd)
                     for match in glob.glob(g, root_dir = cwd):
                         match_path = Path(cwd) / Path(match)
                         output_file_paths.append(str(match_path))
@@ -938,7 +1008,8 @@ class BaseCommandLineTool(BaseProcess):
 
         # Build the command line
         self.prepare_runtime_context(cwl_namespace)
-        cmd: list[str] = self.build_commandline()
+        arguments = self.prepare_arguments(cwl_namespace)
+        cmd: list[str] = self.build_commandline(arguments)
 
         # Build the execution environment
         env = self.build_env(cwl_namespace)

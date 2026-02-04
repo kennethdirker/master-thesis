@@ -30,8 +30,5 @@ class download_images_PWF(BaseCommandLineTool):
 			"wget",
 		]
 
-	def set_io(self):
-		self.io = {}
-
 if __name__ == "__main__":
 	download_images_PWF()
