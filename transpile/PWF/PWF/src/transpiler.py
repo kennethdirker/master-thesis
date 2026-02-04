@@ -285,24 +285,35 @@ def parse_inputs(
 
             # Inputbinding
             if hasattr(input, "inputBinding"):
-                binding = input.inputBinding
+                b = input.inputBinding
 
-                # Used to indicate that the input appears on the command line
-                if binding is not None:
+                # Used to indicate that the input appears on the command line.
+                # Might be used in the future to support conditional arguments.
+                if b is not None:
                     lines.append(indent('"bound": True,', 4))
 
-                # Position
-                if hasattr(binding, "position") and binding.position is not None:
-                    lines.append(indent(f'"position": {binding.position},', 4))
+                # position
+                if hasattr(b, "position") and b.position is not None:
+                    lines.append(indent(f'"position": {b.position},', 4))
 
-                # Prefix
-                if hasattr(binding, "prefix") and binding.prefix is not None:
-                    lines.append(indent(f'"prefix": "{binding.prefix}",', 4))
+                # prefix
+                if hasattr(b, "prefix") and b.prefix is not None:
+                    lines.append(indent(f'"prefix": "{b.prefix}",', 4))
+
+                # separate
+                if hasattr(b, "separate") and b.separate is not None:
+                    lines.append(indent(f'"separate": "{b.separate}",', 4))
+
+                # itemSeparator
+                if hasattr(b, "itemSeparator") and b.itemSeparator is not None:
+                    lines.append(indent(f'"itemSeparator": "{b.itemSeparator}",', 4))
 
                 # valueFrom
-                if hasattr(binding, "valueFrom") and binding.valueFrom is not None:
-                    valueFrom = normalize(binding.valueFrom)
+                if hasattr(b, "valueFrom") and b.valueFrom is not None:
+                    valueFrom = normalize(b.valueFrom)
                     lines.append(indent(f'"valueFrom": "{valueFrom}",', 4))
+
+                # separate
 
             # loadContents
             # TODO
@@ -346,24 +357,6 @@ def get_output_type(types: Any | List[Any]) -> list[str]:
             raise NotImplementedError(f"Found unsuppored type {type(t)}")
 
     return ret
-
-
-# def get_glob(glob: str) -> str:
-#     """
-    
-#     """
-#     # FIXME JS should not be transformed
-#     s = glob
-#     if "$(" in glob and ")" in glob:
-#         s = glob[2:-1].split(".")
-#         if "inputs" in s[0]:
-#             # Get glob from input
-#             glob = s[1]
-#         else:
-#             # Get glob from step
-#             glob = "/".join(s[1:])
-#         s = f"${glob}$"
-#     return s
 
 
 def parse_outputs(
@@ -557,27 +550,33 @@ def parse_arguments(
             if isinstance(arg, str):
                 lines.append(indent(f'"{arg}",', 3))
             elif isinstance(arg, CommandLineBinding):
-                solo = not (hasattr(arg, "position") and arg.position is not None or
-                        hasattr(arg, "prefix") and arg.prefix is not None)
-                
                 # valueFrom
                 valueFrom = normalize(arg.valueFrom)    # type: ignore
-                if solo:
+                if not (hasattr(arg, "position") and arg.position is not None or
+                        hasattr(arg, "prefix") and arg.prefix is not None or
+                        hasattr(arg, "separate") and arg.separate is not None or
+                        hasattr(arg, "itemSeparator") and arg.itemSeparator is not None):
                     lines.append(indent(f'"{valueFrom}",', 3))
                     continue
                 else:
                     lines.append(indent('{', 3))
                     lines.append(indent(f'"valueFrom": "{valueFrom}",', 4))
                     
-                # Position
+                # position
                 if hasattr(arg, "position") and arg.position is not None:
                     lines.append(indent(f'"position": {arg.position},', 4))
-                    solo = False
 
-                # Prefix
+                # prefix
                 if hasattr(arg, "prefix") and arg.prefix is not None:
                     lines.append(indent(f'"prefix": "{arg.prefix}",', 4))
-                    solo = False
+
+                # separate
+                if hasattr(arg, "separate") and arg.separate is not None:
+                    lines.append(indent(f'"separate": "{arg.separate}",', 4))
+
+                # itemSeparator
+                if hasattr(arg, "itemSeparator") and arg.itemSeparator is not None:
+                    lines.append(indent(f'"itemSeparator": "{arg.itemSeparator}",', 4))
 
                 lines.append(indent('},', 3))
             else:
