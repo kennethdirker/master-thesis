@@ -13,11 +13,11 @@ class Node:
             self,
             id: str,
             processes: List[BaseProcess],
-            parents: Optional[list[str]] = None,    #list[parent_ids]
-            children: Optional[list[str]] = None,   #list[child_ids]
+            parents: Optional[List[str]] = None,    #List[parent_ids]
+            children: Optional[List[str]] = None,   #List[child_ids]
             # internal_dependencies and graph are used in graph optimization 
             is_tool_node: bool = False,
-            internal_dependencies: Optional[dict[str, str | list[str]]] = None,  #{node_id: node_id}
+            internal_dependencies: Optional[Dict[str, str | List[str]]] = None,  #{node_id: node_id}
             graph: Optional['Graph'] = None
         ) -> None:
         """
@@ -75,7 +75,7 @@ class Node:
 
     def create_task_graph(
             self,
-            dependencies: Dict[str, Union[str, list[str]]],
+            dependencies: Dict[str, Union[str, List[str]]],
             processes: List[BaseProcess]
         ) -> 'Graph':
         """
@@ -110,7 +110,7 @@ class Node:
 
     def merge(
             self,
-            nodes: Union['Node', list['Node']]
+            nodes: Union['Node', List['Node']]
         ) -> 'Node':
         # self.merged = True
         # 
@@ -141,8 +141,8 @@ class Graph:
         self.roots: List[str] = []  # [node_ids]
         self.leaves: List[str] = [] # [node_ids]
         self.nodes: Dict[str, Node] = {}    # {node_id, Node}
-        self.in_deps: Dict[str, list[str]] = {}  # {node_id: [parent_ids]}
-        self.out_deps: Dict[str, list[str]] = {}  # {node_id: [child_ids]}
+        self.in_deps: Dict[str, List[str]] = {}  # {node_id: [parent_ids]}
+        self.out_deps: Dict[str, List[str]] = {}  # {node_id: [child_ids]}
         self.size: int = 0
         # self.grouping: bool = grouping
         
@@ -246,8 +246,8 @@ class Graph:
     def connect_node(
             self,
             node_id: str,
-            parents: Optional[list[str]] = None,
-            children: Optional[list[str]] = None
+            parents: Optional[List[str]] = None,
+            children: Optional[List[str]] = None
         ) -> None:
         """
         Add edges between a node and its parents/children.
@@ -345,7 +345,7 @@ class Graph:
 
     def merge(
             self,
-            node_ids: str | list[str]
+            node_ids: str | List[str]
         ):
         """
         TODO Description
@@ -370,8 +370,8 @@ class Graph:
 
     def get_nodes(
             self,
-            node_ids: str | list[str]
-        ) -> list[Node]:
+            node_ids: str | List[str]
+        ) -> List[Node]:
         """
         TODO
         """

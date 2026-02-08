@@ -457,7 +457,7 @@ class BaseCommandLineTool(BaseProcess):
             values: Any | List[Any],
             cwl_value_t: str,
             input_dict: Dict[str, Any]
-        ) -> list[str]:
+        ) -> List[str]:
         """
         Compose command-line tokens for an array-typed CWL input.
 
@@ -546,7 +546,7 @@ class BaseCommandLineTool(BaseProcess):
             value: Any | List[Any],
             cwl_value_t: str,
             input_dict: Dict[str, Any],
-        ) -> list[str]:
+        ) -> List[str]:
         """Compose command-line tokens for a single CWL input value.
 
         If ``value`` is provided as a list, the first element (head) is

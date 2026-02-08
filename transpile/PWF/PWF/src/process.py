@@ -655,7 +655,7 @@ class BaseProcess(ABC):
     def publish_output(
             self, 
             outputs: Dict[str, Any],
-            verbose = False
+            verbose: bool = False
         ) -> str:
         """
         Copy the output files to the designated output directory and return a
@@ -696,7 +696,7 @@ class BaseProcess(ABC):
         return json.dumps(new_outputs, indent = 4)
 
 
-    def delete_temps(self, verbose = False):
+    def delete_temps(self, verbose: bool = False):
         if self.loading_context["preserve_tmp"]: return
         if not self.loading_context["init_tmp_dir_empty"]:
             # Designated temporary directory was not empty on start, so we 
@@ -715,7 +715,7 @@ class BaseProcess(ABC):
     def finalize(
             self, 
             outputs: Dict[str, Any], 
-            verbose = False
+            verbose: bool = False
         ):
         print()
         print("[OUTPUT]")

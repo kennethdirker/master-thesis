@@ -133,7 +133,7 @@ class BaseWorkflow(BaseProcess):
         # self.groups = []
 
     
-    def create_dependency_graph(self) -> None:
+    def create_dependency_graph(self, verbose: bool = False) -> None:
         """ 
         TODO Description
         FIXME Not accurate anymore
@@ -144,9 +144,13 @@ class BaseWorkflow(BaseProcess):
         graph: Graph = self.loading_context["graph"]
 
         # Recursively load all processes from steps
-        print("[WORKFLOW]: Loading process files:")
+        if verbose:
+            print("[WORKFLOW]: Loading process files:")
         for step_id, step_dict in self.steps.items():
-            step_process = self._load_process_from_uri(step_dict["run"], step_id, self.requirements.copy())
+            step_process = self._load_process_from_uri(step_dict["run"],
+                                                       step_id,
+                                                       self.requirements.copy(),
+                                                       verbose)
             processes[step_process.id] = step_process
             self.step_id_to_process[step_id] = step_process
             node = Node(
@@ -194,6 +198,11 @@ class BaseWorkflow(BaseProcess):
         """
         TODO Description
         """
+        graph: Graph = self.loading_context["graph"]
+
+        # NOTE just for testing purposes.
+        nodes = graph.nodes.copy()
+        
         pass
 
 
@@ -544,6 +553,7 @@ class BaseWorkflow(BaseProcess):
         # task. The polling loop checks for finished nodes and submits newly
         # executable nodes. Invalid workflows, faulty tools or bad input might
         # result in deadlocks, in which case an exception is raised.
+        print()
         print("[WORKFLOW]: Executing workflow")
         while len(runnable) != 0 or len(running) != 0:
             # Execute runnable nodes
@@ -622,6 +632,7 @@ class BaseWorkflow(BaseProcess):
             uri: str,
             step_id: str,
             requirements: Dict[str, Any],
+            verbose: bool = False
         ) -> BaseProcess:
         """
         Dynamic Process loading from file. Raises an exception if no valid 
@@ -659,7 +670,8 @@ class BaseWorkflow(BaseProcess):
                 continue
 
             # Instantiate and return the class
-            print(f"\tFound process at {uri}")
+            if verbose: print(f"\tFound process at {uri}")
+
             return obj(
                 main = False,
                 loading_context = self.loading_context,
@@ -670,10 +682,7 @@ class BaseWorkflow(BaseProcess):
         raise Exception(f"{uri} does not contain a BaseProcess subclass")
     
 
-
-    
-
-def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
+def get_process_parents(tool: BaseCommandLineTool) -> List[str]:
     """
     TODO Description
     NOTE: How to implement optional args? Handle at runtime!
