@@ -42,7 +42,6 @@ class BaseCommandLineTool(BaseProcess):
     def __init__(
             self,
             main: bool = True,
-            runtime_context: Optional[Dict] = None,
             loading_context: Optional[Dict[str, str]] = None,
             parent_process_id: Optional[str] = None,
             step_id: Optional[str] = None,
@@ -54,11 +53,9 @@ class BaseCommandLineTool(BaseProcess):
         # Initialize BaseProcess class
         super().__init__(
             main = main,
-            runtime_context = runtime_context,
             loading_context = loading_context,
             parent_process_id = parent_process_id,
             step_id = step_id,
-            # requirements = requirements,
         )
 
         # Prepare properties
@@ -73,8 +70,11 @@ class BaseCommandLineTool(BaseProcess):
         self.process_requirements(inherited_requirements)
         
         if main:
+            yaml_uri = self.loading_context["input_object"]
+            runtime_context = self._load_input_object(yaml_uri)
             self.register_input_sources()
-            outputs = self.execute(self.loading_context["use_dask"], verbose=True)
+            outputs = self.execute(self.loading_context["use_dask"],
+                                   runtime_context)
             self.finalize(outputs)
 
 
@@ -123,7 +123,7 @@ class BaseCommandLineTool(BaseProcess):
 
     def process_requirements(
             self,
-            inherited_requirements: dict[str, Any] | None
+            inherited_requirements: Dict[str, Any] | None
         ) -> None:
         """
         Set the requirements dict with tool-compatible inhertited requirements
@@ -180,7 +180,7 @@ class BaseCommandLineTool(BaseProcess):
     def stage_initial_work_dir_requirement(
             self, 
             tmp_path: Path,
-            cwl_namespace: dict[str, Any]
+            cwl_namespace: Dict[str, Any]
         ) -> None:
         # Stage files from InitialWorkDirRequirement
         if not "InitialWorkDirRequirement" in self.requirements:
@@ -219,8 +219,6 @@ class BaseCommandLineTool(BaseProcess):
 
             elif isinstance(listing, dict):
                 if "entry" in listing:
-                    print(listing["entry"])
-
                     # Dirent
                     # Evaluate 'entry' field
                     entry = listing["entry"]
@@ -260,8 +258,6 @@ class BaseCommandLineTool(BaseProcess):
                             # Must be relative path within tmp CWD
                             entry_path = tmp_path / Path(entryname)
                             entry_path = entry_path.resolve()
-                            print(entry_path)
-                            print(tmp_path)
                             if not entry_path.is_relative_to(tmp_path):
                                 raise Exception("Must create file/directory within working folder")
                     
@@ -278,7 +274,10 @@ class BaseCommandLineTool(BaseProcess):
                 raise NotImplementedError(listing)
 
 
-    def stage_input_files(self, tmp_path: Path) -> None:
+    def stage_input_files(
+            self, 
+            tmp_path: Path,
+            runtime_context: Dict[str, Any]) -> None:
         """
         """
         # Stage files and directories from input object
@@ -291,7 +290,7 @@ class BaseCommandLineTool(BaseProcess):
                 continue
 
             source = self.input_to_source[input_id]
-            value_wrapper = self.runtime_context[source]
+            value_wrapper = runtime_context[source]
             if isinstance(value_wrapper, Absent):
                 continue
 
@@ -328,24 +327,25 @@ class BaseCommandLineTool(BaseProcess):
                 tmp_path_objects = tmp_path_objects[0]
 
             new_value = Value(tmp_path_objects, type_, PY_CWL_T_MAPPING[type_][0])
-            self.runtime_context[source] = new_value
+            runtime_context[source] = new_value
 
 
     def stage_files(
             self, 
             tmp_path: Path,
-            cwl_namespace: dict[str, Any]
+            cwl_namespace: Dict[str, Any],
+            runtime_context: Dict[str, Any]
         ) -> None:
         """
         TODO Description
         """
         self.stage_initial_work_dir_requirement(tmp_path, cwl_namespace)
-        self.stage_input_files(tmp_path)
+        self.stage_input_files(tmp_path, runtime_context)
 
 
     def prepare_arguments(
             self, 
-            cwl_namespace: dict[str, Any]
+            cwl_namespace: Dict[str, Any]
         ) -> List[Dict[str, Any]]:
         """
         TODO Description
@@ -397,7 +397,11 @@ class BaseCommandLineTool(BaseProcess):
 
 
 
-    def prepare_runtime_context(self, cwl_namespace: dict[str, Any]) -> None:
+    def prepare_runtime_context(
+            self,
+            cwl_namespace: Dict[str, Any],
+            runtime_context: Dict[str, Any]
+        ) -> None:
         """
         Complete runtime context input values if default or valueFrom are
         specified in the input parameter. Expressions are evaluated. 
@@ -412,7 +416,7 @@ class BaseCommandLineTool(BaseProcess):
         for input_id, input_dict in self.inputs.items():
             # Get input value from runtime context
             global_source_id: str = self.input_to_source[input_id]
-            value = self.runtime_context[global_source_id].value
+            value = runtime_context[global_source_id].value
 
             # Check if the input has a value. If not, try to fill it with a
             # default value
@@ -426,7 +430,7 @@ class BaseCommandLineTool(BaseProcess):
                         value = self.eval(value, cwl_namespace)
 
             # Add value of 'self' to evaluation context.
-            namespace: dict[str, Any] = cwl_namespace.copy()
+            namespace: Dict[str, Any] = cwl_namespace.copy()
             namespace.update({"self": value})
 
             # If provided, valueFrom gives value to the input parameter. 
@@ -445,14 +449,14 @@ class BaseCommandLineTool(BaseProcess):
                     value = self.eval(value, cwl_namespace)
 
             value_t = type(value[0]) if isinstance(value, List) else type(value)
-            self.runtime_context[global_source_id] =  Value(value, value_t, PY_CWL_T_MAPPING[value_t][0])
+            runtime_context[global_source_id] =  Value(value, value_t, PY_CWL_T_MAPPING[value_t][0])
 
 
     def compose_array_arg(
             self,
             values: Any | List[Any],
             cwl_value_t: str,
-            input_dict: dict[str, Any]
+            input_dict: Dict[str, Any]
         ) -> list[str]:
         """
         Compose command-line tokens for an array-typed CWL input.
@@ -502,7 +506,7 @@ class BaseCommandLineTool(BaseProcess):
         if "separate" in input_dict:
             separate = input_dict["separate"]
 
-        array_arg: list[str] = []
+        array_arg: List[str] = []
 
         if "boolean" in cwl_value_t:
             # NOTE: At the moment not sure how this should be implemented.
@@ -541,7 +545,7 @@ class BaseCommandLineTool(BaseProcess):
             self,
             value: Any | List[Any],
             cwl_value_t: str,
-            input_dict: dict[str, Any],
+            input_dict: Dict[str, Any],
         ) -> list[str]:
         """Compose command-line tokens for a single CWL input value.
 
@@ -587,7 +591,7 @@ class BaseCommandLineTool(BaseProcess):
         if "separate" in input_dict:
             separate = input_dict["separate"]
 
-        args: list[str] = []
+        args: List[str] = []
 
         if cwl_value_t == "boolean" and "prefix" in input_dict:
             args.append(prefix)
@@ -607,7 +611,8 @@ class BaseCommandLineTool(BaseProcess):
 
     def build_commandline(
             self,
-            arguments: List[Dict[str, Any]]
+            arguments: List[Dict[str, Any]],
+            runtime_context: Dict[str, Any]
         ) -> List[str]:
         """Construct the full command line for the tool from runtime input values.
 
@@ -619,7 +624,7 @@ class BaseCommandLineTool(BaseProcess):
 
         Precondition:
             ``prepare_runtime_context()`` must have been called so that
-            ``self.runtime_context`` contains evaluated ``Value`` instances.
+            ``runtime_context`` contains evaluated ``Value`` instances.
 
         Returns:
             A list of string tokens representing the full command to be
@@ -677,7 +682,7 @@ class BaseCommandLineTool(BaseProcess):
 
             # Load value from runtime_context
             global_source_id: str = self.input_to_source[input_id]
-            v = self.runtime_context[global_source_id]
+            v = runtime_context[global_source_id]
 
             if isinstance(v, (NoneType, Absent)):
                 if not optional:
@@ -754,7 +759,7 @@ class BaseCommandLineTool(BaseProcess):
             subprocess execution. Keys include at minimum ``HOME``,
             ``TMPDIR`` and ``PATH`` and may be extended by ``EnvVarRequirement``.
         """
-        env: dict[str, Any] = {
+        env: Dict[str, Any] = {
             "HOME": self.loading_context["designated_out_dir"],
             "TMPDIR": self.loading_context["designated_tmp_dir"],
             "PATH": self.loading_context["PATH"],
@@ -770,12 +775,12 @@ class BaseCommandLineTool(BaseProcess):
 
     def run_wrapper(
             self,
-            cmd: list[str],
-            cwl_namespace: dict[str, Any],
-            output_schema: dict[str, Any],
-            env: dict[str, Any],
+            cmd: List[str],
+            cwl_namespace: Dict[str, Any],
+            output_schema: Dict[str, Any],
+            env: Dict[str, Any],
             cwd: Path,
-        ) -> dict[str, Value]:
+        ) -> Dict[str, Value]:
         """Execute the command and produce CWL-typed outputs.
 
         This wrapper runs ``cmd`` via ``subprocess.run``, captures standard
@@ -802,7 +807,7 @@ class BaseCommandLineTool(BaseProcess):
             ``loadContents`` handling), or re-raises subprocess errors.
         """
         # Execute tool
-        print("[TOOL]: EXECUTING:", " ".join(cmd))
+        print("[TOOL]: EXECUTING:", " \\\n[TOOL]:\t\t".join(cmd))
         try:
             stdin = sys.stdin
             stdout = sys.stdout
@@ -829,7 +834,7 @@ class BaseCommandLineTool(BaseProcess):
         # Command outputs are matched against the tool's output schema. Tool 
         # outputs are generated based on the output bindings defined in the
         # output schema.
-        outputs: dict[str, Any] = {}
+        outputs: Dict[str, Any] = {}
         for output_id, output_dict in output_schema.items():
             global_output_id = self.global_id(output_id)
             
@@ -873,7 +878,6 @@ class BaseCommandLineTool(BaseProcess):
                 # the tmp CWD path needs to be prefixed. 
                 output_file_paths: List[str] = []
                 for g in globs:
-                    print("DEBUG", g, cwd)
                     for match in glob.glob(g, root_dir = cwd):
                         match_path = Path(cwd) / Path(match)
                         output_file_paths.append(str(match_path))
@@ -971,7 +975,7 @@ class BaseCommandLineTool(BaseProcess):
     def execute(
             self, 
             use_dask: bool,
-            runtime_context: Optional[dict[str, Any]] = None,
+            runtime_context: Dict[str, Any],
             verbose: Optional[bool] = True,
             client: Optional[Client] = None,
         ) -> dict[str, Value]:
@@ -994,28 +998,24 @@ class BaseCommandLineTool(BaseProcess):
         Returns:
             A dictionary mapping global output ids to ``Value`` objects.
         """
-        # Update runtime context
-        if runtime_context is not None:
-            self.runtime_context = runtime_context
-
-        cwl_namespace = self.build_namespace()
+        cwl_namespace = self.build_base_namespace(runtime_context)
 
         # Create a temporary work directory and stage all needed files
         tmp_path: Path = self.loading_context["designated_tmp_dir"]
         tmp_path /= str(uuid4())
         tmp_path.mkdir()
-        self.stage_files(tmp_path, cwl_namespace)
+        self.stage_files(tmp_path, cwl_namespace, runtime_context)
 
         # Build the command line
-        self.prepare_runtime_context(cwl_namespace)
+        self.prepare_runtime_context(cwl_namespace, runtime_context)
         arguments = self.prepare_arguments(cwl_namespace)
-        cmd: list[str] = self.build_commandline(arguments)
+        cmd: List[str] = self.build_commandline(arguments, runtime_context)
 
         # Build the execution environment
         env = self.build_env(cwl_namespace)
 
         # Submit and execute tool and gather output
-        new_state: dict[str, Value] = {}
+        new_state: Dict[str, Value] = {}
         if use_dask:
             if client is None:
                 client = Client()

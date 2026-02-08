@@ -11,66 +11,87 @@ from copy import deepcopy
 from dask.distributed import Client
 from pathlib import Path
 from types import NoneType
-from typing import Any, cast, List, Mapping, Optional, Tuple, TypeAlias, Union
+from typing import (
+    Any,
+    cast,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Tuple,
+    TypeAlias,
+    Union
+)
 
+from .process import BaseProcess
 from .commandlinetool import BaseCommandLineTool
-from .process import BaseProcess, Graph, Node
-from .utils import Absent, FileObject, DirectoryObject, pretty_print_dict, Value, CWL_PY_T_MAPPING, PY_CWL_T_MAPPING
+from .graph import Graph, Node
+from .utils import (
+    Absent,
+    FileObject,
+    DirectoryObject,
+    Value,
+    CWL_PY_T_MAPPING,
+    PY_CWL_T_MAPPING
+)
 
 Future: TypeAlias = concurrent.futures.Future | dask.distributed.Future
 
 
 class BaseWorkflow(BaseProcess):
     # Step info
-    step_id_to_process: dict[str, BaseProcess]
-    steps: dict[str, dict[str, Any]]
+    step_id_to_process: Dict[str, BaseProcess]
+    steps: Dict[str, Dict[str, Any]]
 
     def __init__(
             self,
             main: bool = True,
-            runtime_context: Optional[dict] = None,
-            loading_context: Optional[dict[str, str]] = None,
+            loading_context: Optional[Dict[str, str]] = None,
             parent_process_id: Optional[str] = None,
             step_id: Optional[str] = None,
-            inherited_requirements: Optional[dict[str, Any]] = None
+            inherited_requirements: Optional[Dict[str, Any]] = None
         ):
         """
         TODO: class description 
+        # TODO Explain loading_context
+            - graph
+
         NOTE: if main is True, parent_id and step_id are None
         """
         super().__init__(
             main = main,
-            runtime_context = runtime_context,
+            # runtime_context = runtime_context,
             loading_context = loading_context,
             parent_process_id = parent_process_id,
-            step_id = step_id,
-            # requirements = requirements
+            step_id = step_id
         )
 
         # TODO Decide if this is the way, see set_groups()
         # self.groupings = ...
 
-        # Mapping of a step ID to its child BaseProcess object
+        # Mapping of a step ID to its child BaseProcess-derived object
         self.step_id_to_process = {}
 
         # Must be overridden in set_steps().
         self.steps = {}
 
         # Digest workflow file
-        # self.set_metadata()
-        # self.set_inputs()
-        # self.set_outputs()
-        # self.set_requirements()
         self.set_steps()
         self.process_requirements(inherited_requirements)
 
-        # Only the main process executes the workflow.
+        # The top-level (main) BaseWorkflow class builds and executes the
+        # the workflow.
         if main:
+            yaml_uri = self.loading_context["input_object"]
+            runtime_context = self._load_input_object(yaml_uri)
+            self.loading_context["graph"] = Graph()
             self.create_dependency_graph()
-            self.register_step_sources()
+            self.register_step_sources(runtime_context)
             self.optimize_dependency_graph()
-            self.register_input_sources()
-            outputs = self.execute(self.loading_context["use_dask"])
+            self.register_input_sources(runtime_context)
+            outputs = self.execute(self.loading_context["use_dask"],
+                                   runtime_context,
+                                   dask_client = None)
             self.finalize(outputs)
 
 
@@ -81,39 +102,12 @@ class BaseWorkflow(BaseProcess):
         is mandatory for workflows.
         TODO Desc
         """
-        # Example:
-        # self.steps = {
-        #     "download_images": {
-        #         "in": {
-        #             "url_list": {
-        #                 "source": "url_list"
-        #             }
-        #         },
-        #         "out": "output",
-        #         "run": "../steps/DownloadImages.py",
-        #         "label": "download_images"
-        #     },
-        #     "imageplotter": {
-        #         "in": {
-        #             "input_fits": {
-        #                 "source": "download_images/output"
-        #             },
-        #             "output_image": {
-        #                 "default": "before_noise_remover.png"
-        #             }
-
-        #         },
-        #         "out": "output",
-        #         "run": "../steps/ImagePlotter.py",
-        #         "label": "imageplotter"
-        #     }
-        # }
         pass
 
 
     def process_requirements(
             self,
-            inherited_requirements: dict[str, Any] | None
+            inherited_requirements: Dict[str, Any] | None
         ) -> None:
         """
         Set the requirements dict with inhertited requirements and override
@@ -146,7 +140,7 @@ class BaseWorkflow(BaseProcess):
         Create a Dask task graph with the sub-processes of this workflow. 
         Can be overwritten to alter execution behaviour. 
         """
-        processes: dict[str, BaseProcess] = self.loading_context["processes"]
+        processes: Dict[str, BaseProcess] = self.loading_context["processes"]
         graph: Graph = self.loading_context["graph"]
 
         # Recursively load all processes from steps
@@ -172,7 +166,10 @@ class BaseWorkflow(BaseProcess):
                 )
 
 
-    def register_step_sources(self) -> None:
+    def register_step_sources(
+            self,
+            runtime_context: Dict[str, Any]
+        ) -> None:
         """
                 TODO Desc
         """
@@ -186,12 +183,11 @@ class BaseWorkflow(BaseProcess):
                 # Register step outputs as global sources
                 if isinstance(step_dict["out"], list):
                     for out_id in step_dict["out"]:
-                        self.runtime_context[step_proc.global_id(out_id)] = Absent()
+                        runtime_context[step_proc.global_id(out_id)] = Absent()
                 elif isinstance(step_dict["out"], str):
-                    self.runtime_context[step_proc.global_id(step_dict["out"])] = Absent()
+                    runtime_context[step_proc.global_id(step_dict["out"])] = Absent()
                 else:
                     raise NotImplementedError("Encountered unsupported type", type(step_dict["out"]))
-    
 
 
     def optimize_dependency_graph(self) -> None:
@@ -201,7 +197,10 @@ class BaseWorkflow(BaseProcess):
         pass
 
 
-    def register_input_sources(self) -> None:
+    def register_input_sources(
+            self,
+            runtime_context: Dict[str, Any]
+        ) -> None:
         """
         Register the global source of each tool input in the workflow. The
         source is stored in the tool's input_to_source dictionary. The source
@@ -236,10 +235,9 @@ class BaseWorkflow(BaseProcess):
                 return True, step_in_dict["default"]
             elif "valueFrom" in step_in_dict:
                 return True, None
-                # return True, step_in_dict["valueFrom"]
             raise NotImplementedError()
 
-        processes: dict[str, BaseProcess] = self.loading_context["processes"]
+        processes: Dict[str, BaseProcess] = self.loading_context["processes"]
 
         # Link tool inputs of each tool to their global source
         for process in processes.values():
@@ -275,7 +273,7 @@ class BaseWorkflow(BaseProcess):
                         else:
                             value = Value(source, type(source), PY_CWL_T_MAPPING[type(source)][0])
 
-                        self.runtime_context[process.input_to_source[input_id]] = value
+                        runtime_context[process.input_to_source[input_id]] = value
                         break
 
                     source = cast(str, source)
@@ -303,14 +301,14 @@ class BaseWorkflow(BaseProcess):
     def build_step_namespace(
             self, 
             tool:  BaseCommandLineTool,
-            runtime_context: dict[str, Any],
-        ) -> dict[str, Any]:
+            runtime_context: Dict[str, Any],
+        ) -> Dict[str, Any]:
         """
         """
         if tool.parent_process_id is None or tool.step_id is None:
             raise ValueError("Tool must have parent_process_id and step_id defined")
         # Add workflow inputs to namespace
-        namespace = tool.build_namespace()
+        namespace = tool.build_base_namespace(runtime_context)
 
         # Add step inputs to namespace
         if tool.step_id is None:
@@ -359,8 +357,8 @@ class BaseWorkflow(BaseProcess):
     def prepare_step_runtime_context(
             self,
             tool: BaseCommandLineTool, 
-            runtime_context: dict[str, Value]
-        ) -> dict[str, Value]:
+            runtime_context: Dict[str, Value]
+        ) -> Dict[str, Value]:
         """
         Create a new runtime context dictionary with updated source values
         from process input and step input valueFrom fields.
@@ -371,7 +369,7 @@ class BaseWorkflow(BaseProcess):
         parent_process = cast(BaseWorkflow, self.loading_context["processes"][parent_workflow_id])
 
         # Create a copy to prevent replacing source values with valueFrom values
-        step_runtime_context: dict[str, Value] = runtime_context.copy()
+        step_runtime_context: Dict[str, Value] = runtime_context.copy()
 
         # Create cwl_namespace with step ins and runtime_namespace
         cwl_namespace = self.build_step_namespace(tool, runtime_context)
@@ -416,10 +414,10 @@ class BaseWorkflow(BaseProcess):
     def execute_workflow_node(
             self,
             workflow_node: Node,
-            runtime_context: dict[str, Any],
+            runtime_context: Dict[str, Any],
             verbose: Optional[bool] = True,
             executor: Optional[ThreadPoolExecutor] = None
-        ) -> dict[str, Any]:
+        ) -> Dict[str, Any]:
         """
         Execute the tasks of this node. 
         TODO Only tested on nodes containing a single tool node!
@@ -432,12 +430,12 @@ class BaseWorkflow(BaseProcess):
             executor = ThreadPoolExecutor()
 
         nodes = graph.nodes
-        runnable_nodes: list[Node] = deepcopy(graph.get_nodes(graph.roots))
-        runnable: dict[str, Node] = {node.id: node for node in runnable_nodes}
-        waiting: dict[str, Node] = {id: node for id, node in nodes.items() if id not in runnable}
-        running: dict[str, Tuple[Future, Node]] = {}
-        completed: dict[str, Node] = {}
-        outputs: dict[str, Value] = {}
+        runnable_nodes: List[Node] = deepcopy(graph.get_nodes(graph.roots))
+        runnable: Dict[str, Node] = {node.id: node for node in runnable_nodes}
+        waiting: Dict[str, Node] = {id: node for id, node in nodes.items() if id not in runnable}
+        running: Dict[str, Tuple[Future, Node]] = {}
+        completed: Dict[str, Node] = {}
+        outputs: Dict[str, Value] = {}
         while len(runnable) != 0 or len(running) != 0:
             # Execute runnable nodes in the ThreadPool
             for node_id, node in runnable.copy().items():
@@ -462,7 +460,7 @@ class BaseWorkflow(BaseProcess):
                     # Save results from finished tool and remove tool from
                     # the running list. Runtime_context is updated for the
                     # next tool.
-                    result: dict[str, Value] = running_task[0].result()
+                    result: Dict[str, Value] = running_task[0].result()
                     outputs.update(result)
                     runtime_context.update(result)
 
@@ -497,7 +495,8 @@ class BaseWorkflow(BaseProcess):
     def execute(
             self, 
             use_dask: bool,
-            verbose: bool = True,
+            runtime_context: Dict[str, Any],
+            verbose: bool = False,
             dask_client: Optional[Client] = None
         ) -> dict[str, Value]:
         """
@@ -519,12 +518,12 @@ class BaseWorkflow(BaseProcess):
         # Initialize queues
         graph: Graph = self.loading_context["graph"]
         nodes = graph.nodes
-        runnable_nodes: list[Node] = deepcopy(graph.get_nodes(graph.roots))
-        runnable: dict[str, Node] = {node.id: node for node in runnable_nodes}
-        waiting: dict[str, Node] = {id: node for id, node in nodes.items() if id not in runnable}
-        running: dict[str, Tuple[Future, Node]] = {}
-        completed: dict[str, Node] = {}
-        outputs: dict[str, Value] = {}
+        runnable_nodes: List[Node] = deepcopy(graph.get_nodes(graph.roots))
+        runnable: Dict[str, Node] = {node.id: node for node in runnable_nodes}
+        waiting: Dict[str, Node] = {id: node for id, node in nodes.items() if id not in runnable}
+        running: Dict[str, Tuple[Future, Node]] = {}
+        completed: Dict[str, Node] = {}
+        outputs: Dict[str, Value] = {}
 
         def lprint():
             s = ", "
@@ -557,7 +556,7 @@ class BaseWorkflow(BaseProcess):
                 future = client.submit(
                     self.execute_workflow_node, 
                     node, 
-                    self.runtime_context.copy(),
+                    runtime_context.copy(),
                     verbose,
                     client if isinstance(client, ThreadPoolExecutor) else None
                 )
@@ -571,14 +570,14 @@ class BaseWorkflow(BaseProcess):
                 # Remove node from the running list if it has finished
                 if running_task[0].done():
                     # Add new runtime state from finished node
-                    result: dict[str, Value] = running_task[0].result()
+                    result: Dict[str, Value] = running_task[0].result()
                     outputs.update(result)
-                    self.runtime_context.update(result)
+                    runtime_context.update(result)
 
                     # Move node to finished
                     completed[node_id] = running_task[1]
                     running.pop(node_id)
-                    lprint()
+                    if verbose: lprint()
 
                     # Add new runnable nodes to queue by checking for each
                     # child if all its parents have completed.
@@ -609,7 +608,7 @@ class BaseWorkflow(BaseProcess):
         
         # Output keys are prefixed with the global ID of the tool that created
         # the outputs, resulting in a mismatch between that key  
-        new_outputs: dict[str, Any] = {}
+        new_outputs: Dict[str, Any] = {}
         for output_id, output_dict in self.outputs.items():
             step_id, step_output_id = output_dict["outputSource"].split("/")
             value = outputs[self.step_id_to_process[step_id].global_id(step_output_id)]
@@ -622,7 +621,7 @@ class BaseWorkflow(BaseProcess):
             self, 
             uri: str,
             step_id: str,
-            requirements: dict[str, Any],
+            requirements: Dict[str, Any],
         ) -> BaseProcess:
         """
         Dynamic Process loading from file. Raises an exception if no valid 
@@ -660,12 +659,9 @@ class BaseWorkflow(BaseProcess):
                 continue
 
             # Instantiate and return the class
-            # NOTE: more checks needed?
             print(f"\tFound process at {uri}")
-            # print("DEBUG", requirements)
             return obj(
                 main = False,
-                runtime_context = self.runtime_context,
                 loading_context = self.loading_context,
                 parent_process_id = self.id,
                 step_id = step_id,
@@ -704,7 +700,7 @@ def get_process_parents(tool: BaseCommandLineTool) -> list[str]:
         raise NotImplementedError(step_dict["in"][input_id])
     
     parents = []
-    processes: dict[str, BaseProcess] = tool.loading_context["processes"]
+    processes: Dict[str, BaseProcess] = tool.loading_context["processes"]
 
     for input_id in tool.inputs:
         # Start in the parent of tool

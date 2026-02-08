@@ -1,18 +1,25 @@
 import argparse
-import copy
 import inspect
 import js2py
 import json
 import os
 import shutil
-import sys
 import uuid
 import yaml
 
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Mapping, List, Optional, Type, Union, cast
+from typing import (
+    Any,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Type,
+    Union,
+    cast
+)
 
 from .utils import (
     Absent,
@@ -37,24 +44,23 @@ class BaseProcess(ABC):
     step_id: str | None
 
     # Tool/workflow info
-    metadata: dict[str, Any]
-    inputs: dict[str, Any]
-    outputs: dict[str, Any]
-    requirements: dict[str, Any]
+    metadata: Dict[str, Any]
+    inputs: Dict[str, Any]
+    outputs: Dict[str, Any]
+    requirements: Dict[str, Any]
 
     # Runtime info
-    input_to_source: dict[str, str]
-    loading_context: dict[str, Any]
-    runtime_context: dict[str, Value | Absent]
+    input_to_source: Dict[str, str]
+    loading_context: Dict[str, Any]
+    runtime_context: Dict[str, Value | Absent]
 
     def __init__(
             self,
             main: bool = True,
-            runtime_context: Optional[dict[str, Any]] = None,
-            loading_context: Optional[dict[str, Any]] = None,
+            loading_context: Optional[Dict[str, Any]] = None,
             parent_process_id: Optional[str] = None,
             step_id: Optional[str] = None,
-            inherited_requirements: Optional[dict[str, Any]] = None,
+            inherited_requirements: Optional[Dict[str, Any]] = None,
         ) -> None:
         """ 
         TODO: class description. Which vars are accessable?
@@ -63,7 +69,6 @@ class BaseProcess(ABC):
         main
         # TODO Explain runtime_context
         # TODO Explain loading_context
-            - graph (Graph)
             - processes (list[Process])
             - input_object dict[str, Any]
             - PATH (str)
@@ -100,8 +105,6 @@ class BaseProcess(ABC):
 
         # Assign metadata attributes. Override in self.set_metadata().
         self.metadata = {}
-        # self.label: str = "" # Human readable process name.
-        # self.doc:   str = "" # Human readable process explaination.
         
         # Assign input/output dictionary attributes.
         # FIXME: dicts could use custom types like CWLTool does, instead of dicts.
@@ -116,41 +119,32 @@ class BaseProcess(ABC):
         self.requirements = {}
 
         # NOTE: Not sure if I want to support hints, force requirements only?
-        # self.hints: dict = {}   
+        # self.hints: Dict = {}   
         
         # Digest basic process attributes
         self.set_metadata()
         self.set_inputs()
         self.set_outputs()
         self.set_requirements()
-        # self.process_requirements(requirements)
         
         # TODO Update description
         # Assign a dictionary with runtime input variables and a dictionary to
         # map processes and step IDs. Only the root process must load the input
         # YAML from a file. Non-root processes get a reference to the
         # dictionary loaded in the main process.
-        self.runtime_context = {}
-        # self.runtime_context: dict[str, Any] = {}
         if main:
             self.loading_context = {}
-            self.loading_context["graph"] = Graph() # Used in create_dependency_graph()
             self.loading_context["processes"] = {}  # {proc_id, process}
             self.process_cli_args(self.loading_context)
 
-            # The YAML file uri comes from the first command-line argument.
-            # self.runtime_context = self._load_input_object(sys.argv[1])
-            self.runtime_context = self._load_input_object(self.loading_context["input_object"])
             # Copy system PATH environment variable
             self.loading_context["PATH"] = os.environ.get("PATH")
+
             # Save the path to the initial current work directory
             self.loading_context["init_work_dir"] = Path(os.getcwd())
         else:
-            if runtime_context is None:
-                raise Exception(f"Subprocess {type(self)}({self.id}) is not initialized as root process, but lacks runtime context")
             if loading_context is None:
                 raise Exception(f"Subprocess {type(self)}({self.id}) is not initialized as root process, but lacks loading context")
-            self.runtime_context = runtime_context
             self.loading_context = loading_context
 
         # Register this process in the global cache
@@ -198,7 +192,7 @@ class BaseProcess(ABC):
         return parser
     
     
-    def process_cli_args(self, loading_context: dict[str, Any]) -> None:
+    def process_cli_args(self, loading_context: Dict[str, Any]) -> None:
         """
         Process CLI arguments.
         TODO Description of arguments
@@ -251,7 +245,7 @@ class BaseProcess(ABC):
         return self.id  + ":" + s
 
 
-    def _load_yaml(self, yaml_uri: str) -> dict:
+    def _load_yaml(self, yaml_uri: str) -> Dict[str, Any]:
         """
         Load a YAML file pointed at by 'yaml_uri' into a dictionary.
         """
@@ -262,7 +256,7 @@ class BaseProcess(ABC):
         # behaviour is not always wanted.
         with open(Path(yaml_uri), "r") as f:
             y = yaml.load(f, Loader=yaml.BaseLoader)
-            if not isinstance(y, dict):
+            if not isinstance(y, Dict):
                 raise Exception(f"Loaded YAML should be a dict, but has type {type(y)}")
             return y
         
@@ -406,42 +400,8 @@ class BaseProcess(ABC):
                 PY_CWL_T_MAPPING[type(input_value)][0]
             )
 
-
-        # if isinstance(input_value, str):
-        #     if 'file' in self.inputs[input_id]["type"]:
-        #         input_value = FileObject(input_value)
-        #     return input_value
-        # elif isinstance(input_value, list):
-        #     # Because file lists are represented as lists of dicts, we need to
-        #     # check if a list contains files and extract their paths.
-        #     # If the list is a regular list, we just return it.
-        #     if len(input_value) == 0:
-        #         return []
-
-        #     _t = type(input_value[0])
-
-        #     # Rudimentary homogeneity check on list
-        #     valid = all([isinstance(i, _t) for i in input_value])
-        #     if not valid:
-        #         raise Exception(f"Array for input '{input_id} not homogeneous")
-            
-        #     # If input value is a list of files, transform it into list of
-        #     # FileObjects
-        #     if (isinstance(input_value[0], dict) and
-        #         "class" in input_value[0] and "file" in input_value[0]):
-        #         return [FileObject(v["path"]) for v in input_value]
-        #     if "file[]" in self.inputs[input_id]["type"]:
-        #         # FIXME Collision between 'string' and 'file' type when value is a path string
-        #         return [FileObject(string_path) for string_path in input_value]
-
-        #     return input_value
-        # elif isinstance(input_value, dict):
-        #     if "file" in input_value["class"]:
-        #         return FileObject(input_value["path"])
-        # raise Exception(f"Unexpected value type {type(input_value)}")
-
     
-    def _load_input_object(self, yaml_uri: str) -> dict:
+    def _load_input_object(self, yaml_uri: str) -> Dict[str, Any]:
         """
         Read the input object from a YAML file and map the values
         with the globalized input ID as key.
@@ -539,7 +499,7 @@ class BaseProcess(ABC):
 
     def process_requirements(
             self,
-            requirements: Optional[dict[str, Any]] = None,
+            requirements: Optional[Dict[str, Any]] = None,
         ) -> None:
         """
         TODO Finish
@@ -552,7 +512,7 @@ class BaseProcess(ABC):
         if requirements is None:
             return
         
-        final_reqs: dict[str, Any] = {}
+        final_reqs: Dict[str, Any] = {}
         #  TODO Which requirements can be inherited?
         #     - InitialWorkDirRequirement
         #     -
@@ -562,50 +522,26 @@ class BaseProcess(ABC):
         self.requirements = final_reqs
 
 
-    def build_namespace(self) -> dict[str, Any]:
+    def build_base_namespace(
+            self,
+            runtime_context: Dict[str, Any],
+            namespace: Optional[Dict[str, Any]] = None,
+        ) -> Dict[str, Any]:
         """
-        Build a local namespace that can be used in eval() calls to evaluate
-        expressions that access CWL namespaces, like 'inputs'.
-        FIXME NOTE: Doesnt handle multityped input parameters correctly.
+        Create a dict that holds the CWL 'inputs' namespace. The namespace
+        defines object name-value pairs that are used in the eval() call.
+        Example: If the process has an input 'input_fits', it can be
+                 accessed in the expression as 'inputs.input_fits'.
+        TODO Other CWL namespaces, like 'runtime'?
         """
-        namespace: dict[str, Any] = {}
+        if namespace is None:
+            namespace = {}
 
-        # Create an object that holds the CWL 'inputs' namespace. This object
-        # is used in the eval() call.
-        # Example: If the process has an input 'input_fits', it can be
-        #          accessed in the expression as 'inputs.input_fits'.
-        # inputs = lambda: None       # Create empty object
-
-        # TODO Other CWL namespaces, like 'runtime'?
         namespace["inputs"] = {}
-
         for input_id in self.inputs:
-        # for input_id, _ in self.inputs.items():
-        # for input_id, input_dict in self.inputs.items():
-            # If runtime value is Absent, value is assigned None
             source = self.input_to_source[input_id]
-            value = self.runtime_context[source].value
+            value = runtime_context[source].value
             namespace["inputs"][input_id] = value
-
-            # if "file" in input_dict["type"]:
-            #     # Create built-in file properties used in CWL expressions
-            #     if "[]" in input_dict["type"]:
-            #         # Array of files
-            #         file_objects = [FileObject(p) for p in value]
-            #         # setattr(inputs, input_id, file_objects)
-            #         namespace["inputs"][input_id] = file_objects
-            #     else:
-            #         # Single file
-            #         # setattr(inputs, input_id, FileObject(value[0]))
-            #         # NOTE: why is value[0] used here, instead of value?
-            #         namespace["inputs"][input_id] = FileObject(value[0])
-            # elif "string" in input_dict["type"]:
-            #     # setattr(inputs, input_id, value)
-            #     namespace["inputs"][input_id] = value
-            # else:
-            #     raise NotImplementedError(f"Input type {input_dict['type']} not supported")
-            
-        # namespace["inputs"] = inputs
 
         return namespace
 
@@ -656,18 +592,11 @@ class BaseProcess(ABC):
             js_context = js2py.EvalJs(context_vars)
 
             # InlineJavascriptRequirement may contain JS code that must be
-            # executed before the expressions evaluated. This JS code can be
-            # referenced in JS expressions.
+            # executed before the expressions evaluated. This JS code can then
+            # be referenced in JS expressions.
             if "InlineJavascriptRequirement" in self.requirements:
                 js_req = self.requirements["InlineJavascriptRequirement"]
                 for chunk in js_req:
-                    # The $include is handled tools.
-                    # if "$include" in chunk:
-                        # include = chunk.strip().removeprefix("$include:").strip()
-                        # include = self.inline_include(include)
-                        # js_context.execute(include)
-                    # else:
-                        # js_context.execute(chunk)
                     js_context.execute(chunk)
 
             try:
@@ -680,7 +609,7 @@ class BaseProcess(ABC):
                 # See link on how to check for array type.
                 # TODO Support more types, like dict. How to handle custom
                 # types?
-                if ret._obj.Class in ('Array', 'Int8Array', 'Uint8Array',
+                if ret._obj.Class in ('Array', 'Int8Array', 'Uint8Array', # type: ignore
                                  'Uint8ClampedArray', 'Int16Array',
                                  'Uint16Array', 'Int32Array', 'Uint32Array',
                                  'Float32Array', 'Float64Array', 'Arguments'):
@@ -702,8 +631,14 @@ class BaseProcess(ABC):
 
     def inline_include(self, file_url: str):
         """
-        TODO Every field of every document needs to be checked for $include
-        statements.... TODO
+        BUG FIXME
+        Inherited InlineJavascriptRequirement $include probably points to
+        files relatively to the parent that provides the requirement.
+
+        TODO
+        Every field of every document needs to be checked for $include
+        statements...
+
         Return a string containing the contents of the file.
         """
         # BUG FIXME
@@ -717,19 +652,23 @@ class BaseProcess(ABC):
             return f.read()
 
 
-    def publish_output(self, outputs: dict[str, Any]) -> str:
+    def publish_output(
+            self, 
+            outputs: Dict[str, Any],
+            verbose = False
+        ) -> str:
         """
         Copy the output files to the designated output directory and return a
         JSON string containing the outputs.
         """
         copy_alert = True
-        new_outputs: dict[str, Any] = {}
+        new_outputs: Dict[str, Any] = {}
         for output_id in self.outputs:
             value_wrapper = outputs[self.global_id(output_id)]
             type_ = value_wrapper.type
             if type_ in (FileObject, DirectoryObject):
                 # Files and directories need to be moved to the output directory
-                if copy_alert:
+                if copy_alert and verbose:
                     print("[PROCESS]: Moving output to designated output directory:")
                     copy_alert = False
 
@@ -746,7 +685,8 @@ class BaseProcess(ABC):
                     out_dir = self.loading_context["designated_out_dir"]
                     new_path = shutil.move(old_path, out_dir)
                     new_paths.append(str(new_path))
-                    print(f"[PROCESS]:\t- {output_id}: {old_path} >> {new_path}")
+                    if verbose:
+                        print(f"[PROCESS]:\t- {output_id}: {old_path} >> {new_path}")
 
                 new_outputs[output_id] = new_paths
                 if not value_wrapper.is_array:
@@ -756,7 +696,7 @@ class BaseProcess(ABC):
         return json.dumps(new_outputs, indent = 4)
 
 
-    def delete_temps(self):
+    def delete_temps(self, verbose = False):
         if self.loading_context["preserve_tmp"]: return
         if not self.loading_context["init_tmp_dir_empty"]:
             # Designated temporary directory was not empty on start, so we 
@@ -765,392 +705,20 @@ class BaseProcess(ABC):
             print("[PROCESS]: Skip deleting temporary directory as it was initially not empty")
             return
         
-        print("[PROCESS]: Deleting temporary directory:")
-        print(f"[PROCESS]:\t{self.loading_context['designated_tmp_dir']}")
+        if verbose:
+            print("[PROCESS]: Deleting temporary directory:")
+            print(f"[PROCESS]:\t{self.loading_context['designated_tmp_dir']}")
+
         shutil.rmtree(self.loading_context["designated_tmp_dir"])
 
 
-    def finalize(self, outputs: dict[str, Any]):
-        print()
-        outputs_json = self.publish_output(outputs)
-        self.delete_temps()
-        print(outputs_json)
-
-
-
-#########################################
-#                 Node                  #
-#########################################
-class Node:
-    def __init__(
-            self,
-            id: str,
-            processes: list[BaseProcess],
-            parents: Optional[list[str]] = None,    #list[parent_ids]
-            children: Optional[list[str]] = None,   #list[child_ids]
-            # internal_dependencies and graph are used in graph optimization 
-            is_tool_node: bool = False,
-            internal_dependencies: Optional[dict[str, str | list[str]]] = None,  #{node_id: node_id}
-            graph: Optional['Graph'] = None
-        ) -> None:
-        """
-        Node containing one or more processes. Stores dependencies between a
-        node and its parents/children and between the processes in 
-        self.processes.
-        """
-        self.id = id
-        self.is_tool_node: bool = is_tool_node
-        self.processes: list[BaseProcess] = processes
-
-        if parents is None:
-            parents = []
-        self.parents: list[str] = parents
-
-        if children is None:
-            children = []
-        self.children: list[str] = children
-
-        if not is_tool_node:
-            if graph is None:
-                if internal_dependencies is None:
-                    internal_dependencies = {}
-
-                graph = self.create_task_graph(
-                    internal_dependencies,
-                    processes
-                )
-        self.graph: Graph | None = graph
-
-
-    def __deepcopy__(self, memo) -> 'Node':
-        """
-        Make a deep copy of the node and return it.
-        NOTE: Creates copies are reference to the underlying processes,
-        instead of creating new processes. This ommits initializing
-        processes again, which is pointless and takes time.
-        """
-        # NOTE Untested
-        processes = self.processes.copy() # << Shallow copy!
-        # processes = [p for p in self.processes] # << Shallow copy!
-        parents = deepcopy(self.parents)
-        children = deepcopy(self.children)
-        graph = deepcopy(self.graph)
-        node = Node(
-            self.id, 
-            processes = processes, 
-            parents = parents, 
-            children = children,
-            is_tool_node = self.is_tool_node,
-            graph = graph
-        )
-        return node
-    
-
-    def create_task_graph(
-            self,
-            dependencies: dict[str, Union[str, list[str]]],
-            processes: list[BaseProcess]
-        ) -> 'Graph':
-        """
-        Arguments:
-            dependencies: Maps parent IDs to child IDs.
-            processes: Processes to be contained by nodes. 
-
-        Returns:
-            Task graph with nodes that hold a single CommandLineTool.
-        """
-        graph = Graph()
-
-        # Add nodes, but don't connect them yet
-        for process in processes:
-            graph.add_node(
-                Node(
-                    process.id, 
-                    processes = [process], 
-                    is_tool_node = True
-                )
-            )
-
-        # Connect nodes
-        for node_id, child_ids in dependencies.items():
-            if isinstance(child_ids, str):
-                child_ids = [child_ids]
-            elif not isinstance(child_ids, list):
-                raise Exception(f"Expected str or list, but found {type(child_ids)}")
-            graph.connect_node(node_id, children=child_ids)
-        return graph
-    
-
-    def merge(
-            self,
-            nodes: Union['Node', list['Node']]
-        ) -> 'Node':
-        # self.merged = True
-        # 
-        raise NotImplementedError()
-
-    
-    def is_leaf(self) -> bool:
-        return len(self.children) == 0
-    
-    def is_root(self) -> bool:
-        return len(self.parents) == 0
-
-
-
-#########################################
-#                 Graph                 #
-#########################################
-class Graph:
-    def __init__(
+    def finalize(
             self, 
-            # grouping: bool = False
-        ) -> None:
-        """
-        BUG where a node is added twice to parents/children
-        Directed Acyclic Graph (DAG) implementation to represent a workflow
-        task graph. Can be used to optimize task graph execution.
-        """
-        self.roots: list[str] = []  # [node_ids]
-        self.leaves: list[str] = [] # [node_ids]
-        self.nodes: dict[str, Node] = {}    # {node_id, Node}
-        self.in_deps: dict[str, list[str]] = {}  # {node_id: [parent_ids]}
-        self.out_deps: dict[str, list[str]] = {}  # {node_id: [child_ids]}
-        self.size: int = 0
-        # self.grouping: bool = grouping
-        
-        # Create placeholder IDs for nodes to improve readability
-        self._next_id: int = 0
-        self.short_id: dict[str, int] = {}
-
-    
-    def __deepcopy__(self, memo) -> 'Graph':
-        """
-        Make a deep copy of the graph and return it.
-        NOTE: Creates shallow copies of nodes instead. This ommits initializing
-        processes again, which is pointless and takes time.
-        """
-        graph = Graph()
-        graph.roots = self.roots.copy()
-        graph.leaves = self.leaves.copy()
-        graph.nodes = self.nodes.copy() # << processes in nodes are references to originals!
-        graph.in_deps = self.in_deps.copy()
-        graph.out_deps = self.out_deps.copy()
-        graph._next_id = self._next_id
-        graph.short_id = self.short_id.copy()    # {node_id: simple_id}
-        # graph.roots = deepcopy(self.roots)
-        # graph.leaves = deepcopy(self.leaves)
-        # graph.nodes = deepcopy(self.nodes) # << processes in nodes are references to originals!
-        # graph.in_deps = deepcopy(self.in_deps)
-        # graph.out_deps = deepcopy(self.out_deps)
-        # graph._next_id = self._next_id
-        # graph.short_id = deepcopy(self.short_id)    # {node_id: simple_id}
-        return graph
-
-    
-    def __str__(self) -> str:
-        """
-        Construct a string containing graph info and return it. Simple node
-        IDs are used to improve clarity. Node IDs are mapped to simple node
-        IDs in self.short_id.
-
-        Returns a string containing:
-            - Root nodes
-            - Edges
-            - Leaf nodes
-        """
-        s = "nodes[parents/children]: "
-        for node_id in self.nodes:
-            s += f"{self.short_id[node_id]}["
-            if node_id in self.in_deps:
-                s += f"{','.join([str(self.short_id[p_id]) for p_id in self.in_deps[node_id]])}"
-            else:
-                s += "."
-            s += "/"
-            if node_id in self.out_deps:
-                s += f"{','.join([str(self.short_id[c_id]) for c_id in self.out_deps[node_id]])}"
-            else:
-                s += "."
-            s += "] "
-        s += "\nroots: " 
-        for root_id in self.roots:
-            s += f"{self.short_id[root_id]} "
-        s += "\nedges: \n"
-        for node_id, child_id in self.out_deps.items():
-            for child in child_id:
-                s += f"\t{self.short_id[node_id]} -> {self.short_id[child]}\n"
-        s += "leaves: " 
-        for leaf_id in self.leaves:
-            s += f"{self.short_id[leaf_id]} "
-        return s
-
-    
-    def print(self) -> None:
-        """ Print graph information. """
-        print()
-        print(self)
-        print()
-
-    
-    def next_id(self) -> int:
-        """ Generate and update the next available simple node ID. """
-        self._next_id += 1
-        return self._next_id - 1
-    
-
-    def add_node(
-            self,
-            node: Node
-        ) -> None:
-        """
-        Add a node to the graph, without adding edges to other nodes.
-        NOTE: For connecting nodes with edges, see connect_node().
-        """
-        if node.id in self.nodes:
-            raise Exception(f"Node ID already exists in graph. Invalid ID: {node.id}")
-        
-        self.nodes[node.id] = node
-        self.roots.append(node.id)
-        self.leaves.append(node.id)
-        self.short_id[node.id] = self.next_id()
-        self.size += 1
-
-
-    def connect_node(
-            self,
-            node_id: str,
-            parents: Optional[list[str]] = None,
-            children: Optional[list[str]] = None
-        ) -> None:
-        """
-        Add edges between a node and its parents/children.
-
-        Arguments:
-            node_id: ID of the node.
-            parents: List containing node IDs of parent nodes to connect to.
-            children: List containing node IDs of child nodes to connect to.
-        """
-        if node_id not in self.nodes:
-            raise Exception(f"Graph does not contain node with ID {node_id}")
-
-        node = self.nodes[node_id]
-
-        if parents is None:
-            parents = []
-        node.parents.extend(parents)
-        node.parents = list(set(node.parents))   # Removes duplicates
-
-        if children is None:
-            children = []
-        node.children.extend(children)
-        node.children = list(set(node.children)) # Removes duplicates
-
-        for parent_id in node.parents:
-            # Add node as child to parent
-            self.nodes[parent_id].children.append(node.id)
-            
-            # Register in-dependencies
-            if node.id in self.in_deps:
-                self.in_deps[node.id].append(parent_id)
-            else:
-                self.in_deps[node.id] = [parent_id]
-            
-            # Register out-dependencies for parent
-            if parent_id in self.out_deps:
-                self.out_deps[parent_id].append(node.id)
-            else:
-                self.out_deps[parent_id] = [node.id]
-
-            # Parent cannot be a leaf
-            if parent_id in self.leaves:
-                self.leaves.remove(parent_id)
-
-        for child_id in node.children:
-            # Add node as parent to child
-            self.nodes[child_id].parents.append(node.id)
-            
-            # Register in-dependencies for child
-            if child_id in self.in_deps:
-                if not node.id in self.in_deps[child_id]:
-                    self.in_deps[child_id].append(node.id)
-            else:
-                self.in_deps[child_id] = [node.id]
-            
-            # Register out-dependencies
-            if node.id in self.out_deps:
-                if not child_id in self.out_deps[node.id]:
-                    self.out_deps[node.id].append(child_id)
-            else:
-                self.out_deps[node.id] = [child_id]
-
-            # child cannot be a root
-            if child_id in self.roots:
-                self.roots.remove(child_id)
-
-        # Update graph root dict
-        if node.is_root():
-            if node.id not in self.roots:
-                self.roots.append(node.id)
-        elif node.id in self.roots:
-                self.roots.remove(node.id)
-
-        # Update graph leaf dict
-        if node.is_leaf():
-            if node.id not in self.leaves:
-                self.leaves.append(node.id)
-        elif node.id in self.leaves:
-            self.leaves.remove(node.id)
-
-    
-    def remove_node(
-            self,
-            node_id: str
-        ) -> None:
-        """
-        TODO Description
-        Remove a node
-        """
-        self.roots.remove(node_id)
-        self.leaves.remove(node_id)
-        self.nodes.pop(node_id)
-        self.size -= 1
-
-
-    def merge(
-            self,
-            node_ids: str | list[str]
+            outputs: Dict[str, Any], 
+            verbose = False
         ):
-        """
-        TODO Description
-        Merge nodes 
-        """
-        if isinstance(node_ids, str):
-            node_ids = [node_ids]
-            
-        # Create new_node with id = {short_id0}:{short_id1}:...
-        new_id: str = ":".join([str(self.short_id[node_id]) for node_id in node_ids])
-        new_node = Node(new_id, [], is_tool_node = False)
-        self.add_node(new_node)
-
-        # Merge nodes into new node
-        new_node.merge([self.nodes[node_id] for node_id in node_ids])
-
-        # Remove old nodes
-        for node_id in node_ids:
-            self.remove_node(node_id)
-        return new_node
-    
-
-    def get_nodes(
-            self,
-            node_ids: str | list[str]
-        ) -> list[Node]:
-        """
-        TODO
-        """
-        if isinstance(node_ids, str):
-            node_ids = [node_ids]
-        elif not isinstance(node_ids, list):
-            raise Exception(f"Expected str or list type, but got {type(node_ids)}")
-
-        return [self.nodes[node_id] for node_id in node_ids]
+        print()
+        print("[OUTPUT]")
+        outputs_json = self.publish_output(outputs, verbose)
+        self.delete_temps(verbose)
+        print(outputs_json)
