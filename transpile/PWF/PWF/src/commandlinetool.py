@@ -1,13 +1,11 @@
-# import dask.delayed
+
 import glob
 import json
 import os
-# import subprocess
 import shutil
 import sys
 
 from abc import abstractmethod
-from contextlib import chdir
 from dask.distributed import Client
 from pathlib import Path
 from subprocess import run, CompletedProcess
@@ -16,13 +14,9 @@ from uuid import uuid4
 from types import NoneType
 from typing import (
     Any,
-    AnyStr,
-    Callable,
     cast,
     Dict,
-    IO,
     List,
-    TextIO,
     Optional,
     Tuple,
     Type,
@@ -30,7 +24,14 @@ from typing import (
 )
 
 from .process import BaseProcess
-from .utils import Absent, FileObject, DirectoryObject, Value, PY_CWL_T_MAPPING, CWL_PY_T_MAPPING
+from .utils import (
+    Absent,
+    FileObject,
+    DirectoryObject,
+    Value,
+    PY_CWL_T_MAPPING,
+    CWL_PY_T_MAPPING
+)
 
 
 class BaseCommandLineTool(BaseProcess):

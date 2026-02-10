@@ -8,15 +8,11 @@ from typing import (
     Any,
     List,
     Mapping,
-    Optional,
     TextIO,
-    Tuple,
-    Union
 )
 from uuid import uuid4
 
 from cwl_utils.parser import load_document_by_uri
-
 from cwl_utils.parser.cwl_v1_2 import (
     CommandOutputArraySchema, 
     CommandInputArraySchema,

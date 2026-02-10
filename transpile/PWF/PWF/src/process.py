@@ -8,7 +8,6 @@ import uuid
 import yaml
 
 from abc import ABC, abstractmethod
-from copy import deepcopy
 from pathlib import Path
 from typing import (
     Any,
@@ -16,8 +15,6 @@ from typing import (
     List,
     Mapping,
     Optional,
-    Type,
-    Union,
     cast
 )
 
