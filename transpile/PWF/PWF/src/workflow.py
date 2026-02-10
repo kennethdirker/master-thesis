@@ -25,7 +25,7 @@ from typing import (
 
 from .process import BaseProcess
 from .commandlinetool import BaseCommandLineTool
-from .graph import Graph, Node
+from .graph import OuterGraph, OuterNode, ToolNode
 from .utils import (
     Absent,
     FileObject,
@@ -42,6 +42,7 @@ class BaseWorkflow(BaseProcess):
     # Step info
     step_id_to_process: Dict[str, BaseProcess]
     steps: Dict[str, Dict[str, Any]]
+    # groupings
 
     def __init__(
             self,
@@ -77,6 +78,7 @@ class BaseWorkflow(BaseProcess):
 
         # Digest workflow file
         self.set_steps()
+        # self.set_groupings()    # <- Not sure if this is the way to do this...
         self.process_requirements(inherited_requirements)
 
         # The top-level (main) BaseWorkflow class builds and executes the
@@ -122,7 +124,7 @@ class BaseWorkflow(BaseProcess):
         self.requirements = updated_reqs
 
 
-    def set_groups(self) -> None:
+    def set_groupings(self) -> None:
         """
         Override to declare which steps should be grouped and executed
         together on a machine.
@@ -201,7 +203,7 @@ class BaseWorkflow(BaseProcess):
         graph: Graph = self.loading_context["graph"]
 
         # NOTE just for testing purposes.
-        nodes = graph.nodes.copy()
+        # graph.merge(graph.nodes.keys())
         
         pass
 
@@ -685,11 +687,11 @@ class BaseWorkflow(BaseProcess):
 def get_process_parents(tool: BaseCommandLineTool) -> List[str]:
     """
     TODO Description
-    NOTE: How to implement optional args? Handle at runtime!
     """
-    # NOTE: Not a recursive algorithm, because Python has a standard recursion 
-    # limit and workflows can be huge. The recursion limit can be increased, 
-    # but the user shouldn't be bothered, so iterative it is.
+    # NOTE: Iterative algorithm because I initially thought python has a rather
+    # low standard recursion limit, which I did not want to touch. However, the
+    # default recursion limit is actually a 1000 levels, which is way deeper
+    # than any workflow should realisticly get. Oh well. 
     if tool.is_main:
         return []
     
@@ -735,7 +737,8 @@ def get_process_parents(tool: BaseCommandLineTool) -> List[str]:
             else:
                 # Parent of this process is the input source
                 if process.is_main:
-                    # Input comes from input object
+                    # Input comes from input object and thus has no source
+                    # Process.
                     break
                 else:
                     # Input comes from another source upstream
