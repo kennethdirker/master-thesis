@@ -3,17 +3,36 @@ from __future__ import annotations
 from abc import ABC
 
 from copy import deepcopy
-from typing import Dict, Iterator, List, Optional, Set, Tuple, Union
+from typing import cast, Dict, Iterator, List, Optional, Set, Tuple, Union
+from uuid import uuid4
 
 from .process import BaseProcess
 from .commandlinetool import BaseCommandLineTool
 
 
+
+
+
 class BaseNode(ABC):
     id: str
     short_id: Optional[int]
-    parents: Dict[str, BaseNode]
-    children: Dict[str, BaseNode]
+    parents: Dict[str, Node]
+    children: Dict[str, Node]
+
+    def __init__(
+            self,
+            id: Optional[str] = None,
+            short_id: Optional[int] = None,
+            parents: Optional[List[Node]] = None,
+            children: Optional[List[Node]] = None,
+        ):
+        self.id = id if id else str(uuid4())
+        self.short_id = short_id
+        self.parents = {}
+        self.add_parents(parents)
+        self.children = {}
+        self.add_children(children)
+
 
     def add_parents(
             self, 
@@ -25,20 +44,23 @@ class BaseNode(ABC):
         if isinstance(parents, Node):
             parents = [parents]
         
-        self.parents.update({n.id: n for n in parents})
+        self.parents.update({parent.id: parent for parent in parents})
 
 
     def add_children(
             self, 
             children: Node | List[Node] | None
         ):
+        """
+        
+        """
         if children is None:
             return
         
         if isinstance(children, Node):
             children = [children]
         
-        self.children.update({n.id: n for n in children})
+        self.children.update({child.id: child for child in children})
 
 
     def is_root(self) -> bool:
@@ -50,30 +72,57 @@ class BaseNode(ABC):
 
 class ToolNode(BaseNode):
     tool: BaseCommandLineTool
-
+    
     def __init__(
             self,
             tool: BaseCommandLineTool,
-            id: Optional[str],
+            id: Optional[str] = None,
             short_id: Optional[int] = None,
-            parents: Optional[List[Node]] = None,
-            children: Optional[List[Node]] = None,
+            parents: Optional[List[ToolNode]] = None,
+            children: Optional[List[ToolNode]] = None,
         ):
+        id = id if id else tool.id
+        super().__init__(id, short_id, parents, children) # type: ignore
         self.tool = tool
-        self.short_id = short_id
-        self.id = id if id else tool.id
-        self.parents = {}
-        self.add_parents(parents)
-        self.children = {}
-        self.add_children(children)
+
 
 class OuterNode(BaseNode):
     graph: InnerGraph
 
     def __init__(
             self,
+            id: Optional[str] = None,
+            short_id: Optional[int] = None,
+            parents: Optional[List[ToolNode]] = None,
+            children: Optional[List[ToolNode]] = None,
+            tools: Optional[BaseCommandLineTool | List[BaseCommandLineTool]] = None,
+            di_edges: Optional[List[Tuple]] = None, # TODO specify type
+
         ):
+        """
+        
+        """
+        super().__init__(id, short_id, parents, children) # type: ignore
         self.graph = InnerGraph()
+
+        if (tools or di_edges) and not (tools and di_edges):
+            raise Exception(f"Either both ``tools`` and ``di_edges`` or neither must be provided")
+        else:
+            if isinstance(tools, BaseCommandLineTool):
+                tools = [tools]
+            assert tools is not None
+            assert di_edges is not None
+            tool_nodes = [ToolNode(t, t.id, ) for t in tools]
+            self.graph.add_nodes(tool_nodes)    # type: ignore
+            self.graph.add_edges(di_edges)  # TODO <- does this work?
+
+
+    def merge_with(
+            self,
+            other: OuterNode
+        ) -> OuterNode:
+        raise NotImplementedError()
+
 
 # Typedef
 Node = ToolNode | OuterNode
@@ -105,9 +154,9 @@ class BaseGraph(ABC):
             n += 1
 
 
-    def add_node(self, nodes: Node | List[Node]) -> None:
+    def add_nodes(self, nodes: Node | List[Node]) -> None:
         """
-        Add a node to the graph.
+        Add one or more nodes to the graph.
         NOTE: This only adds a node. For edges, see ``add_edges()``.
         """
         if isinstance(nodes, Node):
@@ -118,7 +167,9 @@ class BaseGraph(ABC):
             self.nodes[node.id] = node
             self.roots.append(node.id)
             self.leaves.append(node.id)
-            self.short_ids[node.id] = next(self.short_id())
+            short_id = next(self.short_id())
+            self.short_ids[node.id] = short_id
+            node.short_id = short_id
             self.size += 1
 
 
@@ -193,6 +244,17 @@ class BaseGraph(ABC):
                 raise TypeError(f"Expected 'str' or 'Node', but found '{type(child)}'")
         self.add_edges(edges)
 
+    
+    def replace(
+            self,
+            targets: Node | List[Node],
+            substitute: Node
+        ):
+        """
+        
+        """
+        raise NotImplementedError()
+
 
     def __str__(self) -> str:
         """
@@ -243,14 +305,33 @@ class BaseGraph(ABC):
 
 class OuterGraph(BaseGraph):
     
-    def __init__(self):
-        pass
+    # def __init__(self):
+        # pass
+
+    # def add_tool(self, tool: BaseCommandLineTool)
+
+    def merge(
+            self,
+            node_a: OuterNode,
+            node_b: OuterNode,
+        ) -> str:
+        raise NotImplementedError()
+        return "new_outer_node_id"
 
 
 class InnerGraph(BaseGraph):
+    node_parents: List  # TODO specify type
     
     def __init__(self):
         pass
+
+
+    def merge_with(
+            self,
+            other: InnerGraph
+        ) -> InnerGraph:
+        raise NotImplementedError()
+        return "new_inner_graph_id"
 
 
 # #########################################

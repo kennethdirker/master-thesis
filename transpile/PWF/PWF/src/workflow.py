@@ -25,7 +25,7 @@ from typing import (
 
 from .process import BaseProcess
 from .commandlinetool import BaseCommandLineTool
-from .graph import OuterGraph, OuterNode, ToolNode
+from .graph import OuterGraph, OuterNode, InnerGraph, ToolNode
 from .utils import (
     Absent,
     FileObject,
@@ -79,6 +79,7 @@ class BaseWorkflow(BaseProcess):
         # Digest workflow file
         self.set_steps()
         # self.set_groupings()    # <- Not sure if this is the way to do this...
+        self.load_step_processes()
         self.process_requirements(inherited_requirements)
 
         # The top-level (main) BaseWorkflow class builds and executes the
@@ -86,11 +87,11 @@ class BaseWorkflow(BaseProcess):
         if main:
             yaml_uri = self.loading_context["input_object"]
             runtime_context = self._load_input_object(yaml_uri)
-            self.loading_context["graph"] = Graph()
-            self.create_dependency_graph()
-            self.register_step_sources(runtime_context)
-            self.optimize_dependency_graph()
+            # self.loading_context["graph"] = OuterGraph()
+            self.register_step_output_sources(runtime_context)
             self.register_input_sources(runtime_context)
+            self.create_dependency_graph()
+            self.optimize_dependency_graph()
             outputs = self.execute(self.loading_context["use_dask"],
                                    runtime_context,
                                    dask_client = None)
@@ -133,46 +134,54 @@ class BaseWorkflow(BaseProcess):
         pass
         # self.groups = {}
         # self.groups = []
+    
+
+    def load_step_processes(self) -> None:
+        """
+        Load all sub-processes into self.loading_context["processes"]. 
+        Because the BaseWorkflow constructor calls this function, all
+        sub-processes of the main workflow class are loaded recursively.
+        """
+        for step_id, step_dict in self.steps.items():
+            sub_process = self._load_process_from_uri(step_dict["run"], step_id, self.requirements)
+            self.loading_context["processes"][sub_process.id] = sub_process
 
     
-    def create_dependency_graph(self, verbose: bool = False) -> None:
-        """ 
-        TODO Description
-        FIXME Not accurate anymore
-        Create a Dask task graph with the sub-processes of this workflow. 
-        Can be overwritten to alter execution behaviour. 
-        """
-        processes: Dict[str, BaseProcess] = self.loading_context["processes"]
-        graph: Graph = self.loading_context["graph"]
+    # def create_dependency_graph(self, verbose: bool = False) -> None:
+    #     """ 
+    #     TODO Description
+    #     """
+    #     processes: Dict[str, BaseProcess] = self.loading_context["processes"]
+    #     graph: OuterGraph = self.loading_context["graph"]
 
-        # Recursively load all processes from steps
-        if verbose:
-            print("[WORKFLOW]: Loading process files:")
-        for step_id, step_dict in self.steps.items():
-            step_process = self._load_process_from_uri(step_dict["run"],
-                                                       step_id,
-                                                       self.requirements.copy(),
-                                                       verbose)
-            processes[step_process.id] = step_process
-            self.step_id_to_process[step_id] = step_process
-            node = Node(
-                id = step_process.id,
-                processes = [step_process],
-                is_tool_node = False
-            )
-            graph.add_node(node)
+    #     # Recursively load all processes from steps
+    #     if verbose:
+    #         print("[WORKFLOW]: Loading process files:")
+    #     for step_id, step_dict in self.steps.items():
+    #         step_process = self._load_process_from_uri(step_dict["run"],
+    #                                                    step_id,
+    #                                                    self.requirements.copy(),
+    #                                                    verbose)
+    #         processes[step_process.id] = step_process
+    #         self.step_id_to_process[step_id] = step_process
+    #         node = OuterNode(
+    #             id = step_process.id,
+    #             tools = [step_process],
+    #             is_tool_node = False
+    #         )
+    #         graph.add_node(node)
 
-        # Add tool nodes to the dependency graph
-        for tool in processes.values():
-            if issubclass(type(tool), BaseCommandLineTool):
-                tool = cast(BaseCommandLineTool, tool)
-                graph.connect_node(
-                    node_id = tool.id,
-                    parents = get_process_parents(tool),
-                )
+    #     # Add tool nodes to the dependency graph
+    #     for tool in processes.values():
+    #         if issubclass(type(tool), BaseCommandLineTool):
+    #             tool = cast(BaseCommandLineTool, tool)
+    #             graph.connect_node(
+    #                 node_id = tool.id,
+    #                 parents = get_process_parents(tool),
+    #             )
 
 
-    def register_step_sources(
+    def register_step_output_sources(
             self,
             runtime_context: Dict[str, Any]
         ) -> None:
@@ -196,28 +205,16 @@ class BaseWorkflow(BaseProcess):
                     raise NotImplementedError("Encountered unsupported type", type(step_dict["out"]))
 
 
-    def optimize_dependency_graph(self) -> None:
-        """
-        TODO Description
-        """
-        graph: Graph = self.loading_context["graph"]
-
-        # NOTE just for testing purposes.
-        # graph.merge(graph.nodes.keys())
-        
-        pass
-
-
     def register_input_sources(
             self,
             runtime_context: Dict[str, Any]
         ) -> None:
         """
-        Register the global source of each tool input in the workflow. The
-        source is stored in the tool's input_to_source dictionary. The source
-        is a key in the runtime_context dictionary that contains the actual
-        value of the input. 
-        NOTE: Only called from the main process.
+        Register each tool input as a global source for all processes in the 
+        workflow. Sources are stored in the tool's input_to_source dictionary. 
+        In turn, sources are keys in runtime_context dictionaries that contains
+        the actual value of the input. 
+        NOTE: Should only be called from the main process.
 
         """
         if not self.is_main:
@@ -307,6 +304,57 @@ class BaseWorkflow(BaseProcess):
                         _step_id = _process.step_id
                         
                         _process = processes[cast(str, _process.parent_process_id)]
+
+
+    def create_dependency_graph(self) -> None:
+        """ 
+        Build the dependency graph for this workflow. The OuterGraph describes
+        the relations between independent execution groups. Each execution
+        group contains an InnerGraph of tool-containing nodes. Tools withing
+        the same InnerGraph are executed on the same compute node.
+
+        Initially, the completed dependency graph contains an execution group
+        for every tool. ``optimize_dependency_graph()`` can merge execution
+        groups to have data dependent tasks execute within the same locality.
+        """
+        processes: dict[str, BaseProcess] = self.loading_context["processes"]
+        self.loading_context["graph"] = OuterGraph()
+        graph = self.loading_context["graph"]
+        tool_id_to_node: Dict[str, OuterNode] = {}
+
+        # Workflow processes essentially describe the edges between the tool
+        # nodes and are not added as executable nodes themselves.
+
+        # Add all tool processes to the dependency graph
+        for tool_id, tool in processes.items():
+            if issubclass(type(tool), BaseCommandLineTool):
+                tool = cast(BaseCommandLineTool, tool)
+                node = OuterNode(
+                    id = tool_id,
+                    tools = tool,
+                    di_edges = [],
+                )
+                graph.add_nodes(node)
+                tool_id_to_node[tool_id] = node
+
+        # Add edges between nodes and their parents
+        for tool_id, tool in processes.items():
+            if issubclass(type(tool), BaseCommandLineTool):
+                tool = cast(BaseCommandLineTool, tool)
+                parents = [tool_id_to_node[p_id] for p_id in get_process_parents(tool)]
+                graph.add_parents(tool_id_to_node[tool_id], parents) # type: ignore
+
+
+    def optimize_dependency_graph(self) -> None:
+        """
+        TODO Description
+        """
+        graph: OuterGraph = self.loading_context["graph"]
+
+        # NOTE just for testing purposes.
+        # graph.merge(graph.nodes.keys())
+        
+        pass
 
     
     def build_step_namespace(
@@ -424,7 +472,7 @@ class BaseWorkflow(BaseProcess):
  
     def execute_workflow_node(
             self,
-            workflow_node: Node,
+            workflow_node: OuterNode,
             runtime_context: Dict[str, Any],
             verbose: Optional[bool] = True,
             executor: Optional[ThreadPoolExecutor] = None
@@ -433,7 +481,7 @@ class BaseWorkflow(BaseProcess):
         Execute the tasks of this node. 
         TODO Only tested on nodes containing a single tool node!
         """
-        graph = workflow_node.graph
+        graph: InnerGraph = workflow_node.graph
         if graph is None:
             raise Exception("Node has no graph")
 
@@ -527,7 +575,7 @@ class BaseWorkflow(BaseProcess):
             client = ThreadPoolExecutor()
 
         # Initialize queues
-        graph: Graph = self.loading_context["graph"]
+        graph: OuterGraph = self.loading_context["graph"]
         nodes = graph.nodes
         runnable_nodes: List[Node] = deepcopy(graph.get_nodes(graph.roots))
         runnable: Dict[str, Node] = {node.id: node for node in runnable_nodes}
