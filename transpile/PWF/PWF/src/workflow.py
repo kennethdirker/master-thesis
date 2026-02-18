@@ -471,9 +471,9 @@ class BaseWorkflow(BaseProcess):
 
 
  
-    def execute_workflow_node(
+    def exec_outer_node(
             self,
-            workflow_node: OuterNode,
+            outer_node: OuterNode,
             runtime_context: Dict[str, Any],
             verbose: Optional[bool] = True,
             executor: Optional[ThreadPoolExecutor] = None
@@ -482,26 +482,36 @@ class BaseWorkflow(BaseProcess):
         Execute the tasks of this node. 
         TODO Only tested on nodes containing a single tool node!
         """
-        graph: InnerGraph = workflow_node.graph
+        graph: InnerGraph = outer_node.graph
         if graph is None:
             raise Exception("Node has no graph")
 
         if executor is None:
             executor = ThreadPoolExecutor()
 
+        # nodes = graph.nodes
+        # runnable_nodes: List[Node] = deepcopy(graph.get_nodes(graph.roots))
+        # runnable: Dict[str, Node] = {node.id: node for node in runnable_nodes}
+        # waiting: Dict[str, Node] = {id: node for id, node in nodes.items() if id not in runnable}
+        # running: Dict[str, Tuple[Future, Node]] = {}
+        # completed: Dict[str, Node] = {}
+        # outputs: Dict[str, Value] = {}
+
         nodes = graph.nodes
-        runnable_nodes: List[Node] = deepcopy(graph.get_nodes(graph.roots))
-        runnable: Dict[str, Node] = {node.id: node for node in runnable_nodes}
-        waiting: Dict[str, Node] = {id: node for id, node in nodes.items() if id not in runnable}
-        running: Dict[str, Tuple[Future, Node]] = {}
-        completed: Dict[str, Node] = {}
+        runnable_nodes: List[ToolNode] = graph.get_nodes(graph.roots) # type: ignore
+        runnable: Dict[str, ToolNode] = {n.id: n for n in runnable_nodes}
+        waiting: Dict[str, ToolNode] = {id: n for id, n in nodes.items() if id not in runnable}
+        running: Dict[str, Tuple[Future, ToolNode]] = {}
+        completed: Dict[str, ToolNode] = {}
         outputs: Dict[str, Value] = {}
+
         while len(runnable) != 0 or len(running) != 0:
             # Execute runnable nodes in the ThreadPool
             for node_id, node in runnable.copy().items():
                 # These nodes (which are wrapped tools) contain a single 
                 # node in their graph.
-                tool = cast(BaseCommandLineTool, node.processes[0])
+                # tool = cast(BaseCommandLineTool, node.processes[0])
+                tool = node.tool
                 step_runtime_context = self.prepare_step_runtime_context(tool, runtime_context)
                 print(f"[NODE]: Executing tool {tool.id}")
                 future = executor.submit(
@@ -577,26 +587,34 @@ class BaseWorkflow(BaseProcess):
 
         # Initialize queues
         graph: OuterGraph = self.loading_context["graph"]
+        # nodes = graph.nodes
+        # runnable_nodes: List[Node] = deepcopy(graph.get_nodes(graph.roots))
+        # runnable: Dict[str, Node] = {node.id: node for node in runnable_nodes}
+        # waiting: Dict[str, Node] = {id: node for id, node in nodes.items() if id not in runnable}
+        # running: Dict[str, Tuple[Future, Node]] = {}
+        # completed: Dict[str, Node] = {}
+        # outputs: Dict[str, Value] = {}
+
         nodes = graph.nodes
-        runnable_nodes: List[Node] = deepcopy(graph.get_nodes(graph.roots))
-        runnable: Dict[str, Node] = {node.id: node for node in runnable_nodes}
-        waiting: Dict[str, Node] = {id: node for id, node in nodes.items() if id not in runnable}
-        running: Dict[str, Tuple[Future, Node]] = {}
-        completed: Dict[str, Node] = {}
+        runnable_nodes: List[OuterNode] = graph.get_nodes(graph.roots) # type: ignore
+        runnable: Dict[str, OuterNode] = {n.id: n for n in runnable_nodes}
+        waiting: Dict[str, OuterNode] = {id: n for id, n in nodes.items() if id not in runnable}
+        running: Dict[str, Tuple[Future, OuterNode]] = {}
+        completed: Dict[str, OuterNode] = {}
         outputs: Dict[str, Value] = {}
 
         def lprint():
             s = ", "
             print("[WORKFLOW]: QUEUES")
-            print(f"\twaiting: [{s.join([str(graph.short_id[node_id]) for node_id in waiting.keys()])}]")
-            print(f"\trunnable: [{s.join([str(graph.short_id[node_id]) for node_id in runnable.keys()])}]")
-            print(f"\trunning: [{s.join([str(graph.short_id[node_id]) for node_id in running.keys()])}]")
-            print(f"\tcompleted: [{s.join([str(graph.short_id[node_id]) for node_id in completed.keys()])}]")
+            print(f"\twaiting: [{s.join([str(graph.short_ids[id]) for id in waiting.keys()])}]")
+            print(f"\trunnable: [{s.join([str(graph.short_ids[id]) for id in runnable.keys()])}]")
+            print(f"\trunning: [{s.join([str(graph.short_ids[id]) for id in running.keys()])}]")
+            print(f"\tcompleted: [{s.join([str(graph.short_ids[id]) for id in completed.keys()])}]")
             print()
 
         if verbose:
             graph.print()
-            print("\n".join([f"{short}: {id}" for id, short in graph.short_id.items()]))
+            print("\n".join([f"{short}: {id}" for id, short in graph.short_ids.items()]))
             lprint()
 
         # Polling loop that runs until all graph nodes have been executed.
@@ -609,13 +627,13 @@ class BaseWorkflow(BaseProcess):
         while len(runnable) != 0 or len(running) != 0:
             # Execute runnable nodes
             for node_id, node in runnable.copy().items():
-                if verbose: print("[WORKFLOW]: Submitting node", graph.short_id[node_id])
+                if verbose: print("[WORKFLOW]: Submitting node", graph.short_ids[node_id])
 
                 # If dask is disabled, the ThreadPoolExecutor client is used to
                 # get concurrently executed tasks. If Dask is used, a 
                 # ThreadPoolExecutor client is created on the execution node.
                 future = client.submit(
-                    self.execute_workflow_node, 
+                    self.exec_outer_node, 
                     node, 
                     runtime_context.copy(),
                     verbose,
@@ -651,14 +669,14 @@ class BaseWorkflow(BaseProcess):
                         ready = True
                         for childs_parent_id in nodes[child_id].parents:
                             if childs_parent_id not in completed:
-                                print("[WORKFLOW] Parent", {graph.short_id[childs_parent_id]} , "not completed")
+                                print("[WORKFLOW] Parent", {graph.short_ids[childs_parent_id]} , "not completed")
                                 ready = False
                                 break
                         if ready:
                             # All parents have finished: Queue up the child
                             runnable[child_id] = waiting.pop(child_id)
                     if verbose:
-                        print("[WORKFLOW]: Completed node", graph.short_id[running_task[1].id])
+                        print("[WORKFLOW]: Completed node", graph.short_ids[running_task[1].id])
                         lprint()
             time.sleep(0.1)
 

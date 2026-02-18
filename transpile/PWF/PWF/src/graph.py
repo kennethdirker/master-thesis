@@ -10,9 +10,9 @@ from .process import BaseProcess
 from .commandlinetool import BaseCommandLineTool
 
 
-
-
-
+##########################################################
+#                         Node                          #
+##########################################################
 class BaseNode(ABC):
     id: str
     short_id: Optional[int]
@@ -72,6 +72,8 @@ class BaseNode(ABC):
 
 class ToolNode(BaseNode):
     tool: BaseCommandLineTool
+    parents: Dict[str, ToolNode]
+    children: Dict[str, ToolNode]
     
     def __init__(
             self,
@@ -88,13 +90,15 @@ class ToolNode(BaseNode):
 
 class OuterNode(BaseNode):
     graph: InnerGraph
+    parents: Dict[str, OuterNode]
+    children: Dict[str, OuterNode]
 
     def __init__(
             self,
             id: Optional[str] = None,
             short_id: Optional[int] = None,
-            parents: Optional[List[ToolNode]] = None,
-            children: Optional[List[ToolNode]] = None,
+            parents: Optional[List[OuterNode]] = None,
+            children: Optional[List[OuterNode]] = None,
             tools: Optional[BaseCommandLineTool | List[BaseCommandLineTool]] = None,
             di_edges: Optional[List[Tuple]] = None, # TODO specify type
 
@@ -105,11 +109,11 @@ class OuterNode(BaseNode):
         super().__init__(id, short_id, parents, children) # type: ignore
         self.graph = InnerGraph()
 
-        if (tools or di_edges) and not (tools and di_edges):
+        if (tools or di_edges) and (tools is None or di_edges is None):
             raise Exception(f"Either both ``tools`` and ``di_edges`` or neither must be provided")
-        else:
-            if isinstance(tools, BaseCommandLineTool):
-                tools = [tools]
+        
+        if isinstance(tools, BaseCommandLineTool):
+            tools = [tools]
             assert tools is not None
             assert di_edges is not None
             tool_nodes = [ToolNode(t, t.id, ) for t in tools]
@@ -128,6 +132,9 @@ class OuterNode(BaseNode):
 Node = ToolNode | OuterNode
 
 
+##########################################################
+#                         Graph                          #
+##########################################################
 class BaseGraph(ABC):
     size:      int
     nodes:     Dict[str, Node]
@@ -245,6 +252,10 @@ class BaseGraph(ABC):
         self.add_edges(edges)
 
     
+    def get_nodes(self, node_ids: List[str]) -> List[Node]:
+        return [self.nodes[id] for id in node_ids]
+
+    
     def replace(
             self,
             targets: Node | List[Node],
@@ -304,11 +315,13 @@ class BaseGraph(ABC):
 
 
 class OuterGraph(BaseGraph):
+    nodes: Dict[str, OuterNode]
     
     # def __init__(self):
+        # __super__().init()
         # pass
 
-    # def add_tool(self, tool: BaseCommandLineTool)
+    # def add_tool(self, tool: BaseCommandLineTool):
 
     def merge(
             self,
@@ -321,9 +334,11 @@ class OuterGraph(BaseGraph):
 
 class InnerGraph(BaseGraph):
     node_parents: List  # TODO specify type
+    nodes: Dict[str, ToolNode]
     
-    def __init__(self):
-        pass
+    # def __init__(self):
+        # __super__().init()
+        # pass
 
 
     def merge_with(
