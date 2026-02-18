@@ -145,6 +145,7 @@ class BaseWorkflow(BaseProcess):
         for step_id, step_dict in self.steps.items():
             sub_process = self._load_process_from_uri(step_dict["run"], step_id, self.requirements)
             self.loading_context["processes"][sub_process.id] = sub_process
+            self.step_id_to_process[step_id] = sub_process
 
     
     # def create_dependency_graph(self, verbose: bool = False) -> None:
