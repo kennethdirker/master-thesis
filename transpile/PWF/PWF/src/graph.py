@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from abc import ABC
 
-from copy import deepcopy
+# from copy import deepcopy
 from typing import cast, Dict, Iterator, List, Optional, Set, Tuple, Union
 from uuid import uuid4
 
-from .process import BaseProcess
+# from .process import BaseProcess
 from .commandlinetool import BaseCommandLineTool
 
 
@@ -27,7 +27,7 @@ class BaseNode(ABC):
             children: Optional[List[Node]] = None,
         ):
         self.id = id if id else str(uuid4())
-        self.short_id = short_id
+        self.short_id = short_id if short_id else -1
         self.parents = {}
         self.add_parents(parents)
         self.children = {}
@@ -38,6 +38,9 @@ class BaseNode(ABC):
             self, 
             parents: Node | List[Node] | None
         ):
+        """
+        Add nodes as parents of this node.
+        """
         if parents is None:
             return
         
@@ -52,7 +55,7 @@ class BaseNode(ABC):
             children: Node | List[Node] | None
         ):
         """
-        
+        Add nodes as children of this node.
         """
         if children is None:
             return
@@ -78,13 +81,14 @@ class ToolNode(BaseNode):
     def __init__(
             self,
             tool: BaseCommandLineTool,
-            id: Optional[str] = None,
+            # id: Optional[str] = None,
             short_id: Optional[int] = None,
             parents: Optional[List[ToolNode]] = None,
             children: Optional[List[ToolNode]] = None,
         ):
-        id = id if id else tool.id
-        super().__init__(id, short_id, parents, children) # type: ignore
+        # id = id if id else tool.id
+        # super().__init__(id, short_id, parents, children) # type: ignore
+        super().__init__(tool.id, short_id, parents, children) # type: ignore
         self.tool = tool
 
 
@@ -93,14 +97,18 @@ class OuterNode(BaseNode):
     parents: Dict[str, OuterNode]
     children: Dict[str, OuterNode]
 
+    @property
+    def tool_ids(self) -> List[str]:
+        return list(self.graph.nodes)
+
     def __init__(
             self,
             id: Optional[str] = None,
             short_id: Optional[int] = None,
             parents: Optional[List[OuterNode]] = None,
             children: Optional[List[OuterNode]] = None,
-            tools: Optional[BaseCommandLineTool | List[BaseCommandLineTool]] = None,
-            di_edges: Optional[List[Tuple]] = None, # TODO specify type
+            # tools: Optional[BaseCommandLineTool | List[BaseCommandLineTool]] = None,
+            # di_edges: Optional[List[Tuple[str, str]]] = None, # TODO specify type
 
         ):
         """
@@ -109,16 +117,16 @@ class OuterNode(BaseNode):
         super().__init__(id, short_id, parents, children) # type: ignore
         self.graph = InnerGraph()
 
-        if (tools or di_edges) and (tools is None or di_edges is None):
-            raise Exception(f"Either both ``tools`` and ``di_edges`` or neither must be provided")
+        # if (tools or di_edges) and (tools is None or di_edges is None):
+        #     raise Exception(f"Either both ``tools`` and ``di_edges`` or neither must be provided")
         
-        if isinstance(tools, BaseCommandLineTool):
-            tools = [tools]
-            assert tools is not None
-            assert di_edges is not None
-            tool_nodes = [ToolNode(t, t.id, ) for t in tools]
-            self.graph.add_nodes(tool_nodes)    # type: ignore
-            self.graph.add_edges(di_edges)  # TODO <- does this work?
+        # if isinstance(tools, BaseCommandLineTool):
+        #     tools = [tools]
+        #     assert tools is not None
+        #     assert di_edges is not None
+        #     tool_nodes = [ToolNode(t, t.id, ) for t in tools]
+        #     self.graph.add_nodes(tool_nodes)    # type: ignore
+        #     self.graph.add_edges(di_edges)  # TODO <- does this work?
 
 
     def merge_with(
@@ -185,17 +193,23 @@ class BaseGraph(ABC):
             di_edges: List[Tuple[Node, Node]]
         ):
         """
-        
+        Add directed edges between nodes. Dependencies are registered in both
+        the child and the parent nodes, e.g. child and parent nodes have
+        references to each other.
         """
         for node_a, node_b in di_edges:
             # Register edges in graph
             if node_a.id in self.out_edges:
-                self.out_edges[node_a.id].append(node_b.id)
+                # Ignore duplicates
+                if not node_b.id in self.out_edges[node_a.id]:
+                    self.out_edges[node_a.id].append(node_b.id)
             else:
                 self.out_edges[node_a.id] = [node_b.id]
 
             if node_b.id in self.out_edges:
-                self.in_edges[node_b.id].append(node_a.id)
+                # Ignore duplicates
+                if node_a.id in self.out_edges[node_b.id]:
+                    self.in_edges[node_b.id].append(node_a.id)
             else:
                 self.in_edges[node_b.id] = [node_a.id]
 
@@ -216,12 +230,16 @@ class BaseGraph(ABC):
 
     def add_parents(
             self,
-            node: Node,
+            node: Node | str,
             parents: List[Node | str]
         ) -> None:
         """
-        
+        Add parents to the child node and add the child node as the child of
+        each parent node.
         """
+        if isinstance(node, str):
+            node = self.get_nodes(node)[0]
+
         edges: List[Tuple[Node, Node]] = []
         for parent in parents:
             if isinstance(parent, Node):
@@ -235,13 +253,18 @@ class BaseGraph(ABC):
 
     def add_children(
             self,
-            node: Node,
+            node: Node | str,
             children: List[Node | str]
         ) -> None:
         """
-        
+        Add children to the parent node and add the parent node as the parent
+        of each child.        
         """
         edges: List[Tuple[Node, Node]] = []
+
+        if isinstance(node, str):
+            node = self.get_nodes(node)[0]
+
         for child in children:
             if isinstance(child, Node):
                 edges.append((node, child))
@@ -252,26 +275,41 @@ class BaseGraph(ABC):
         self.add_edges(edges)
 
     
-    def get_nodes(self, node_ids: List[str]) -> List[Node]:
+    def get_nodes(self, node_ids: str | List[str]) -> List[Node]:
+        if isinstance(node_ids, str):
+            node_ids = [node_ids]
         return [self.nodes[id] for id in node_ids]
 
     
-    def replace(
+    def remove_nodes(
             self,
-            targets: Node | List[Node],
-            substitute: Node
+            targets: Node | List[Node]
         ):
         """
-        
+        Remove ``target`` nodes and related edges from the graph. 
         """
-        raise NotImplementedError()
+        if isinstance(targets, Node):
+            targets = [targets]
+        
+        target_ids = [t.id for t in targets]
+        for id in target_ids:
+            size -= 1
+            self.nodes.pop(id, None)
+            if id in self.roots: self.roots.remove(id)
+            if id in self.leaves: self.leaves.remove(id)
+            self.in_edges.pop(id, None)
+            for parents in self.in_edges.values(): 
+                if id in parents: parents.remove(id)
+            self.out_edges.pop(id, None)
+            for children in self.out_edges.values():
+                if id in children: children.remove(id)
 
 
     def __str__(self) -> str:
         """
         Construct a string containing graph info and return it. Simple node
         IDs are used to improve clarity. Node IDs are mapped to simple node
-        IDs in self.short_id.
+        IDs in self.short_ids.
 
         Returns a string containing:
             - Root nodes
@@ -316,37 +354,118 @@ class BaseGraph(ABC):
 
 class OuterGraph(BaseGraph):
     nodes: Dict[str, OuterNode]
-    
-    # def __init__(self):
-        # __super__().init()
-        # pass
 
-    # def add_tool(self, tool: BaseCommandLineTool):
+    def merge_inner_graphs(
+            self,
+            inner_graphs: List[InnerGraph]
+        ) -> InnerGraph:
+        inner = InnerGraph()
+        for g in inner_graphs:
+            inner.add_nodes(list(g.nodes.values()))
+
+            # Every directed edge between nodes is both an in- and out-edge, so
+            # using either the in- or out-edges suffices.
+            for src, children in self.out_edges.items():
+                inner.add_parents(src, children)
+
+        # If a tool is added to a merged graph with a parent tool that was
+        # previously not in the same graph, a new edge needs to be created
+        # between the tools.
+        # NOTE: add_parents() ignores duplicate edges
+        for tool_node in inner.nodes.values():
+            tool = tool_node.tool
+            parent_ids = [tool.input_to_source[i] for i in tool.inputs]
+            for parent_id in parent_ids:
+                if parent_id in inner.nodes:
+                    inner.add_parents(tool_node, [parent_id])
+
+        return inner
+
 
     def merge(
             self,
-            node_a: OuterNode,
-            node_b: OuterNode,
+            nodes_or_ids: List[OuterNode | str]
         ) -> str:
-        raise NotImplementedError()
-        return "new_outer_node_id"
+        """
+        Merge a number of ``OuterNodes`` into a new ``OuterNode`` by combining
+        their ``parents``, ``children``, and ``InnerGraph``'s. The new
+        ``OuterNode`` replaces the merged ``nodes``.
+
+        Returns the ``id`` of the newly created node.
+        """
+        if len(nodes_or_ids) < 2:
+            raise Exception("Merging needs atleast 2 nodes")
+        
+        nodes: List[OuterNode] = []
+        node_ids: List[str] = []
+        for n in nodes_or_ids:
+            if isinstance(n, str):
+                nodes.append(self.nodes[n])
+                node_ids.append(n)
+            else:
+                nodes.append(n)
+                node_ids.append(n.id)
+
+        new_id = ""
+        parents: List[OuterNode] = []
+        children: List[OuterNode] = []
+        inner_graphs: List[InnerGraph] = []
+        for node in nodes:
+            new_id += f":{node.short_id}"
+            # NOTE: 'if k not in self.nodes' or if k not in node_ids
+            # TODO Check if extends are behave correctly!
+            parents.extend([v for k, v in node.parents.items()
+                              if k not in node_ids])
+            children.extend([v for k, v in node.children.items()
+                              if k not in node_ids])
+            inner_graphs.append(node.graph)
+            
+        new_id = new_id[1:]
+        new_node = OuterNode(id = new_id,
+                             parents = parents,
+                             children = children)
+        new_node.graph = self.merge_inner_graphs(inner_graphs)
+
+        edges = []
+        for src, ps in self.in_edges.items():
+            if src in node_ids:
+                edges.extend([(self.nodes[src], self.nodes[p]) for p in ps])
+        for src, cs in self.out_edges.items():
+            if src in node_ids:
+                edges.extend([(self.nodes[src], self.nodes[c]) for c in cs])
+        
+        self.add_nodes(new_node)
+        self.add_edges(edges)
+        self.remove_nodes(nodes)
+
+        return new_node.id
 
 
 class InnerGraph(BaseGraph):
-    node_parents: List  # TODO specify type
+    # node_parents: List  # TODO specify type (if this is needed)
     nodes: Dict[str, ToolNode]
     
     # def __init__(self):
-        # __super__().init()
+        # super().init()
         # pass
 
 
-    def merge_with(
-            self,
-            other: InnerGraph
-        ) -> InnerGraph:
-        raise NotImplementedError()
-        return "new_inner_graph_id"
+    # def merge_with(
+    #         self,
+    #         other: InnerGraph
+    #     ) -> InnerGraph:
+    #     """
+    #     NOTE: This does not work here, as we need context from the 
+    #     OuterGraph for merging isolated InnerGraph's.
+    #     """
+    #     new_graph = InnerGraph()
+    #     src_nodes = list(self.nodes.values()) + list(other.nodes.values())
+    #     new_graph.add_nodes(src_nodes)  # type: ignore
+    #     # Merge edges. Edges between the 
+    #     out_edges = []
+    #     in_edges = []
+    #     new_graph.add_edges(src_edges)  # type: ignore
+    #     return new_graph
 
 
 # #########################################

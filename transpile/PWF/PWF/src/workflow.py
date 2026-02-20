@@ -319,41 +319,40 @@ class BaseWorkflow(BaseProcess):
         groups to have data dependent tasks execute within the same locality.
         """
         processes: dict[str, BaseProcess] = self.loading_context["processes"]
-        self.loading_context["graph"] = OuterGraph()
-        graph = self.loading_context["graph"]
+        # self.loading_context["graph"] = OuterGraph()
+        graph = self.loading_context["graph"] = OuterGraph()
         tool_id_to_node: Dict[str, OuterNode] = {}
 
         # Workflow processes essentially describe the edges between the tool
         # nodes and are not added as executable nodes themselves.
 
-        # Add all tool processes to the dependency graph
+        # Add all tool processes to the graph as OuterNodes
         for tool_id, tool in processes.items():
             if issubclass(type(tool), BaseCommandLineTool):
                 tool = cast(BaseCommandLineTool, tool)
-                node = OuterNode(
-                    id = tool_id,
-                    tools = tool,
-                    di_edges = [],
-                )
-                graph.add_nodes(node)
+                node = OuterNode(tool_id)
                 tool_id_to_node[tool_id] = node
+                node.graph.add_nodes(ToolNode(tool))
+                graph.add_nodes(node)
 
         # Add edges between nodes and their parents
         for tool_id, tool in processes.items():
             if issubclass(type(tool), BaseCommandLineTool):
                 tool = cast(BaseCommandLineTool, tool)
                 parents = [tool_id_to_node[p_id] for p_id in get_process_parents(tool)]
-                graph.add_parents(tool_id_to_node[tool_id], parents) # type: ignore
+                graph.add_parents(tool_id_to_node[tool_id], parents)    # type: ignore
 
 
     def optimize_dependency_graph(self) -> None:
         """
         TODO Description
         """
+        # NOTE If we work with grouping, groups must be connected directly. 
         graph: OuterGraph = self.loading_context["graph"]
 
         # NOTE just for testing purposes.
         # graph.merge(graph.nodes.keys())
+        graph.merge([id for id in graph.nodes])
         
         pass
 
@@ -481,6 +480,12 @@ class BaseWorkflow(BaseProcess):
         """
         Execute the tasks of this node. 
         TODO Only tested on nodes containing a single tool node!
+        TODO OPTIMIZATION: OuterNodes are executed if all parent OuterNodes
+             have finished. However if an OuterNode InnerGraph has multiple
+             roots, some might be able to execute without all OuterNode parents
+             having finished. Fix by checking for completed parents of each
+             root in the OuterNode. Would need to collect and include data from
+             parents that finish later into the runtime_context! 
         """
         graph: InnerGraph = outer_node.graph
         if graph is None:
@@ -488,14 +493,6 @@ class BaseWorkflow(BaseProcess):
 
         if executor is None:
             executor = ThreadPoolExecutor()
-
-        # nodes = graph.nodes
-        # runnable_nodes: List[Node] = deepcopy(graph.get_nodes(graph.roots))
-        # runnable: Dict[str, Node] = {node.id: node for node in runnable_nodes}
-        # waiting: Dict[str, Node] = {id: node for id, node in nodes.items() if id not in runnable}
-        # running: Dict[str, Tuple[Future, Node]] = {}
-        # completed: Dict[str, Node] = {}
-        # outputs: Dict[str, Value] = {}
 
         nodes = graph.nodes
         runnable_nodes: List[ToolNode] = graph.get_nodes(graph.roots) # type: ignore
@@ -510,7 +507,6 @@ class BaseWorkflow(BaseProcess):
             for node_id, node in runnable.copy().items():
                 # These nodes (which are wrapped tools) contain a single 
                 # node in their graph.
-                # tool = cast(BaseCommandLineTool, node.processes[0])
                 tool = node.tool
                 step_runtime_context = self.prepare_step_runtime_context(tool, runtime_context)
                 print(f"[NODE]: Executing tool {tool.id}")
@@ -587,14 +583,6 @@ class BaseWorkflow(BaseProcess):
 
         # Initialize queues
         graph: OuterGraph = self.loading_context["graph"]
-        # nodes = graph.nodes
-        # runnable_nodes: List[Node] = deepcopy(graph.get_nodes(graph.roots))
-        # runnable: Dict[str, Node] = {node.id: node for node in runnable_nodes}
-        # waiting: Dict[str, Node] = {id: node for id, node in nodes.items() if id not in runnable}
-        # running: Dict[str, Tuple[Future, Node]] = {}
-        # completed: Dict[str, Node] = {}
-        # outputs: Dict[str, Value] = {}
-
         nodes = graph.nodes
         runnable_nodes: List[OuterNode] = graph.get_nodes(graph.roots) # type: ignore
         runnable: Dict[str, OuterNode] = {n.id: n for n in runnable_nodes}
@@ -767,7 +755,7 @@ def get_process_parents(tool: BaseCommandLineTool) -> List[str]:
             input_id    
         )-> Tuple[bool, Optional[str]]:
         """
-        TODO: How to implement optional args?        
+        TODO Description        
         """
         if "source" in step_dict["in"][input_id]:
             return False, step_dict["in"][input_id]["source"]
