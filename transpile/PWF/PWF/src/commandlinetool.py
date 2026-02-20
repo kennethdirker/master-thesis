@@ -808,7 +808,7 @@ class BaseCommandLineTool(BaseProcess):
             ``loadContents`` handling), or re-raises subprocess errors.
         """
         # Execute tool
-        print("[TOOL]: EXECUTING:", " \\\n[TOOL]:\t\t".join(cmd))
+        print("[TOOL]: EXECUTING:", " \\\n[TOOL]:\t\t".join(cmd), "\n")
         try:
             stdin = sys.stdin
             stdout = sys.stdout
