@@ -539,9 +539,6 @@ class BaseWorkflow(BaseProcess):
         else:
             client = ThreadPoolExecutor()
 
-        # TODO Remove
-        verbose = True
-
         # Initialize queues
         graph: OuterGraph = self.loading_context["graph"]
         nodes = graph.nodes
