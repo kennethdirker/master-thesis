@@ -1,4 +1,3 @@
-
 import glob
 import json
 import os
@@ -49,7 +48,9 @@ class BaseCommandLineTool(BaseProcess):
             inherited_requirements: Optional[Dict[str, Any]] = None,
             PATH: Optional[str] = None,
         ):
-        """ TODO: class description """
+        """
+        TODO
+        """
 
         # Initialize BaseProcess class
         super().__init__(
@@ -77,7 +78,7 @@ class BaseCommandLineTool(BaseProcess):
             outputs = self.execute(self.loading_context["use_dask"],
                                    runtime_context)
             self.finalize(outputs)
-
+            
 
     def set_metadata(self):
         """

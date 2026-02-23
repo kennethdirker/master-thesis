@@ -15,11 +15,9 @@ from typing import (
     List,
     Mapping,
     Optional,
-    cast
 )
 
 from .utils import (
-    Absent,
     DirectoryObject,
     FileObject,
     CWL_PY_T_MAPPING,
@@ -49,7 +47,6 @@ class BaseProcess(ABC):
     # Runtime info
     input_to_source: Dict[str, str]
     loading_context: Dict[str, Any]
-    runtime_context: Dict[str, Value | Absent]
 
     def __init__(
             self,
@@ -104,7 +101,6 @@ class BaseProcess(ABC):
         self.metadata = {}
         
         # Assign input/output dictionary attributes.
-        # FIXME: dicts could use custom types like CWLTool does, instead of dicts.
         self.inputs = {} # Override in set_inputs()
         self.outputs = {} # Override in set_outputs()
 

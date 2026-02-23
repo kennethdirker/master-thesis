@@ -7,9 +7,8 @@ import inspect
 import sys
 import time
 
-from abc import abstractmethod, ABC
+from abc import abstractmethod
 from concurrent.futures import ThreadPoolExecutor   
-from copy import deepcopy
 from dask.distributed import Client
 from pathlib import Path
 from types import NoneType
@@ -17,19 +16,16 @@ from typing import (
     Any,
     cast,
     Dict,
-    Iterator,
     List,
     Mapping,
     Optional,
     Tuple,
     TypeAlias,
-    Union
 )
 from uuid import uuid4
 
 from .process import BaseProcess
 from .commandlinetool import BaseCommandLineTool
-# from .graph import OuterGraph, OuterNode, InnerGraph, ToolNode
 from .utils import (
     Absent,
     FileObject,
@@ -37,7 +33,6 @@ from .utils import (
     Value,
     CWL_PY_T_MAPPING,
     PY_CWL_T_MAPPING,
-    # get_process_parents
 )
 
 Future: TypeAlias = concurrent.futures.Future | dask.distributed.Future
@@ -62,11 +57,11 @@ class BaseWorkflow(BaseProcess):
         # TODO Explain loading_context
             - graph
 
-        NOTE: if main is True, parent_id and step_id are None
+        NOTE: if main is True, the process has no parents and its 
+        parent_id and step_id are None.
         """
         super().__init__(
             main = main,
-            # runtime_context = runtime_context,
             loading_context = loading_context,
             parent_process_id = parent_process_id,
             step_id = step_id
@@ -92,7 +87,6 @@ class BaseWorkflow(BaseProcess):
         if main:
             yaml_uri = self.loading_context["input_object"]
             runtime_context = self._load_input_object(yaml_uri)
-            # self.loading_context["graph"] = OuterGraph()
             self.register_step_output_sources(runtime_context)
             self.register_input_sources(runtime_context)
             self.create_dependency_graph()
@@ -108,7 +102,6 @@ class BaseWorkflow(BaseProcess):
         """
         Defines the sub-processes of this workflow. Overwriting this function
         is mandatory for workflows.
-        TODO Desc
         """
         pass
 
@@ -152,47 +145,15 @@ class BaseWorkflow(BaseProcess):
             self.loading_context["processes"][sub_process.id] = sub_process
             self.step_id_to_process[step_id] = sub_process
 
-    
-    # def create_dependency_graph(self, verbose: bool = False) -> None:
-    #     """ 
-    #     TODO Description
-    #     """
-    #     processes: Dict[str, BaseProcess] = self.loading_context["processes"]
-    #     graph: OuterGraph = self.loading_context["graph"]
-
-    #     # Recursively load all processes from steps
-    #     if verbose:
-    #         print("[WORKFLOW]: Loading process files:")
-    #     for step_id, step_dict in self.steps.items():
-    #         step_process = self._load_process_from_uri(step_dict["run"],
-    #                                                    step_id,
-    #                                                    self.requirements.copy(),
-    #                                                    verbose)
-    #         processes[step_process.id] = step_process
-    #         self.step_id_to_process[step_id] = step_process
-    #         node = OuterNode(
-    #             id = step_process.id,
-    #             tools = [step_process],
-    #             is_tool_node = False
-    #         )
-    #         graph.add_node(node)
-
-    #     # Add tool nodes to the dependency graph
-    #     for tool in processes.values():
-    #         if issubclass(type(tool), BaseCommandLineTool):
-    #             tool = cast(BaseCommandLineTool, tool)
-    #             graph.connect_node(
-    #                 node_id = tool.id,
-    #                 parents = get_process_parents(tool),
-    #             )
-
 
     def register_step_output_sources(
             self,
             runtime_context: Dict[str, Any]
         ) -> None:
         """
-                TODO Desc
+        Add an empty entry in the ``runtime_context`` for each step output.
+        Empty entries are used to see which tools have not supplied their
+        outputs.
         """
         for process in self.loading_context["processes"].values():
             if not issubclass(type(process), BaseWorkflow):
@@ -221,7 +182,6 @@ class BaseWorkflow(BaseProcess):
         In turn, sources are keys in runtime_context dictionaries that contains
         the actual value of the input. 
         NOTE: Should only be called from the main process.
-
         """
         if not self.is_main:
             raise Exception("Function should only be called from the main process")
@@ -324,7 +284,6 @@ class BaseWorkflow(BaseProcess):
         groups to have data dependent tasks execute within the same locality.
         """
         processes: dict[str, BaseProcess] = self.loading_context["processes"]
-        # self.loading_context["graph"] = OuterGraph()
         graph = self.loading_context["graph"] = OuterGraph()
         tool_id_to_node: Dict[str, OuterNode] = {}
 
@@ -377,7 +336,7 @@ class BaseWorkflow(BaseProcess):
         
         workflow = self.loading_context["processes"][tool.parent_process_id]
         workflow = cast(BaseWorkflow, workflow)
-        for in_id, in_dict in workflow.steps[tool.step_id]["in"].items():
+        for in_id in workflow.steps[tool.step_id]["in"]:
             input_dict = tool.inputs[in_id]
             source = tool.input_to_source[in_id]
             v = runtime_context[source]
@@ -481,7 +440,6 @@ class BaseWorkflow(BaseProcess):
         ) -> Dict[str, Any]:
         """
         Execute the tasks of this node. 
-        TODO Only tested on nodes containing a single tool node!
         TODO OPTIMIZATION: OuterNodes are executed if all parent OuterNodes
              have finished. However if an OuterNode InnerGraph has multiple
              roots, some might be able to execute without all OuterNode parents
@@ -507,8 +465,6 @@ class BaseWorkflow(BaseProcess):
         while len(runnable) != 0 or len(running) != 0:
             # Execute runnable nodes in the ThreadPool
             for node_id, node in runnable.copy().items():
-                # These nodes (which are wrapped tools) contain a single 
-                # node in their graph.
                 tool = node.tool
                 step_runtime_context = self.prepare_step_runtime_context(tool, runtime_context)
                 print(f"[NODE]: Executing tool {tool.id}")
@@ -569,8 +525,8 @@ class BaseWorkflow(BaseProcess):
         ) -> dict[str, Value]:
         """
         Execute the workflow as the main process. The workflow is executed by
-        submitting each node of the workflow dependency graph to the Dask
-        scheduler as an asynchronous task. The workflow is executed in a polling
+        submitting each node of the workflow dependency graph to the scheduler
+        as an asynchronous task. The workflow is executed in a polling
         loop that checks for finished nodes and submits newly executable nodes.
         The function returns when all nodes have been executed.
         NOTE: This function should only be called from the main process.
@@ -582,6 +538,9 @@ class BaseWorkflow(BaseProcess):
             client = Client()
         else:
             client = ThreadPoolExecutor()
+
+        # TODO Remove
+        verbose = True
 
         # Initialize queues
         graph: OuterGraph = self.loading_context["graph"]
@@ -608,7 +567,7 @@ class BaseWorkflow(BaseProcess):
             lprint()
 
         # Polling loop that runs until all graph nodes have been executed.
-        # Each node execution is submitted to the Dask scheduler as an async
+        # Each node execution is submitted to the scheduler as an async
         # task. The polling loop checks for finished nodes and submits newly
         # executable nodes. Invalid workflows, faulty tools or bad input might
         # result in deadlocks, in which case an exception is raised.
@@ -805,23 +764,11 @@ def get_process_parents(tool: BaseCommandLineTool) -> List[str]:
     return parents
 
 
-# from __future__ import annotations
-
-# from abc import ABC
-
-# from copy import deepcopy
-# from typing import cast, Dict, Iterator, List, Optional, Set, Tuple, Union
-# from uuid import uuid4
-
-# from .process import BaseProcess
-# from .commandlinetool import BaseCommandLineTool
-# from .utils import get_process_parents
-
 
 ##########################################################
 #                         Node                          #
 ##########################################################
-class BaseNode(ABC):
+class BaseNode:
     id: str
     short_id: Optional[int]
     parents: Dict[str, Node]
@@ -889,13 +836,14 @@ class ToolNode(BaseNode):
     def __init__(
             self,
             tool: BaseCommandLineTool,
-            # id: Optional[str] = None,
             short_id: Optional[int] = None,
             parents: Optional[List[ToolNode]] = None,
             children: Optional[List[ToolNode]] = None,
         ):
-        # id = id if id else tool.id
-        # super().__init__(id, short_id, parents, children) # type: ignore
+        """
+        ``InnerNode``s are contained in an ``InnerGraph`` and are essentially
+        command-line tool Process wrappers.
+        """
         super().__init__(tool.id, short_id, parents, children) # type: ignore
         self.tool = tool
 
@@ -915,33 +863,13 @@ class OuterNode(BaseNode):
             short_id: Optional[int] = None,
             parents: Optional[List[OuterNode]] = None,
             children: Optional[List[OuterNode]] = None,
-            # tools: Optional[BaseCommandLineTool | List[BaseCommandLineTool]] = None,
-            # di_edges: Optional[List[Tuple[str, str]]] = None, # TODO specify type
-
         ):
         """
-        
+        ``OuterNode``s are contained in an ``OuterGraph``, containing graphs
+        (``InnerGraph``) themselves. 
         """
         super().__init__(id, short_id, parents, children) # type: ignore
         self.graph = InnerGraph()
-
-        # if (tools or di_edges) and (tools is None or di_edges is None):
-        #     raise Exception(f"Either both ``tools`` and ``di_edges`` or neither must be provided")
-        
-        # if isinstance(tools, BaseCommandLineTool):
-        #     tools = [tools]
-        #     assert tools is not None
-        #     assert di_edges is not None
-        #     tool_nodes = [ToolNode(t, t.id, ) for t in tools]
-        #     self.graph.add_nodes(tool_nodes)    # type: ignore
-        #     self.graph.add_edges(di_edges)  # TODO <- does this work?
-
-
-    def merge_with(
-            self,
-            other: OuterNode
-        ) -> OuterNode:
-        raise NotImplementedError()
 
 
 # Typedef
@@ -951,11 +879,12 @@ Node = ToolNode | OuterNode
 ##########################################################
 #                         Graph                          #
 ##########################################################
-class BaseGraph(ABC):
+class BaseGraph:
     size:      int
     nodes:     Dict[str, Node]
     roots:     List[str]
     leaves:    List[str]
+    next_short_id:   int
     short_ids: Dict[str, int]
     in_edges:  Dict[str, List[str]]
     out_edges: Dict[str, List[str]]
@@ -969,17 +898,10 @@ class BaseGraph(ABC):
         self.nodes = {}
         self.roots = []
         self.leaves = []
+        self.next_short_id = 0
         self.short_ids = {}
         self.in_edges = {}
         self.out_edges = {}
-        self.short_id_gen = self.get_short_id_generator()
-
-
-    def get_short_id_generator(self) -> Iterator[int]:
-        n: int = 0
-        while True:
-            yield n
-            n += 1
 
 
     def add_nodes(self, nodes: Node | List[Node]) -> None:
@@ -995,9 +917,9 @@ class BaseGraph(ABC):
             self.nodes[node.id] = node
             self.roots.append(node.id)
             self.leaves.append(node.id)
-            short_id = next(self.short_id_gen)
-            self.short_ids[node.id] = short_id
-            node.short_id = short_id
+            self.short_ids[node.id] = self.next_short_id
+            node.short_id = self.next_short_id
+            self.next_short_id += 1
             self.size += 1
 
 
@@ -1066,8 +988,6 @@ class BaseGraph(ABC):
 
     def add_children(
             self,
-            # node: Node | str,
-            # children: List[Node | str]
             node: Node,
             children: List[Node]
         ) -> None:
@@ -1076,25 +996,16 @@ class BaseGraph(ABC):
         of each child.        
         """
         edges: List[Tuple[Node, Node]] = []
-
-        # if isinstance(node, str):
-            # node = self.get_nodes(node)[0]
-
         for child in children:
             if isinstance(child, Node):
                 edges.append((node, child))
-            # elif isinstance(child, str):
-                # edges.append((node, self.nodes[child]))
             else:
                 raise TypeError(f"Expected 'Node', but found '{type(child)}'")
-                # raise TypeError(f"Expected 'str' or 'Node', but found '{type(child)}'")
         self.add_edges(edges)
 
     
     def get_nodes(self, node_ids: str | List[str]) -> List[Node]:
-        print("[DEBUG self.nodes]", *self.nodes, sep="\n\t")
         if isinstance(node_ids, str):
-            # node_ids = [node_ids]
             return [self.nodes[node_ids]]
         return [self.nodes[id] for id in node_ids]
 
@@ -1177,17 +1088,21 @@ class OuterGraph(BaseGraph):
             self,
             inner_graphs: List[InnerGraph]
         ) -> InnerGraph:
+        """
+        Create a new InnerGraph object and merge the graphs in ``inner_graphs``
+        into it.
+
+        Returns:
+            The newly created InnerGraph
+        """
         inner = InnerGraph()
         for g in inner_graphs:
-            print(g.nodes)
             inner.add_nodes(list(g.nodes.values()))
 
             # Every directed edge between nodes is both an in- and out-edge, so
             # using either the in- or out-edges suffices.
             for src, children in g.out_edges.items():
                 src_node = g.get_nodes(src)[0]
-                # print("[DEBUG SRC]", src)
-                # print("[DEBUG CHILDREN]", *children, sep="\n\t")
                 inner.add_children(src_node, g.get_nodes(children))
 
         # If a tool is added to a merged graph with a parent tool that was
@@ -1197,7 +1112,6 @@ class OuterGraph(BaseGraph):
         for tool_node in inner.nodes.values():
             tool = tool_node.tool
             parent_ids = get_process_parents(tool)
-            # print("[PARENT IDS]", *parent_ids, sep="\n\t")
             for parent_id in parent_ids:
                 if parent_id in inner.nodes:
                     inner.add_parents(tool_node, [parent_id])
@@ -1219,7 +1133,6 @@ class OuterGraph(BaseGraph):
         if len(nodes_or_ids) < 2:
             raise Exception("Merging needs atleast 2 nodes")
         
-        # self.print()
         nodes: List[OuterNode] = []
         node_ids: List[str] = []
         for n in nodes_or_ids:
@@ -1236,15 +1149,12 @@ class OuterGraph(BaseGraph):
         inner_graphs: List[InnerGraph] = []
         for node in nodes:
             ids.append(str(node.short_id))
-            # NOTE: 'if k not in self.nodes' or if k not in node_ids
-            # TODO Check if extends are behaving correctly!
             parents.extend([v for k, v in node.parents.items()
                               if k not in node_ids])
             children.extend([v for k, v in node.children.items()
                               if k not in node_ids])
             inner_graphs.append(node.graph)
-        # print('[PARENTS]: ', *[p.id for p in parents], sep="\n\t")
-        # print('[CHILDREN]: ', *[p.id for p in children], sep="\n\t")
+
         new_id = ":".join(ids)
         new_node = OuterNode(id = new_id,
                              parents = parents,
@@ -1258,37 +1168,11 @@ class OuterGraph(BaseGraph):
             if src in node_ids:
                 edges.extend([(self.nodes[src], self.nodes[c]) for c in cs])
 
-        # new_node.graph.print()
         self.add_nodes(new_node)
         self.add_edges(edges)
-        self.remove_nodes(nodes)
-        # self.print()
-        # exit()
+        self.remove_nodes(nodes)    # type: ignore
         return new_node.id
 
 
 class InnerGraph(BaseGraph):
-    # node_parents: List  # TODO specify type (if this is needed)
     nodes: Dict[str, ToolNode]
-    
-    # def __init__(self):
-        # super().init()
-        # pass
-
-
-    # def merge_with(
-    #         self,
-    #         other: InnerGraph
-    #     ) -> InnerGraph:
-    #     """
-    #     NOTE: This does not work here, as we need context from the 
-    #     OuterGraph for merging isolated InnerGraph's.
-    #     """
-    #     new_graph = InnerGraph()
-    #     src_nodes = list(self.nodes.values()) + list(other.nodes.values())
-    #     new_graph.add_nodes(src_nodes)  # type: ignore
-    #     # Merge edges. Edges between the 
-    #     out_edges = []
-    #     in_edges = []
-    #     new_graph.add_edges(src_edges)  # type: ignore
-    #     return new_graph
