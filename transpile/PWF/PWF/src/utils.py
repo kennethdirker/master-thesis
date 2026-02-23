@@ -22,13 +22,6 @@ class Absent:
         return f'Absent("{self.string}")'
 
 
-
-# def get_or_default(d: dict, default_value: Any) -> Any:
-#     if not isinstance(d, dict):
-#         raise TypeError(f"Expected dict, but has type {type(d)}")
-#     if default_value in d:
-#         return d[default_value]
-#     return default_value
 class NestedObject:
     pass
 
@@ -47,17 +40,6 @@ def dict_to_obj(d: dict) -> Any:
     obj = NestedObject()
     helper(obj, d)
     return obj
-
-
-# def print_obj(obj: object, indent: int = 0):
-#     for key in dir(obj):
-#         if not key.startswith("__"):
-#             value = getattr(obj, key)
-#             if type(value) is NestedObject:
-#                 print("\t" * indent, f"{key}:")
-#                 print_obj(value, indent + 1)
-#             else:
-#                 print("\t" * indent, f"{key}: {value}")
 
 
 def print_obj(obj: object, indent: int = 0, filter: Optional[Sequence] = None):
@@ -82,6 +64,7 @@ def print_obj(obj: object, indent: int = 0, filter: Optional[Sequence] = None):
     elif obj:
         print("\t" * indent + str(obj))
 
+
 def pretty_print_dict(d, indent=0):
     res = ""
     for k, v in d.items():
@@ -91,6 +74,7 @@ def pretty_print_dict(d, indent=0):
         else:
             res += "\t"*(indent+1) + str(v) + "\n"
     return res
+
 
 class FileObject:
     """
@@ -269,6 +253,17 @@ class Value:
         self.type = type_t
         self.cwltype = cwl_type
         self.is_array = isinstance(value, Sequence)
+
+
+    def get(self, index: int) -> Value | None:
+        """
+        Retrieve an element at ``index`` from the array.
+        Returns ``None`` if ``value`` does not contain an array or if the index
+        is out of bounds.
+        """
+        if not isinstance(self.value, Sequence): return None
+        if index >= len(self.value): return None
+        return self.value[index]
 
 
     # def is_array(self):
