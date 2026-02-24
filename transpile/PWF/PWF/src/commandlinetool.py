@@ -94,7 +94,6 @@ class BaseCommandLineTool(BaseProcess):
         self.metadata = {}
 
     @abstractmethod
-    # FIXME: Better function name
     def set_base_command(self) -> None:
         """
         Set the tool's base command.

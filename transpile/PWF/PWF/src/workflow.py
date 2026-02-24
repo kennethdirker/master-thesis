@@ -63,14 +63,12 @@ def get_process_parents_ids(tool: BaseCommandLineTool) -> List[str]:
         elif "default" in step_dict["in"][input_id]:
             return True, None
         raise NotImplementedError(step_dict["in"][input_id])
-    
+
     parents: List[str] = []
     processes: Dict[str, BaseProcess] = tool.loading_context["processes"]
 
     for input_id in tool.inputs:
         # Start in the parent of tool
-        # NOTE Make sure this still works when not working with BaseWorkflow
-
         process = cast(BaseWorkflow, processes[cast(str, tool.parent_workflow_id)])
         step_id = tool.step_id
         step_dict = process.steps[cast(str, step_id)]
@@ -82,25 +80,31 @@ def get_process_parents_ids(tool: BaseCommandLineTool) -> List[str]:
             if cont:
                 break
 
-            source = cast("str", source)
+            source = cast(str, source)
             if "/" in source:
                 # A step of this workflow is the input source
-                parent_step_id, _ = source.split("/")
-                process = cast(BaseWorkflow, process)
-                process = process.step_id_to_process[parent_step_id]
-                parents.append(process.id)
-                break
+                output_step_id, output_id = source.split("/")
+                process = cast(BaseWorkflow, process).step_id_to_process[output_step_id]
+                
+                if issubclass(type(process), BaseCommandLineTool):
+                    # Found the parent tool
+                    parents.append(process.id)
+                    break
+                
+                # Source comes from another sub-workflow
+                output_source = process.outputs[output_id]["outputSource"]
+                step_id, input_id = output_source.split("/")
+                step_dict = cast(BaseWorkflow, process).steps[step_id]
             else:
                 # Parent of this process is the input source
-                if process.is_main:
-                    # Input comes from input object and thus has no source
-                    # Process.
+                if process.is_main or process.parent_workflow_id is None:
+                    # Input comes from input object and has no source process
                     break
                 else:
-                    # Input comes from another source upstream
-                    process = processes[cast(str, process.parent_workflow_id)]
-                    step_id = process.step_id
-                    step_dict = cast(BaseWorkflow, process).steps[cast(str, step_id)]
+                    # Input comes from a source in the parent workflow
+                    process = cast(BaseWorkflow, processes[process.parent_workflow_id])
+                    step_id = cast(str, step_id)
+                    step_dict = cast(BaseWorkflow, process).steps[step_id]
     return parents
 
 
@@ -326,10 +330,15 @@ class BaseWorkflow(BaseProcess):
             step_in_dict = process.steps[step_id]["in"][in_id]
             if "source" in step_in_dict:
                 return False, step_in_dict["source"]
+            # NOTE get_process_parents_ids does it in this order, should it work like this?
             elif "default" in step_in_dict:
                 return True, step_in_dict["default"]
             elif "valueFrom" in step_in_dict:
                 return True, None
+            # elif "default" in step_in_dict:
+            #     return True, step_in_dict["default"]
+            # elif "valueFrom" in step_in_dict:
+            #     return True, None
             raise NotImplementedError()
 
         processes: Dict[str, BaseProcess] = self.loading_context["processes"]
@@ -434,9 +443,13 @@ class BaseWorkflow(BaseProcess):
         """
         # NOTE If we work with grouping, groups must be connected directly. 
         graph: OuterGraph = self.loading_context["graph"]
+        graph.print()
 
         # NOTE just for testing purposes.
         graph.merge([id for id in graph.nodes])
+        graph.print()
+        for g in graph.nodes.values():
+            g.graph.print()
         
     
     def build_step_namespace(
@@ -531,12 +544,13 @@ class BaseWorkflow(BaseProcess):
             expr_result = self.eval(expression, cwl_namespace)
             # Evaluated expression needs to be wrapped
             # NOTE TO SELF: If string overlap with files and dirs is handled in commandlinetool, skip it here?
-            # BUG js2py returns lists and dicts as js2py.base.JsObjectWrapper.
+            # js2py returns lists and dicts as js2py.base.JsObjectWrapper.
             # How to handle this?
             if isinstance(expr_result, List):
                 if len(expr_result) == 0:
                     # TODO List items can be any type, what to do?
-                    ...
+                    # Probably just NoneType like below?            
+                    value = Value([], NoneType, "null")
                 if not type(expr_result[0]) in PY_CWL_T_MAPPING:
                     raise Exception(f"Found unsupported item type in array: '{type(expr_result[0])}'")
                 
@@ -752,12 +766,22 @@ class BaseWorkflow(BaseProcess):
             s = "\n\t".join([node_id for node_id in waiting.keys()])
             raise Exception(f"Deadlock detected. Waiting nodes:\n\t{s}")
         
-        # Output keys are prefixed with the global ID of the tool that created
-        # the outputs, resulting in a mismatch between that key  
+        # Workflow Processes do not exist in the dependency graph. The outputs
+        # of the upper workflow must be sourced from tools instead by
+        # traversing the subworkflows.
         new_outputs: Dict[str, Any] = {}
         for output_id, output_dict in self.outputs.items():
-            step_id, step_output_id = output_dict["outputSource"].split("/")
-            value = outputs[self.step_id_to_process[step_id].global_id(step_output_id)]
+            step_id, step_out_id = output_dict["outputSource"].split("/")
+            process = cast(BaseWorkflow, self.step_id_to_process[step_id])
+            while issubclass(type(process), BaseWorkflow):
+                process = cast(BaseWorkflow, process)
+                step_id, step_out_id = process.outputs[step_out_id]["outputSource"].split("/")
+                process = process.step_id_to_process[step_id]
+
+            if not issubclass(type(process), BaseCommandLineTool):
+                raise Exception()
+
+            value = outputs[process.global_id(step_out_id)]
             new_outputs[self.global_id(output_id)] = value
 
         return new_outputs
