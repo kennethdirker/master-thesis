@@ -8,8 +8,6 @@ from abc import abstractmethod
 from dask.distributed import Client
 from pathlib import Path
 from subprocess import run, CompletedProcess
-from uuid import uuid4
-
 from types import NoneType
 from typing import (
     Any,
@@ -21,6 +19,7 @@ from typing import (
     Type,
     Union,
 )
+from uuid import uuid4
 
 from .process import BaseProcess
 from .utils import (
@@ -38,6 +37,9 @@ class BaseCommandLineTool(BaseProcess):
     io: Dict[str, Any]
     base_command: List[str] | str | None
     arguments: List[Union[str, Dict[str, Union[str, int]]]]
+
+    # # Dependency info
+    # tool_parents: List[str]
 
     def __init__(
             self,
@@ -73,7 +75,7 @@ class BaseCommandLineTool(BaseProcess):
         
         if main:
             yaml_uri = self.loading_context["input_object"]
-            runtime_context = self._load_input_object(yaml_uri)
+            runtime_context = self.load_input_object(yaml_uri)
             self.register_input_sources()
             outputs = self.execute(self.loading_context["use_dask"],
                                    runtime_context)

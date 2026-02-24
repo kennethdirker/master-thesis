@@ -35,7 +35,7 @@ class BaseProcess(ABC):
     id: str
 
     # Parent process info
-    parent_process_id: str | None
+    parent_workflow_id: str | None
     step_id: str | None
 
     # Tool/workflow info
@@ -94,7 +94,7 @@ class BaseProcess(ABC):
         if main:
             step_id = None
             parent_process_id = None
-        self.parent_process_id = parent_process_id
+        self.parent_workflow_id = parent_process_id
         self.step_id = step_id
 
         # Assign metadata attributes. Override in self.set_metadata().
@@ -238,7 +238,7 @@ class BaseProcess(ABC):
         return self.id  + ":" + s
 
 
-    def _load_yaml(self, yaml_uri: str) -> Dict[str, Any]:
+    def load_yaml(self, yaml_uri: str) -> Dict[str, Any]:
         """
         Load a YAML file pointed at by 'yaml_uri' into a dictionary.
         """
@@ -394,7 +394,7 @@ class BaseProcess(ABC):
             )
 
     
-    def _load_input_object(self, yaml_uri: str) -> Dict[str, Any]:
+    def load_input_object(self, yaml_uri: str) -> Dict[str, Any]:
         """
         Read the input object from a YAML file and map the values
         with the globalized input ID as key.
@@ -406,7 +406,7 @@ class BaseProcess(ABC):
         the input object
         """
         runtime_context = {}
-        input_obj = self._load_yaml(yaml_uri)
+        input_obj = self.load_yaml(yaml_uri)
 
         print("[PROCESS]: Inputs loaded into runtime context:")
         for input_id, input_value in input_obj.items():

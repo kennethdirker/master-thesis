@@ -38,6 +38,72 @@ from .utils import (
 Future: TypeAlias = concurrent.futures.Future | dask.distributed.Future
 
 
+def get_process_parents_ids(tool: BaseCommandLineTool) -> List[str]:
+    """
+    TODO Description
+    """
+    # NOTE: Iterative algorithm because I initially thought python has a rather
+    # low standard recursion limit, which I did not want to touch. However, the
+    # default recursion limit is actually a 1000 levels, which is way deeper
+    # than any workflow should realisticly get. Oh well. 
+    if tool.is_main or tool.parent_workflow_id is None:
+        return []
+    
+    def get_source(
+            step_dict,
+            input_id    
+        )-> Tuple[bool, Optional[str]]:
+        """
+        TODO Description        
+        """
+        if "source" in step_dict["in"][input_id]:
+            return False, step_dict["in"][input_id]["source"]
+        elif "valueFrom" in step_dict["in"][input_id]:
+            return True, None
+        elif "default" in step_dict["in"][input_id]:
+            return True, None
+        raise NotImplementedError(step_dict["in"][input_id])
+    
+    parents: List[str] = []
+    processes: Dict[str, BaseProcess] = tool.loading_context["processes"]
+
+    for input_id in tool.inputs:
+        # Start in the parent of tool
+        # NOTE Make sure this still works when not working with BaseWorkflow
+
+        process = cast(BaseWorkflow, processes[cast(str, tool.parent_workflow_id)])
+        step_id = tool.step_id
+        step_dict = process.steps[cast(str, step_id)]
+
+        # Go up the process tree, until a tool or the input object
+        # is encountered
+        while True:
+            cont, source = get_source(step_dict, input_id)
+            if cont:
+                break
+
+            source = cast("str", source)
+            if "/" in source:
+                # A step of this workflow is the input source
+                parent_step_id, _ = source.split("/")
+                process = cast(BaseWorkflow, process)
+                process = process.step_id_to_process[parent_step_id]
+                parents.append(process.id)
+                break
+            else:
+                # Parent of this process is the input source
+                if process.is_main:
+                    # Input comes from input object and thus has no source
+                    # Process.
+                    break
+                else:
+                    # Input comes from another source upstream
+                    process = processes[cast(str, process.parent_workflow_id)]
+                    step_id = process.step_id
+                    step_dict = cast(BaseWorkflow, process).steps[cast(str, step_id)]
+    return parents
+
+
 class BaseWorkflow(BaseProcess):
     # Step info
     step_id_to_process: Dict[str, BaseProcess]
@@ -86,7 +152,7 @@ class BaseWorkflow(BaseProcess):
         # the workflow.
         if main:
             yaml_uri = self.loading_context["input_object"]
-            runtime_context = self._load_input_object(yaml_uri)
+            runtime_context = self.load_input_object(yaml_uri)
             self.register_step_output_sources(runtime_context)
             self.register_input_sources(runtime_context)
             self.create_dependency_graph()
@@ -132,6 +198,61 @@ class BaseWorkflow(BaseProcess):
         pass
         # self.groups = {}
         # self.groups = []
+
+
+    def load_process_from_uri(
+            self, 
+            uri: str,
+            step_id: str,
+            requirements: Dict[str, Any],
+            verbose: bool = False
+        ) -> BaseProcess:
+        """
+        Dynamic Process loading from file. Raises an exception if no valid 
+        BaseProcess sub-class can be found in the file.
+        NOTE: Loading a class from a file that contains multiple subclasses of
+        BaseProcess causes undefined behaviour.
+
+        Returns:
+            Instantiated subclass of BaseProcess. 
+        """
+        # Taken from:
+        # https://stackoverflow.com/questions/66833453/loading-a-class-of-unknown-name-in-a-dynamic-location
+        path = Path(uri)
+        if not path.is_file():
+            raise FileNotFoundError(f"{uri} is not a file")
+        
+        # Add path of file to PYTHONPATH, so Python can import from it.
+        sys.path.append(str(path.parent))
+        potential_module = importlib.import_module(path.stem)
+
+        # Test all attributes in the file for being a class
+        for potential_class in dir(potential_module):
+            obj = getattr(potential_module, potential_class)
+            # Check if mysterious class is indeed a class
+            if not inspect.isclass(obj):
+                continue
+            # Check if the class is imported from the actual file uri, and not
+            # from an import statement present in the file.
+            if not path.stem in str(obj):
+                continue
+            # Check if the class inherits from BaseProcess, but is not of type
+            # BaseProcess. This check is not necessarily needed, but better 
+            # be save then sorry.
+            if not issubclass(obj, BaseProcess) and not isinstance(obj, BaseProcess):
+                continue
+
+            # Instantiate and return the class
+            if verbose: print(f"\tFound process at {uri}")
+
+            return obj(
+                main = False,
+                loading_context = self.loading_context,
+                parent_process_id = self.id,
+                step_id = step_id,
+                inherited_requirements = requirements
+            )
+        raise Exception(f"{uri} does not contain a BaseProcess subclass")
     
 
     def load_step_processes(self) -> None:
@@ -141,7 +262,7 @@ class BaseWorkflow(BaseProcess):
         sub-processes of the main workflow class are loaded recursively.
         """
         for step_id, step_dict in self.steps.items():
-            sub_process = self._load_process_from_uri(step_dict["run"], step_id, self.requirements)
+            sub_process = self.load_process_from_uri(step_dict["run"], step_id, self.requirements)
             self.loading_context["processes"][sub_process.id] = sub_process
             self.step_id_to_process[step_id] = sub_process
 
@@ -234,7 +355,7 @@ class BaseWorkflow(BaseProcess):
                     raise ValueError("process.step_id cannot be None")
                 _step_id: str = process.step_id
 
-                _process = cast(BaseWorkflow, processes[cast(str, process.parent_process_id)])
+                _process = cast(BaseWorkflow, processes[cast(str, process.parent_workflow_id)])
                 source = input_id
 
                 while True:
@@ -269,7 +390,7 @@ class BaseWorkflow(BaseProcess):
                             raise ValueError("_process.step_id cannot be None")
                         _step_id = _process.step_id
                         
-                        _process = processes[cast(str, _process.parent_process_id)]
+                        _process = processes[cast(str, _process.parent_workflow_id)]
 
 
     def create_dependency_graph(self) -> None:
@@ -303,7 +424,7 @@ class BaseWorkflow(BaseProcess):
         for tool_id, tool in processes.items():
             if issubclass(type(tool), BaseCommandLineTool):
                 tool = cast(BaseCommandLineTool, tool)
-                parents = [tool_id_to_node[p_id] for p_id in get_process_parents(tool)]
+                parents = [tool_id_to_node[p_id] for p_id in get_process_parents_ids(tool)]
                 graph.add_parents(tool_id_to_node[tool_id], parents)    # type: ignore
 
 
@@ -325,7 +446,7 @@ class BaseWorkflow(BaseProcess):
         ) -> Dict[str, Any]:
         """
         """
-        if tool.parent_process_id is None or tool.step_id is None:
+        if tool.parent_workflow_id is None or tool.step_id is None:
             raise ValueError("Tool must have parent_process_id and step_id defined")
         # Add workflow inputs to namespace
         namespace = tool.build_base_namespace(runtime_context)
@@ -334,7 +455,7 @@ class BaseWorkflow(BaseProcess):
         if tool.step_id is None:
             raise ValueError("tool.step_id cannot be None")
         
-        workflow = self.loading_context["processes"][tool.parent_process_id]
+        workflow = self.loading_context["processes"][tool.parent_workflow_id]
         workflow = cast(BaseWorkflow, workflow)
         for in_id in workflow.steps[tool.step_id]["in"]:
             input_dict = tool.inputs[in_id]
@@ -383,9 +504,9 @@ class BaseWorkflow(BaseProcess):
         Create a new runtime context dictionary with updated source values
         from process input and step input valueFrom fields.
         """
-        if tool.parent_process_id is None or tool.step_id is None:
+        if tool.parent_workflow_id is None or tool.step_id is None:
             raise ValueError("Tool must have parent_process_id and step_id defined")
-        parent_workflow_id = tool.parent_process_id
+        parent_workflow_id = tool.parent_workflow_id
         parent_process = cast(BaseWorkflow, self.loading_context["processes"][parent_workflow_id])
 
         # Create a copy to prevent replacing source values with valueFrom values
@@ -640,125 +761,6 @@ class BaseWorkflow(BaseProcess):
             new_outputs[self.global_id(output_id)] = value
 
         return new_outputs
-
-
-    def _load_process_from_uri(
-            self, 
-            uri: str,
-            step_id: str,
-            requirements: Dict[str, Any],
-            verbose: bool = False
-        ) -> BaseProcess:
-        """
-        Dynamic Process loading from file. Raises an exception if no valid 
-        BaseProcess sub-class can be found in the file.
-        NOTE: Loading a class from a file that contains multiple subclasses of
-        BaseProcess causes undefined behaviour.
-
-        Returns:
-            Instantiated subclass of BaseProcess. 
-        """
-        # Taken from:
-        # https://stackoverflow.com/questions/66833453/loading-a-class-of-unknown-name-in-a-dynamic-location
-        path = Path(uri)
-        if not path.is_file():
-            raise FileNotFoundError(f"{uri} is not a file")
-        
-        # Add path of file to PYTHONPATH, so Python can import from it.
-        sys.path.append(str(path.parent))
-        potential_module = importlib.import_module(path.stem)
-
-        # Test all attributes in the file for being a class
-        for potential_class in dir(potential_module):
-            obj = getattr(potential_module, potential_class)
-            # Check if mysterious class is indeed a class
-            if not inspect.isclass(obj):
-                continue
-            # Check if the class is imported from the actual file uri, and not
-            # from an import statement present in the file.
-            if not path.stem in str(obj):
-                continue
-            # Check if the class inherits from BaseProcess, but is not of type
-            # BaseProcess. This check is not necessarily needed, but better 
-            # be save then sorry.
-            if not issubclass(obj, BaseProcess) and not isinstance(obj, BaseProcess):
-                continue
-
-            # Instantiate and return the class
-            if verbose: print(f"\tFound process at {uri}")
-
-            return obj(
-                main = False,
-                loading_context = self.loading_context,
-                parent_process_id = self.id,
-                step_id = step_id,
-                inherited_requirements = requirements
-            )
-        raise Exception(f"{uri} does not contain a BaseProcess subclass")
-    
-
-def get_process_parents(tool: BaseCommandLineTool) -> List[str]:
-    """
-    TODO Description
-    """
-    # NOTE: Iterative algorithm because I initially thought python has a rather
-    # low standard recursion limit, which I did not want to touch. However, the
-    # default recursion limit is actually a 1000 levels, which is way deeper
-    # than any workflow should realisticly get. Oh well. 
-    if tool.is_main:
-        return []
-    
-    def get_source(
-            step_dict,
-            input_id    
-        )-> Tuple[bool, Optional[str]]:
-        """
-        TODO Description        
-        """
-        if "source" in step_dict["in"][input_id]:
-            return False, step_dict["in"][input_id]["source"]
-        elif "valueFrom" in step_dict["in"][input_id]:
-            return True, None
-        elif "default" in step_dict["in"][input_id]:
-            return True, None
-        raise NotImplementedError(step_dict["in"][input_id])
-    
-    parents: List[str] = []
-    processes: Dict[str, BaseProcess] = tool.loading_context["processes"]
-
-    for input_id in tool.inputs:
-        # Start in the parent of tool
-        # NOTE Make sure this still works when not working with BaseWorkflow
-        process = cast(BaseWorkflow, processes[cast(str, tool.parent_process_id)])
-        step_id = tool.step_id
-        step_dict = process.steps[cast(str, step_id)]
-
-        # Go up the process tree, until a tool or the input object
-        # is encountered
-        while True:
-            cont, source = get_source(step_dict, input_id)
-            if cont:
-                break
-
-            source = cast("str", source)
-            if "/" in source:
-                # A step of this process is the input source
-                parent_step_id, _ = source.split("/")
-                process = cast(BaseWorkflow, process).step_id_to_process[parent_step_id]
-                parents.append(process.id)
-                break
-            else:
-                # Parent of this process is the input source
-                if process.is_main:
-                    # Input comes from input object and thus has no source
-                    # Process.
-                    break
-                else:
-                    # Input comes from another source upstream
-                    process = processes[cast(str, process.parent_process_id)]
-                    step_id = process.step_id
-                    step_dict = cast(BaseWorkflow, process).steps[cast(str, step_id)]
-    return parents
 
 
 
@@ -1108,7 +1110,7 @@ class OuterGraph(BaseGraph):
         # NOTE: add_parents() ignores duplicate edges
         for tool_node in inner.nodes.values():
             tool = tool_node.tool
-            parent_ids = get_process_parents(tool)
+            parent_ids = get_process_parents_ids(tool)
             for parent_id in parent_ids:
                 if parent_id in inner.nodes:
                     inner.add_parents(tool_node, [parent_id])
