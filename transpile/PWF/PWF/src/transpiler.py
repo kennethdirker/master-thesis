@@ -795,7 +795,8 @@ def parse_steps(
     for step in steps:
         # ID
         # NOTE Force id field in cwl file?
-        lines.append(indent(f'"{step.id.split("/")[-1]}": {{', 3))
+        id = step.id.split("/")[-1]
+        lines.append(indent(f'"{id}": {{', 3))
 
         # in
         lines.append(indent(f'"in": {{', 4))
@@ -825,11 +826,34 @@ def parse_steps(
             lines.append(indent('},', 5))
         lines.append(indent('},', 4))
 
+        # scatter
+        if hasattr(step, "scatter") and step.scatter is not None:
+            scatters = step.scatter
+            if isinstance(scatters, str):
+                scatters = [scatters]
+            
+            if len(scatters) == 1:
+                scatter = scatters[0].split("/")[-1]
+                lines.append(indent(f'"scatter": "{scatter}",', 4))
+            else:
+                lines.append(indent(f'"scatter": [', 4))
+                for scatter in scatters:
+                    scatter = scatter.split("/")[-1]
+                    lines.append(indent(f'- "{scatter}",', 5))
+                lines.append(indent(f'],', 4))
+        
+        # scatterMethod
+        if hasattr(step, "scatterMethod") and step.scatterMethod is not None:
+            lines.append(indent(f'"scatterMethod": {step.scatterMethod}', 4))
+
         # out
-        lines.append(indent(f'"out": [', 4))
-        for out in step.out:
-            lines.append(indent(f'"{out.id.split("/")[-1]}",', 5))
-        lines.append(indent('],', 4))
+        if len(step.out) == 1:
+            lines.append(indent(f'"out": ["{step.out[0].id.split("/")[-1]}"],', 4))
+        else:
+            lines.append(indent(f'"out": [', 4))
+            for out in step.out:
+                lines.append(indent(f'"{out.id.split("/")[-1]}",', 5))
+            lines.append(indent('],', 4))
             
         # run
         run_uri: str = resolve_run_uri(step.run, step.id)

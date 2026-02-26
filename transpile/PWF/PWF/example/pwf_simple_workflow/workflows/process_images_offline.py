@@ -37,9 +37,7 @@ class process_images_offline_PWF(BaseWorkflow):
 						"default": "before_noise_remover.png",
 					},
 				},
-				"out": [
-					"output",
-				],
+				"out": ["output"],
 				"run": "../steps/imageplotter.py",
 				"label": "imageplotter",
 			},
@@ -53,9 +51,7 @@ class process_images_offline_PWF(BaseWorkflow):
 						"valueFrom": "$('no_noise_' + inputs.input[0].basename)"
 					},
 				},
-				"out": [
-					"output",
-				],
+				"out": ["output"],
 				"run": "../steps/noiseremover.py",
 				"label": "noiseremover",
 			},
@@ -69,9 +65,7 @@ class process_images_offline_PWF(BaseWorkflow):
 						"default": "after_noise_remover.png",
 					},
 				},
-				"out": [
-					"output",
-				],
+				"out": ["output"],
 				"run": "../steps/imageplotter.py",
 				"label": "imageplotter",
 			},
