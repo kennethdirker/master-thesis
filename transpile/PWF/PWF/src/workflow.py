@@ -159,6 +159,7 @@ class BaseWorkflow(BaseProcess):
             runtime_context = self.load_input_object(yaml_uri)
             self.register_step_output_sources(runtime_context)
             self.register_input_sources(runtime_context)
+            self.set_scatters(self, [])
             self.create_dependency_graph()
             self.optimize_dependency_graph()
             outputs = self.execute(self.loading_context["use_dask"],
@@ -176,6 +177,29 @@ class BaseWorkflow(BaseProcess):
         pass
 
 
+    def set_groupings(self) -> None:
+        """
+        Override to declare which steps should be grouped and executed
+        together on a machine.
+        NOTE: Not sure if this is the way to do this...
+        """
+        pass
+        # self.groups = {}
+        # self.groups = []
+    
+
+    def load_step_processes(self) -> None:
+        """
+        Load all sub-processes into self.loading_context["processes"]. 
+        Because the BaseWorkflow constructor calls this function, all
+        sub-processes of the main workflow class are loaded recursively.
+        """
+        for step_id, step_dict in self.steps.items():
+            sub_process = self.load_process_from_uri(step_dict["run"], step_id, self.requirements)
+            self.loading_context["processes"][sub_process.id] = sub_process
+            self.step_id_to_process[step_id] = sub_process
+
+
     def process_requirements(
             self,
             inherited_requirements: Dict[str, Any] | None
@@ -191,17 +215,6 @@ class BaseWorkflow(BaseProcess):
         for req_key, req_body in self.requirements.items():
             updated_reqs[req_key] = req_body
         self.requirements = updated_reqs
-
-
-    def set_groupings(self) -> None:
-        """
-        Override to declare which steps should be grouped and executed
-        together on a machine.
-        NOTE: Not sure if this is the way to do this...
-        """
-        pass
-        # self.groups = {}
-        # self.groups = []
 
 
     def load_process_from_uri(
@@ -257,18 +270,6 @@ class BaseWorkflow(BaseProcess):
                 inherited_requirements = requirements
             )
         raise Exception(f"{uri} does not contain a BaseProcess subclass")
-    
-
-    def load_step_processes(self) -> None:
-        """
-        Load all sub-processes into self.loading_context["processes"]. 
-        Because the BaseWorkflow constructor calls this function, all
-        sub-processes of the main workflow class are loaded recursively.
-        """
-        for step_id, step_dict in self.steps.items():
-            sub_process = self.load_process_from_uri(step_dict["run"], step_id, self.requirements)
-            self.loading_context["processes"][sub_process.id] = sub_process
-            self.step_id_to_process[step_id] = sub_process
 
 
     def register_step_output_sources(
@@ -375,7 +376,9 @@ class BaseWorkflow(BaseProcess):
                         if source is None:
                             value = Absent("Value comes from valueFrom and is not yet filled in")
                         else:
-                            value = Value(source, type(source), PY_CWL_T_MAPPING[type(source)][0])
+                            value = Value(source,
+                                          type(source),
+                                          PY_CWL_T_MAPPING[type(source)][0])
 
                         runtime_context[process.input_to_source[input_id]] = value
                         break
@@ -390,7 +393,8 @@ class BaseWorkflow(BaseProcess):
                     else:               # {global_process_id}:{input_id}
                         # The input of the parent process is the input source
                         if _process.is_main:
-                            # Reached the main process: Input source is the input object
+                            # Reached the main process: Input source is the 
+                            # input object.
                             process.input_to_source[input_id] = _process.global_id(source)
                             break
 
@@ -400,6 +404,62 @@ class BaseWorkflow(BaseProcess):
                         _step_id = _process.step_id
                         
                         _process = processes[cast(str, _process.parent_workflow_id)]
+
+
+    def source_workflow_outputs(self, output_dict):
+        step_id, step_out_id = output_dict["outputSource"].split("/")
+        process = cast(BaseWorkflow, self.step_id_to_process[step_id])
+        while issubclass(type(process), BaseWorkflow):
+            process = cast(BaseWorkflow, process)
+            step_id, step_out_id = process.outputs[step_out_id]["outputSource"].split("/")
+            process = process.step_id_to_process[step_id]
+
+        if not issubclass(type(process), BaseCommandLineTool):
+            raise Exception()
+
+        return process.global_id(step_out_id)
+    
+    
+    def set_scatters(self,
+            process: BaseProcess,
+            scatters: List[Scatter]
+        ) -> None:
+        """
+        
+        """
+        if not issubclass(type(process), BaseWorkflow):
+            for s in scatters:
+                s.tools.append
+            self.scatters = scatters
+            return
+        
+        process = cast(BaseWorkflow, process)
+        
+        for step_id, step_dict in process.steps.items():
+            if "scatter" in step_dict:
+                scattered_inputs = step_dict["scatter"]
+                scatter_method = "dotproduct"       # Default method
+                if isinstance(scattered_inputs, str):
+                    scattered_inputs = [scattered_inputs]
+                if "scatterMethod" in step_dict:
+                    scatter_method = step_dict["scatter_method"]
+
+                scatters_copy = scatters.copy()
+                new_scatter = Scatter(scattered_inputs, scatter_method)
+                scatters_copy.append(new_scatter)                
+                self.set_scatters(process.step_id_to_process[step_id],
+                                  scatters_copy)
+                # NOTE TO SELF:
+                # Add a scatter to each tool connected to the scattered step
+                # input.
+
+                # Add a gatherer to each tool that supplies outputs to this
+                # step.
+                # END NOTE TO SELF:
+            else:
+                self.set_scatters(process.step_id_to_process[step_id], 
+                                  scatters)
+
 
 
     def create_dependency_graph(self) -> None:
@@ -433,7 +493,8 @@ class BaseWorkflow(BaseProcess):
         for tool_id, tool in processes.items():
             if issubclass(type(tool), BaseCommandLineTool):
                 tool = cast(BaseCommandLineTool, tool)
-                parents = [tool_id_to_node[p_id] for p_id in get_process_parents_ids(tool)]
+                parents = [tool_id_to_node[p_id] 
+                           for p_id in get_process_parents_ids(tool)]
                 graph.add_parents(tool_id_to_node[tool_id], parents)    # type: ignore
 
 
@@ -529,7 +590,8 @@ class BaseWorkflow(BaseProcess):
         cwl_namespace = self.build_step_namespace(tool, runtime_context)
 
         # for each input check:
-        for input_id, input_dict in tool.inputs.items():
+        for input_id in tool.inputs:
+        # for input_id, input_dict in tool.inputs.items():
             if not "valueFrom" in parent_process.steps[tool.step_id]["in"][input_id]:
                 continue
 
@@ -565,7 +627,6 @@ class BaseWorkflow(BaseProcess):
         return step_runtime_context
 
 
- 
     def exec_outer_node(
             self,
             outer_node: OuterNode,
@@ -600,6 +661,10 @@ class BaseWorkflow(BaseProcess):
         while len(runnable) != 0 or len(running) != 0:
             # Execute runnable nodes in the ThreadPool
             for node_id, node in runnable.copy().items():
+
+
+                # TODO Check if tool is scatter
+                # If not:
                 tool = node.tool
                 step_runtime_context = self.prepare_step_runtime_context(tool, runtime_context)
                 print(f"[NODE]: Executing tool {tool.id}")
@@ -610,6 +675,7 @@ class BaseWorkflow(BaseProcess):
                     verbose
                 )
                 running[node_id] = (future, node)
+                # else:
                 runnable.pop(node_id)
             
             # Check for completed tools and move runnable children to the
@@ -771,20 +837,31 @@ class BaseWorkflow(BaseProcess):
         # traversing the subworkflows.
         new_outputs: Dict[str, Any] = {}
         for output_id, output_dict in self.outputs.items():
-            step_id, step_out_id = output_dict["outputSource"].split("/")
-            process = cast(BaseWorkflow, self.step_id_to_process[step_id])
-            while issubclass(type(process), BaseWorkflow):
-                process = cast(BaseWorkflow, process)
-                step_id, step_out_id = process.outputs[step_out_id]["outputSource"].split("/")
-                process = process.step_id_to_process[step_id]
-
-            if not issubclass(type(process), BaseCommandLineTool):
-                raise Exception()
-
-            value = outputs[process.global_id(step_out_id)]
+            value = outputs[self.source_workflow_outputs(output_dict)]
             new_outputs[self.global_id(output_id)] = value
 
         return new_outputs
+    
+
+class Scatter:
+    SCATTER_METHODS = ("dotproduct",
+                       "nested_crossproduct",
+                       "flat_crossproduct")
+    scatter_method: str
+    scattered_inputs: List[str]
+    tools: List[BaseCommandLineTool]
+    roots: List[BaseCommandLineTool]
+    leaves: List[BaseCommandLineTool]
+
+    def __init__(
+        self,
+        scattered_inputs: List[str],
+        scatter_method: str
+        ):
+        if scatter_method not in self.SCATTER_METHODS:
+            raise Exception(f"Found invalid scatterMethod {scatter_method}")
+        self.scatter_method = scatter_method
+        self.scattered_inputs = scattered_inputs
 
 
 
