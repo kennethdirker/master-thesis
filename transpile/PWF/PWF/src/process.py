@@ -15,6 +15,7 @@ from typing import (
     List,
     Mapping,
     Optional,
+    Tuple
 )
 
 from .utils import (
@@ -47,6 +48,11 @@ class BaseProcess(ABC):
     # Runtime info
     input_to_source: Dict[str, str]
     loading_context: Dict[str, Any]
+
+    # # Scatter info
+    # scatters: List   # TODO
+    # scatter_idxs: List[int] | None
+    # gathers     # TODO if needed
 
     def __init__(
             self,
@@ -96,6 +102,10 @@ class BaseProcess(ABC):
             parent_process_id = None
         self.parent_workflow_id = parent_process_id
         self.step_id = step_id
+
+        # Scatter information
+        # self.scatters = []        # Scatters this tool is part of
+        # self.scatter_idxs = None    # Which array indices this scatter uses
 
         # Assign metadata attributes. Override in self.set_metadata().
         self.metadata = {}

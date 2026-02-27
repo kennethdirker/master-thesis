@@ -16,6 +16,7 @@ from typing import (
     Any,
     cast,
     Dict,
+    Iterator,
     List,
     Mapping,
     Optional,
@@ -406,9 +407,12 @@ class BaseWorkflow(BaseProcess):
                         _process = processes[cast(str, _process.parent_workflow_id)]
 
 
-    def source_workflow_outputs(self, output_dict):
-        step_id, step_out_id = output_dict["outputSource"].split("/")
-        process = cast(BaseWorkflow, self.step_id_to_process[step_id])
+    def source_workflow_output(self, workflow_output_id) -> str:
+        """
+        Search and return the global source ID of a workflow output.
+        """
+        step_id, step_out_id = self.outputs[workflow_output_id]["outputSource"].split("/")
+        process = self.step_id_to_process[step_id]
         while issubclass(type(process), BaseWorkflow):
             process = cast(BaseWorkflow, process)
             step_id, step_out_id = process.outputs[step_out_id]["outputSource"].split("/")
@@ -418,6 +422,22 @@ class BaseWorkflow(BaseProcess):
             raise Exception()
 
         return process.global_id(step_out_id)
+
+    
+    def source_step_output(
+            self, 
+            step_out_id: str,
+            step_id: str
+        ) -> str:
+        """
+        Search and return the global source ID of output ``step_out_id`` from
+        step ``step_id``.
+        """
+        process = self.step_id_to_process[step_id]
+        if issubclass(type(process), BaseCommandLineTool):
+            return process.global_id(step_out_id)
+        else:
+            return cast(BaseWorkflow, process).source_workflow_output(step_out_id)
     
     
     def set_scatters(self,
@@ -425,18 +445,21 @@ class BaseWorkflow(BaseProcess):
             scatters: List[Scatter]
         ) -> None:
         """
-        
+        TODO
         """
         if not issubclass(type(process), BaseWorkflow):
-            for s in scatters:
-                s.tools.append
-            self.scatters = scatters
+            process = cast(BaseCommandLineTool, process)
+            # for s in scatters:
+            #     s.tools.append
+            process.scatters = scatters
             return
         
         process = cast(BaseWorkflow, process)
         
         for step_id, step_dict in process.steps.items():
+            # print("[DEBUG]")
             if "scatter" in step_dict:
+                # print("[DEBUG] scatter")
                 scattered_inputs = step_dict["scatter"]
                 scatter_method = "dotproduct"       # Default method
                 if isinstance(scattered_inputs, str):
@@ -445,21 +468,18 @@ class BaseWorkflow(BaseProcess):
                     scatter_method = step_dict["scatter_method"]
 
                 scatters_copy = scatters.copy()
-                new_scatter = Scatter(scattered_inputs, scatter_method)
-                scatters_copy.append(new_scatter)                
+                scattered_outputs = [process.source_step_output(o, step_id) 
+                                     for o in step_dict["out"]]
+                new_scatter = Scatter(scattered_inputs,
+                                      scattered_outputs,
+                                      scatter_method)
+                scatters_copy.append(new_scatter)
+                # print("[DEBUG] scatter", new_scatter)
                 self.set_scatters(process.step_id_to_process[step_id],
                                   scatters_copy)
-                # NOTE TO SELF:
-                # Add a scatter to each tool connected to the scattered step
-                # input.
-
-                # Add a gatherer to each tool that supplies outputs to this
-                # step.
-                # END NOTE TO SELF:
             else:
                 self.set_scatters(process.step_id_to_process[step_id], 
                                   scatters)
-
 
 
     def create_dependency_graph(self) -> None:
@@ -504,13 +524,13 @@ class BaseWorkflow(BaseProcess):
         """
         # NOTE If we work with grouping, groups must be connected directly. 
         graph: OuterGraph = self.loading_context["graph"]
-        graph.print()
+        # graph.print()
 
         # NOTE just for testing purposes.
         graph.merge([id for id in graph.nodes])
-        graph.print()
-        for g in graph.nodes.values():
-            g.graph.print()
+        # graph.print()
+        # for g in graph.nodes.values():
+            # g.graph.print()
         
     
     def build_step_namespace(
@@ -630,10 +650,10 @@ class BaseWorkflow(BaseProcess):
     def exec_outer_node(
             self,
             outer_node: OuterNode,
-            runtime_context: Dict[str, Any],
+            runtime_context: Dict[str, Value],
             verbose: Optional[bool] = True,
             executor: Optional[ThreadPoolExecutor] = None
-        ) -> Dict[str, Any]:
+        ) -> Dict[str, Value]:
         """
         Execute the tasks of this node. 
         TODO OPTIMIZATION: OuterNodes are executed if all parent OuterNodes
@@ -653,29 +673,32 @@ class BaseWorkflow(BaseProcess):
         nodes = graph.nodes
         runnable_nodes: List[ToolNode] = graph.get_nodes(graph.roots) # type: ignore
         runnable: Dict[str, ToolNode] = {n.id: n for n in runnable_nodes}
-        waiting: Dict[str, ToolNode] = {id: n for id, n in nodes.items() if id not in runnable}
-        running: Dict[str, Tuple[Future, ToolNode]] = {}
+        waiting: Dict[str, ToolNode] = {id: n for id, n in nodes.items() 
+                                        if id not in runnable}
+        running: Dict[str, Tuple[Future, ToolNode, Any | None]] = {} # TODO typing
         completed: Dict[str, ToolNode] = {}
         outputs: Dict[str, Value] = {}
 
         while len(runnable) != 0 or len(running) != 0:
             # Execute runnable nodes in the ThreadPool
             for node_id, node in runnable.copy().items():
-
-
-                # TODO Check if tool is scatter
-                # If not:
                 tool = node.tool
                 step_runtime_context = self.prepare_step_runtime_context(tool, runtime_context)
-                print(f"[NODE]: Executing tool {tool.id}")
-                future = executor.submit(
-                    tool.execute,
-                    False, 
-                    step_runtime_context, 
-                    verbose
-                )
-                running[node_id] = (future, node)
-                # else:
+                if len(tool.scatters) == 0:
+                    # Normal execution
+                    print(f"[NODE]: Executing tool {tool.id}")
+                    future = executor.submit(tool.execute,
+                                                False,
+                                                step_runtime_context,
+                                                verbose)
+                    running[node_id] = (future, node, None)
+                else:
+                    # Scatter execution
+                    print(f"[NODE]: Scattering tool {tool.id}")
+
+                    # TODO
+                    # tool.scatters[0].context_generator(step_runtime_context)
+                            
                 runnable.pop(node_id)
             
             # Check for completed tools and move runnable children to the
@@ -720,7 +743,7 @@ class BaseWorkflow(BaseProcess):
     def execute(
             self, 
             use_dask: bool,
-            runtime_context: Dict[str, Any],
+            runtime_context: Dict[str, Value],
             verbose: bool = False,
             dask_client: Optional[Client] = None
         ) -> dict[str, Value]:
@@ -735,17 +758,21 @@ class BaseWorkflow(BaseProcess):
         Returns:
             Dictionary of (output ID, output value) key-value pairs.
         """
+        sub_client = None
         if use_dask and dask_client is None:
             client = Client()
         else:
             client = ThreadPoolExecutor()
+            sub_client = client
 
         # Initialize queues
         graph: OuterGraph = self.loading_context["graph"]
         nodes = graph.nodes
         runnable_nodes: List[OuterNode] = graph.get_nodes(graph.roots) # type: ignore
         runnable: Dict[str, OuterNode] = {n.id: n for n in runnable_nodes}
-        waiting: Dict[str, OuterNode] = {id: n for id, n in nodes.items() if id not in runnable}
+        waiting: Dict[str, OuterNode] = {id: n 
+                                         for id, n in nodes.items() 
+                                         if id not in runnable}
         running: Dict[str, Tuple[Future, OuterNode]] = {}
         completed: Dict[str, OuterNode] = {}
         outputs: Dict[str, Value] = {}
@@ -779,13 +806,14 @@ class BaseWorkflow(BaseProcess):
                 # If dask is disabled, the ThreadPoolExecutor client is used to
                 # get concurrently executed tasks. If Dask is used, a 
                 # ThreadPoolExecutor client is created on the execution node.
-                future = client.submit(
-                    self.exec_outer_node, 
-                    node, 
-                    runtime_context.copy(),
-                    verbose,
-                    client if isinstance(client, ThreadPoolExecutor) else None
-                )
+                # sub_client = None
+                # if isinstance(client, ThreadPoolExecutor): 
+                    # sub_client = client
+                future = client.submit(self.exec_outer_node,
+                                       node,
+                                       runtime_context.copy(),
+                                       verbose,
+                                       sub_client)
 
                 running[node_id] = (future, node)
                 runnable.pop(node_id)
@@ -836,8 +864,8 @@ class BaseWorkflow(BaseProcess):
         # of the upper workflow must be sourced from tools instead by
         # traversing the subworkflows.
         new_outputs: Dict[str, Any] = {}
-        for output_id, output_dict in self.outputs.items():
-            value = outputs[self.source_workflow_outputs(output_dict)]
+        for output_id in self.outputs:
+            value = outputs[self.source_workflow_output(output_id)]
             new_outputs[self.global_id(output_id)] = value
 
         return new_outputs
@@ -849,20 +877,58 @@ class Scatter:
                        "flat_crossproduct")
     scatter_method: str
     scattered_inputs: List[str]
-    tools: List[BaseCommandLineTool]
-    roots: List[BaseCommandLineTool]
-    leaves: List[BaseCommandLineTool]
+    scattered_outputs: List[str]
+    # tools: List[BaseCommandLineTool]
+    # roots: List[BaseCommandLineTool]
+    # leaves: List[BaseCommandLineTool]
 
     def __init__(
         self,
         scattered_inputs: List[str],
+        scattered_outputs: List[str],
         scatter_method: str
         ):
         if scatter_method not in self.SCATTER_METHODS:
             raise Exception(f"Found invalid scatterMethod {scatter_method}")
         self.scatter_method = scatter_method
         self.scattered_inputs = scattered_inputs
+        self.scattered_outputs = scattered_outputs
+        # self.tools = []
+        # self.roots = []
+        # self.leaves = []
 
+    
+    def context_generator(self, runtime_context: Dict[str, Value]) -> Iterator:
+        """
+        Return a generator that creates copies of the runtime_context where
+        the iterable scatter inputs are replaced with scattered inputs.
+        """
+        xss = []
+        # Generate the iterable on which we scatter
+        if self.scatter_method == "dotproduct":
+            # xss = tuple(zip(*[runtime_context[i].value for i in self.scattered_inputs]))
+            # Get the shortest array length
+            length = min(*[runtime_context[i].value for i in self.scattered_inputs])
+            for idx in range(length):
+                t = tuple([runtime_context[i].get(idx) for i in self.scattered_inputs])
+                xss.append(t)
+        elif self.scatter_method == "nested_crossproduct":
+            raise NotImplementedError()
+        elif self.scatter_method == "flat_crossproduct":
+            raise NotImplementedError()
+
+        # Copy the runtime_context and replace the scattered inputs with single
+        # items.
+        for xs in xss:
+            runtime_copy = runtime_context.copy()
+            for idx, key, value in zip(*enumerate(self.scattered_inputs), xs):
+                runtime_copy[key] = value
+                print("[DEBUG] YIELD", key, value)
+            yield runtime_copy
+
+    
+    def __repr__(self):
+        return f"Scatter({self.scattered_inputs}, {self.scattered_outputs}, {self.scatter_method})"
 
 
 ##########################################################

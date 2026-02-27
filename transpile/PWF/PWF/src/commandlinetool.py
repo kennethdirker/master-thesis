@@ -22,6 +22,7 @@ from typing import (
 from uuid import uuid4
 
 from .process import BaseProcess
+from .workflow import Scatter
 from .utils import (
     Absent,
     FileObject,
@@ -38,6 +39,8 @@ class BaseCommandLineTool(BaseProcess):
     base_command: List[str] | str | None
     arguments: List[Union[str, Dict[str, Union[str, int]]]]
 
+    # Scatter info
+    scatters: List[Scatter]
     # # Dependency info
     # tool_parents: List[str]
 
@@ -66,6 +69,9 @@ class BaseCommandLineTool(BaseProcess):
         self.base_command = None
         if PATH is None:
             PATH = os.environ.get("PATH", "")
+        
+        # Scatters this tool is part of
+        self.scatters = []
 
         # Digest CommandlineTool file
         self.set_base_command()
@@ -979,6 +985,7 @@ class BaseCommandLineTool(BaseProcess):
             self, 
             use_dask: bool,
             runtime_context: Dict[str, Any],
+            # scatter_idxs: Optional[List[int]] = None,
             verbose: Optional[bool] = True,
             client: Optional[Client] = None,
         ) -> dict[str, Value]:

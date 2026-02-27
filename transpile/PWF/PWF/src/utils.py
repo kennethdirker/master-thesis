@@ -261,9 +261,12 @@ class Value:
         Returns ``None`` if ``value`` does not contain an array or if the index
         is out of bounds.
         """
-        if not isinstance(self.value, Sequence): return None
-        if index >= len(self.value): return None
-        return self.value[index]
+        if not isinstance(self.value, Sequence): 
+            return None
+        if index >= len(self.value): 
+            return None
+        return Value(self.value[index], self.type, self.cwltype)
+        # return self.value[index]
 
 
     # def is_array(self):
