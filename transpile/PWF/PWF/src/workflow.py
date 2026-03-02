@@ -802,6 +802,7 @@ class BaseWorkflow(BaseProcess):
                     scatter_gen = self.scatter_generator(step_runtime_context, 
                                                          tool.scatters)
                     for context, form in scatter_gen:
+                        print("[DEBUG]", form)
                         future = executor.submit(tool.execute,
                                                     False,
                                                     context,
@@ -821,27 +822,43 @@ class BaseWorkflow(BaseProcess):
                     # the running list. Runtime_context is updated for the
                     # next tool.
                     result: Dict[str, Value] = running_task[0].result()
-                    outputs.update(result)
-                    runtime_context.update(result)
+                    if running_task[2] is None:
+                        # Outputs from non-scattered tool
+                        outputs.update(result)
+                        runtime_context.update(result)
 
-                    # Move tool to finished
-                    completed[node_id] = running_task[1]
-                    running.pop(node_id)
+                        # Move tool to finished
+                        completed[node_id] = running_task[1]
+                        running.pop(node_id)
 
-                    # Add new runnable tools to queue by checking for each
-                    # child if all its parents have completed.
-                    for child_id in running_task[1].children:
-                        # Only check waiting children
-                        if child_id not in waiting:
-                            continue
+                        # Add new runnable tools to queue by checking for each
+                        # child if all its parents have completed.
+                        for child_id in running_task[1].children:
+                            # Only check waiting children
+                            if child_id not in waiting:
+                                continue
 
-                        ready = True
-                        for childs_parent_id in nodes[child_id].parents:
-                            if childs_parent_id not in completed:
-                                ready = False
-                                break
-                        if ready:
-                            runnable[child_id] = waiting.pop(child_id)
+                            ready = True
+                            for childs_parent_id in nodes[child_id].parents:
+                                if childs_parent_id not in completed:
+                                    ready = False
+                                    break
+                            if ready:
+                                runnable[child_id] = waiting.pop(child_id)
+                    else:
+                        # Output from scattered tool
+                        pass
+                        # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO 
+                        # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO 
+                        # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO 
+                        # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO 
+                        # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO 
+                        # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO 
+                        # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO 
+                        # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO 
+                        # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO 
+                        # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO 
+
             time.sleep(0.1)
 
         # Check for deadlock
@@ -1057,7 +1074,7 @@ class Scatter:
         # items.
         for _tuple in iterable:
             runtime_copy = runtime_context.copy()
-            print("[DEBUG]", _tuple)
+            # print("[DEBUG]", _tuple)
             # print("[DEBUG]", xs)
             # for (idx, key), value in zip(*enumerate(self.scattered_inputs), _tuple):
             for key, value in zip(self.scattered_inputs, _tuple):
