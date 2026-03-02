@@ -10,6 +10,7 @@ import time
 from abc import abstractmethod
 from concurrent.futures import ThreadPoolExecutor   
 from dask.distributed import Client
+from math import prod
 from pathlib import Path
 from types import NoneType
 from typing import (
@@ -22,11 +23,11 @@ from typing import (
     Optional,
     Tuple,
     TypeAlias,
+    TYPE_CHECKING
 )
 from uuid import uuid4
 
 from .process import BaseProcess
-from .commandlinetool import BaseCommandLineTool
 from .utils import (
     Absent,
     FileObject,
@@ -35,6 +36,10 @@ from .utils import (
     CWL_PY_T_MAPPING,
     PY_CWL_T_MAPPING,
 )
+
+# if TYPE_CHECKING:
+    # from .commandlinetool import BaseCommandLineTool
+from .commandlinetool import BaseCommandLineTool
 
 Future: TypeAlias = concurrent.futures.Future | dask.distributed.Future
 
@@ -407,7 +412,42 @@ class BaseWorkflow(BaseProcess):
                         _process = processes[cast(str, _process.parent_workflow_id)]
 
 
-    def source_workflow_output(self, workflow_output_id) -> str:
+    def source_workflow_input(self, workflow_input_id: str) -> str:
+        """
+        TODO
+        """
+        process = self
+        while issubclass(type(process), BaseWorkflow):
+            process = cast(BaseWorkflow, process)
+            for step_id, step_dict in process.steps.items():
+                cont = False
+                for step_in_dict in step_dict.values():
+                    if ("source" in step_in_dict and
+                        workflow_input_id in step_in_dict["source"]):
+                        process = process.step_id_to_process[step_id]
+                        cont = True
+                        break
+                if cont:
+                    break
+
+        if not issubclass(type(process), BaseCommandLineTool):
+            raise Exception()
+        
+        return process.input_to_source[workflow_input_id]
+
+    def source_step_input(
+            self, 
+            step_in_id: str,
+            step_id: str
+        ) -> str:
+        process = self.step_id_to_process[step_id]
+        if issubclass(type(process), BaseCommandLineTool):
+            return process.input_to_source[step_in_id]
+        else:
+            return cast(BaseWorkflow, process).source_workflow_input(step_in_id)
+        
+
+    def source_workflow_output(self, workflow_output_id: str) -> str:
         """
         Search and return the global source ID of a workflow output.
         """
@@ -461,9 +501,12 @@ class BaseWorkflow(BaseProcess):
             if "scatter" in step_dict:
                 # print("[DEBUG] scatter")
                 scattered_inputs = step_dict["scatter"]
-                scatter_method = "dotproduct"       # Default method
                 if isinstance(scattered_inputs, str):
                     scattered_inputs = [scattered_inputs]
+                scattered_inputs = [process.source_step_input(i, step_id)
+                                    for i in scattered_inputs]
+
+                scatter_method = "dotproduct"       # Default method
                 if "scatterMethod" in step_dict:
                     scatter_method = step_dict["scatter_method"]
 
@@ -647,6 +690,65 @@ class BaseWorkflow(BaseProcess):
         return step_runtime_context
 
 
+    def scatter_generator(
+            self, 
+            runtime_context: Dict[str, Value], 
+            scatters: List[Scatter]
+        ) -> Iterator[Tuple[Dict[str, Value], Tuple[int, ...]]]:
+        """
+        
+        """
+        len_scatters = len(scatters)
+        scatter_sizes = [0] * len_scatters
+        idxs = [-1] * len_scatters
+        # idxs = [0] * (len_scatters - 1)
+        gens: List[Iterator[Dict[str, Value]] | None] = [None] * (len_scatters - 1)
+        dict_checkpoints: List[Dict[str, Value] | None] = [None] * len_scatters
+        
+        dict_checkpoints[0] = runtime_context.copy()
+        to_generate = -1
+        generated = 0        
+        cur_lvl = 0
+        while True:
+            if cur_lvl == (len_scatters - 1):
+                if to_generate == -1:
+                    prev_context = cast(Dict, dict_checkpoints[-1])
+                    scatter_sizes[-1] = scatters[-1].get_length(prev_context)
+                    to_generate = prod(scatter_sizes)
+
+                prev_context = cast(Dict, dict_checkpoints[-1])
+                # print("[DEBUG]", gens)
+                gen = scatters[-1].context_generator(prev_context)
+                for context in gen: 
+                # for context in cast(Iterator, gens[-1]): 
+                # for i, context in enumerate(cast(Iterator, gens[-1])): 
+                    generated += 1
+                    idxs[-1] += 1
+                    yield context, tuple(idxs)
+                    # yield context, tuple(idxs + [i])
+
+                if to_generate == generated: 
+                    return
+                
+                # increment the lower order scatters (back to 0 if at max)
+                idxs[cur_lvl] = 0
+                while (cur_lvl > 0 and 
+                       idxs[cur_lvl - 1] == scatter_sizes[cur_lvl - 1]):
+                    idxs[cur_lvl - 1] = 0
+                    cur_lvl -= 1
+            else:
+                # 
+                prev_context = cast(Dict, dict_checkpoints[cur_lvl])
+                gens[cur_lvl] = scatters[cur_lvl].context_generator(prev_context)
+                if scatter_sizes[cur_lvl] == 0:
+                    scatter_sizes[cur_lvl] = scatters[cur_lvl].get_length(prev_context)
+                dict_checkpoints[cur_lvl + 1] = next(cast(Iterator, gens[cur_lvl]))
+                idxs[cur_lvl] += 1
+                cur_lvl += 1
+
+
+
+
     def exec_outer_node(
             self,
             outer_node: OuterNode,
@@ -690,13 +792,23 @@ class BaseWorkflow(BaseProcess):
                     future = executor.submit(tool.execute,
                                                 False,
                                                 step_runtime_context,
-                                                verbose)
+                                                verbose = verbose)
                     running[node_id] = (future, node, None)
                 else:
                     # Scatter execution
                     print(f"[NODE]: Scattering tool {tool.id}")
 
                     # TODO
+                    scatter_gen = self.scatter_generator(step_runtime_context, 
+                                                         tool.scatters)
+                    for context, form in scatter_gen:
+                        future = executor.submit(tool.execute,
+                                                    False,
+                                                    context,
+                                                    # scatter_idx = form,
+                                                    verbose = verbose)
+                        running[node_id] = (future, node, form)
+
                     # tool.scatters[0].context_generator(step_runtime_context)
                             
                 runnable.pop(node_id)
@@ -878,40 +990,64 @@ class Scatter:
     scatter_method: str
     scattered_inputs: List[str]
     scattered_outputs: List[str]
-    # tools: List[BaseCommandLineTool]
-    # roots: List[BaseCommandLineTool]
-    # leaves: List[BaseCommandLineTool]
+    
 
     def __init__(
-        self,
-        scattered_inputs: List[str],
-        scattered_outputs: List[str],
-        scatter_method: str
+            self,
+            scattered_inputs: List[str],
+            scattered_outputs: List[str],
+            scatter_method: str
         ):
+        """
+        TODO
+        """
         if scatter_method not in self.SCATTER_METHODS:
             raise Exception(f"Found invalid scatterMethod {scatter_method}")
         self.scatter_method = scatter_method
         self.scattered_inputs = scattered_inputs
         self.scattered_outputs = scattered_outputs
+        self.length = -1
         # self.tools = []
         # self.roots = []
         # self.leaves = []
 
     
-    def context_generator(self, runtime_context: Dict[str, Value]) -> Iterator:
+    def get_length(self, runtime_context: Dict[str, Value]) -> int:
+        """
+        Returns the amount of scatter input combinations are generated.
+        """
+        if self.length != -1:
+            return self.length
+        
+        if self.scatter_method == "dotproduct":
+            self.length = min([len(runtime_context[i].value) for i in self.scattered_inputs])
+        elif self.scatter_method == "nested_crossproduct":
+            raise NotImplementedError()
+        elif self.scatter_method == "flat_crossproduct":
+            raise NotImplementedError()
+        else:
+            raise Exception()
+        
+        return self.length
+
+    
+    def context_generator(
+            self, 
+            runtime_context: Dict[str, Value]
+        ) -> Iterator[Dict[str, Value]]:
         """
         Return a generator that creates copies of the runtime_context where
-        the iterable scatter inputs are replaced with scattered inputs.
+        the iterable scatter input arrays are replaced with scattered inputs.
         """
-        xss = []
-        # Generate the iterable on which we scatter
+        iterable = []
+        # Generate the iterable on that we scatter
         if self.scatter_method == "dotproduct":
             # xss = tuple(zip(*[runtime_context[i].value for i in self.scattered_inputs]))
             # Get the shortest array length
-            length = min(*[runtime_context[i].value for i in self.scattered_inputs])
-            for idx in range(length):
+            # self.length = min(*[runtime_context[i].value for i in self.scattered_inputs])
+            for idx in range(self.get_length(runtime_context)):
                 t = tuple([runtime_context[i].get(idx) for i in self.scattered_inputs])
-                xss.append(t)
+                iterable.append(t)
         elif self.scatter_method == "nested_crossproduct":
             raise NotImplementedError()
         elif self.scatter_method == "flat_crossproduct":
@@ -919,9 +1055,13 @@ class Scatter:
 
         # Copy the runtime_context and replace the scattered inputs with single
         # items.
-        for xs in xss:
+        for _tuple in iterable:
             runtime_copy = runtime_context.copy()
-            for idx, key, value in zip(*enumerate(self.scattered_inputs), xs):
+            print("[DEBUG]", _tuple)
+            # print("[DEBUG]", xs)
+            # for (idx, key), value in zip(*enumerate(self.scattered_inputs), _tuple):
+            for key, value in zip(self.scattered_inputs, _tuple):
+                # TODO check if this works the way I think it should
                 runtime_copy[key] = value
                 print("[DEBUG] YIELD", key, value)
             yield runtime_copy

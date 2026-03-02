@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+
 import glob
 import json
 import os
@@ -18,11 +21,11 @@ from typing import (
     Tuple,
     Type,
     Union,
+    TYPE_CHECKING
 )
 from uuid import uuid4
 
 from .process import BaseProcess
-from .workflow import Scatter
 from .utils import (
     Absent,
     FileObject,
@@ -31,6 +34,10 @@ from .utils import (
     PY_CWL_T_MAPPING,
     CWL_PY_T_MAPPING
 )
+
+if TYPE_CHECKING:
+    from .workflow import Scatter
+# from .workflow import Scatter
 
 
 class BaseCommandLineTool(BaseProcess):
@@ -985,7 +992,7 @@ class BaseCommandLineTool(BaseProcess):
             self, 
             use_dask: bool,
             runtime_context: Dict[str, Any],
-            # scatter_idxs: Optional[List[int]] = None,
+            # scatter_idx: Optional[List[int]] = None,
             verbose: Optional[bool] = True,
             client: Optional[Client] = None,
         ) -> dict[str, Value]:
