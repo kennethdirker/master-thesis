@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, List, Optional, Type, Sequence, Mapping, Union
+import numpy as np
+
+from typing import Any, List, Optional, Tuple, Type, Sequence, Mapping, Union
 from types import NoneType
 from pathlib import Path
 from copy import deepcopy
@@ -241,7 +243,16 @@ class Value:
     is_array: bool
     # is_map: bool
 
-    def __init__(self, value: Any, type_t: Type, cwl_type: str) -> None:
+    def __init__(
+            self,
+            value: Any,
+            type_t: Type,
+            cwl_type: str,
+            scattered: bool = False
+        ) -> None:
+        """
+        TODO
+        """
         if isinstance(value, Mapping):
             raise TypeError("Value class does not support map types.")
         if type_t not in PY_CWL_T_MAPPING:
@@ -253,20 +264,65 @@ class Value:
         self.type = type_t
         self.cwltype = cwl_type
         self.is_array = isinstance(value, Sequence)
+        self.scattered = self.scattered
 
-
-    def get(self, index: int) -> Value | None:
+    
+    def to_list(self) -> None:
         """
-        Retrieve an element at ``index`` from the array.
-        Returns ``None`` if ``value`` does not contain an array or if the index
-        is out of bounds.
+        If this value is scattered, transform the ndarray in ``value`` to a
+        (nested) list.
+        """
+        if self.scattered:
+            self.value = self.value.to_list()
+
+
+    def scatterize(
+            self, 
+            shape: Tuple[int, ...], 
+            idx: Tuple[int, ...]
+        ) -> Value:
+        """
+        Return a scattered version of this ``Value``, replacing ``value`` with
+        an empty multi-dimensional array where the previous ``value`` is 
+        inserted at ``idx``.
+        """
+        arr = np.ndarray(shape, Value)
+        arr[idx] = self.value
+        return Value(arr, self.type, self.cwltype, scattered=True)
+
+    def get(
+            self, 
+            idx: int | Tuple[int, ...]
+        ) -> Value | None:
+        """
+        Retrieve an element at ``index`` from the (multi-dimensional) array.
+        Returns ``None`` if ``value`` does not contain an array.
         """
         if not isinstance(self.value, Sequence): 
             return None
-        if index >= len(self.value): 
-            return None
-        return Value(self.value[index], self.type, self.cwltype)
-        # return self.value[index]
+        if isinstance(idx, int):
+            idx = (idx,)
+        v = self.value
+        for i in idx[:-1]:
+            v = v[i]
+        return Value(v[idx[-1]], self.type, self.cwltype)
+
+    
+    def set(
+            self, 
+            idx: int | Tuple[int, ...], 
+            value: Any
+        ) -> None:
+        """
+        Set the element at ``index`` from the (multi-dimensional) array to 
+        ``value``. Returns ``None`` if ``value`` does not contain an array.
+        """
+        if isinstance(idx, int):
+            idx = (idx,)
+        v = self.value
+        for i in idx[:-1]:
+            v = v[i]
+        v[idx[-1]] = value
 
 
     # def is_array(self):

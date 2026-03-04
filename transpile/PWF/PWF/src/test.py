@@ -1,6 +1,43 @@
+from typing import Any, Tuple
+
+import numpy as np
+
+class Bruh:
+    pass
+
+def make_array(shape):
+    return np.full(shape, Bruh())
+
+def set(self, idx: int | Tuple[int, ...], value: Any) -> None:
+    if isinstance(idx, int):
+        idx = (idx,)
+    v = self.value
+    for i in idx[:-1]:
+        v = v[i]
+    v[idx[-1]] = (value)
+
+def get(self, idx: int | Tuple[int, ...]) -> None:
+    if isinstance(idx, int):
+        idx = (idx,)
+    v = self.value
+    for i in idx[:-1]:
+        v = v[i]
+    return v[idx[-1]]
 
 
-
+shape = (4,3,2)
+print(shape[:-1])
+arr = np.full(shape, False)
+arr[3,2,0] = True
+arr[3,2,1] = False
+print(arr[*[3, 2], ...])
+# setattr(self, "value", make_array(shape))
+# print(self.value)
+# print("==================")
+# set(self, (3,1,0
+# ), 9999)
+# print(self.value)
+# print(get(self, (3,1,0)))
 
 
 
