@@ -264,7 +264,7 @@ class Value:
         self.type = type_t
         self.cwltype = cwl_type
         self.is_array = isinstance(value, Sequence)
-        self.scattered = self.scattered
+        self.scattered = scattered
 
     
     def to_list(self) -> None:
