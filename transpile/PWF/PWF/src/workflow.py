@@ -702,19 +702,15 @@ class BaseWorkflow(BaseProcess):
         """
         TODO Test
         """
+        gen_len = sum(1 for _ in scatters[0].context_generator(runtime_context))
         if len(scatters) == 1:
-            # idx = cast(List, idx)
             gen = scatters[0].context_generator(runtime_context)
-            gen_len = sum(1 for _ in scatters[0].context_generator(runtime_context))
             new_shape = tuple(shape + [gen_len])
             yield from [(c, tuple(idx + [i]), new_shape) for i, c in enumerate(gen)]
         else:
             gen = scatters[0].context_generator(runtime_context)
-            gen_len = sum(1 for _ in scatters[0].context_generator(runtime_context))
             new_shape = shape + [gen_len]
-            # new_shape = shape.copy() + [gen_len]
             for i, c in enumerate(gen):
-                # new_idx = idx.copy() + [i]
                 new_idx = idx + [i]
                 self.scatter_generator(c, scatters[1:], new_idx, new_shape)
 
@@ -906,8 +902,9 @@ class BaseWorkflow(BaseProcess):
         # Add (scattered) results to the output and runtime context
         for output_id, result_value in result.items():
             if counts[tool_id] == 0:
-                # First collected output from this tool
-                # TODO
+                # First collected output from this tool: Initialize scatterized
+                # Value.
+                # TODO Test
                 v = result_value.scatterize(shape, idx)
                 outputs[output_id] = v
                 runtime_context[output_id] = v
@@ -933,7 +930,7 @@ class BaseWorkflow(BaseProcess):
             nodes: Dict[str, ToolNode],
             runnable: Dict[str, Tuple[ToolNode, Idx | None, Idx | None]],
             running: Dict[str, Tuple[Future, ToolNode, Idx | None, Idx | None]],
-            waiting: Dict[str, Tuple[ToolNode, Idx | None]],
+            waiting: Dict[str, Tuple[ToolNode, Idx | None, Idx | None]],
             completed: List[str],
             counts: Dict[str, int],
             totals: Dict[str, int],
@@ -960,7 +957,8 @@ class BaseWorkflow(BaseProcess):
                 #                  running, waiting, completed, runtime_context,
                 #                  outputs)
             else:
-                self.process_indexed_job(result, idx, tool_node, nodes,
+                shape = cast(Idx, shape)
+                self.process_indexed_job(result, idx, shape, tool_node, nodes,
                                          runnable, running, waiting, completed,
                                          runtime_context, outputs, counts,
                                          totals)
@@ -1097,17 +1095,17 @@ class BaseWorkflow(BaseProcess):
             executor = ThreadPoolExecutor()
 
         # Init queues
-        runnable: Dict[str, Tuple[ToolNode, Idx | None]] = {}
+        runnable: Dict[str, Tuple[ToolNode, Idx | None, Idx | None]] = {}
         # running: Dict[str, Tuple[Future, ToolNode, Idx | None]] = {}
-        running: Dict[str, Tuple[Future, ToolNode, Tuple[Idx, Idx] | None]] = {}
-        waiting: Dict[str, Tuple[ToolNode, Idx | None]] = {}
+        running: Dict[str, Tuple[Future, ToolNode, Idx | None, Idx | None]] = {}
+        waiting: Dict[str, Tuple[ToolNode, Idx | None, Idx | None]] = {}
         completed: List[str] = []
 
         # Fill queues
         nodes = graph.nodes
         runnable_nodes: List[ToolNode] = graph.get_nodes(graph.roots) # type: ignore
-        runnable = {n.id: (n, None) for n in runnable_nodes}
-        waiting = {id: (n, None) for id, n in nodes.items() 
+        runnable = {n.id: (n, None, None) for n in runnable_nodes}
+        waiting = {id: (n, None, None) for id, n in nodes.items() 
                    if id not in runnable}
 
         # tracking_map:    Dict[str, np.ndarray] = {}
@@ -1121,7 +1119,9 @@ class BaseWorkflow(BaseProcess):
             self.submit_runnables(runtime_context, runnable, running, 
                                   scatter_counts, scatter_totals, executor,
                                   verbose)
-            self.process_futures()
+            self.process_futures(runtime_context, outputs, nodes, runnable,
+                                 running, waiting, completed, scatter_counts,
+                                 scatter_totals)
             # time.sleep(0.1)
 
         # Check for deadlock
