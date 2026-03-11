@@ -44,7 +44,7 @@ from .utils import (
 from .commandlinetool import BaseCommandLineTool
 
 Future: TypeAlias = concurrent.futures.Future | dask.distributed.Future
-Idx: TypeAlias = Tuple[int, ...]
+Vec: TypeAlias = Tuple[int, ...]
 
 
 def get_process_parents_ids(tool: BaseCommandLineTool) -> List[str]:
@@ -698,9 +698,15 @@ class BaseWorkflow(BaseProcess):
             runtime_context: Dict[str, Value], 
             scatters: List[Scatter],
             idx: List[int], shape: List[int],
-        ) -> Iterator[Tuple[Dict[str, Value], Idx, Idx]]:
+        ) -> Iterator[Tuple[Dict[str, Value], Vec, Vec]]:
         """
         TODO Test
+        Recursively generate runtime contexts (and their scatter indices and
+        shapes), where array values are substituted with scattered items.
+
+        Returns:
+            Generator yielding (runtime_context, index vector, shape vector)
+            tuples.
         """
         gen_len = sum(1 for _ in scatters[0].context_generator(runtime_context))
         if len(scatters) == 1:
@@ -714,61 +720,36 @@ class BaseWorkflow(BaseProcess):
                 new_idx = idx + [i]
                 self.scatter_generator(c, scatters[1:], new_idx, new_shape)
 
-        # scatter_n = len(scatters)
-        # perm_sizes = [0] * scatter_n
-        # idxs = [-1] * scatter_n
-        # gens: List[Iterator[Dict[str, Value]] | None] = [None] * (scatter_n - 1)
-        # checkpoints: List[Dict[str, Value] | None] = [None] * scatter_n
-        
-        # checkpoints[0] = runtime_context.copy()
-        # context_total = -1
-        # generated = 0        
-        # cur_lvl = 0
-        # while True:
-        #     if cur_lvl == (scatter_n - 1):
-        #         if context_total == -1:
-        #             prev_context = cast(Dict, checkpoints[-1])
-        #             perm_sizes[-1] = scatters[-1].get_length(prev_context)
-        #             context_total = prod(perm_sizes)
-        #         # print("to_generate", to_generate)
-        #         prev_context = cast(Dict, checkpoints[-1])
-        #         gen = scatters[-1].context_generator(prev_context)
-        #         for context in gen: 
-        #             generated += 1
-        #             idxs[-1] += 1
-        #             yield context, tuple(idxs)
 
-        #         if context_total == generated: 
-        #             return
-                
-        #         # increment the lower order scatter indices (or 0 if at max)
-        #         idxs[cur_lvl] = 0
-        #         while (cur_lvl > 0 and 
-        #                idxs[cur_lvl - 1] == perm_sizes[cur_lvl - 1]):
-        #             idxs[cur_lvl - 1] = 0
-        #             cur_lvl -= 1
-        #     else:
-        #         # 
-        #         prev_context = cast(Dict, checkpoints[cur_lvl])
-        #         gens[cur_lvl] = scatters[cur_lvl].context_generator(prev_context)
-        #         if perm_sizes[cur_lvl] == 0:
-        #             perm_sizes[cur_lvl] = scatters[cur_lvl].get_length(prev_context)
-        #         checkpoints[cur_lvl + 1] = next(cast(Iterator, gens[cur_lvl]))
-        #         idxs[cur_lvl] += 1
-        #         cur_lvl += 1
+    def update_tracking_map(
+            self,
+            tracking_map: Dict[str, List],
+            tool_id: str,
+            idx: Vec,
+            shape: Vec
+        ) -> None:
+        """TODO"""
+        if tool_id not in tracking_map:
+            tracking_map[tool_id] = []
+
+        l = tracking_map[tool_id]
+        for i, i_max in zip(idx, shape):
+            # TODO
 
 
     def submit_runnables(
             self,
             runtime_context: Dict[str, Value],
-            runnable: Dict[str, Tuple[ToolNode, Idx | None, Idx | None]],
-            running: Dict[str, Tuple[Future, ToolNode, Idx | None, Idx | None]],
+            runnable: Dict[str, Tuple[ToolNode, Vec | None, Vec | None]],
+            running: Dict[str, Tuple[Future, ToolNode, Vec | None, Vec | None]],
+            tracking_map: Dict[str, List],
             scatter_counts: Dict[str, int],
             scatter_totals: Dict[str, int],
             executor: ThreadPoolExecutor,
             verbose
         ) -> None:
         """
+        TODO Test indexed tool submission
         
         """
         # Execute runnable nodes in the ThreadPool
@@ -785,14 +766,15 @@ class BaseWorkflow(BaseProcess):
                 running[node_id] = (future, node, None, None)
             elif idx is not None:
                 # Submit indexed tool
-                if tool.id not in scatter_totals:
-                    # TODO Determine scattering size?
-                    # NOTE Does this work?
-                    total = sum([1 for _ in self.scatter_generator(step_runtime_context,
-                                                                   tool.scatters,
-                                                                   [], [])])
-                    scatter_counts[tool.id] = 0
-                    scatter_totals[tool.id] = total
+                # if tool.id not in scatter_totals:
+                #     # TODO Determine scattering size?
+                #     # NOTE Does this work?
+                #     total = sum([1 for _ in self.scatter_generator(step_runtime_context,
+                #                                                    tool.scatters,
+                #                                                    [], [])])
+                #     scatter_counts[tool.id] = 0
+                #     scatter_totals[tool.id] = total
+                # self.update_tracking_map(tracking_map, cast(Vec, shape))
 
                 # Schedule the indexed job
                 job_id = f"{node_id}:::{':'.join([str(i) for i in idx])}"
@@ -805,7 +787,7 @@ class BaseWorkflow(BaseProcess):
                 # running[job_id] = (future, node, (idx, None))
                 
             else:
-                # Scatter and submit
+                # First level scatter: Scatter and submit jobs
                 print(f"[NODE]: Scattering tool {tool.id}")
 
                 # Lazily generate new runtime contexts with permutations of
@@ -813,12 +795,13 @@ class BaseWorkflow(BaseProcess):
                 scatter_gen = self.scatter_generator(step_runtime_context,
                                                         tool.scatters, [], [])
 
-                if tool.id not in scatter_totals:
-                    total = sum([1 for _ in self.scatter_generator(step_runtime_context,
-                                                                   tool.scatters,
-                                                                   [], [])])
-                    scatter_counts[tool.id] = 0
-                    scatter_totals[tool.id] = total
+                # if tool.id not in scatter_totals:
+                #     total = sum([1 for _ in self.scatter_generator(step_runtime_context,
+                #                                                    tool.scatters,
+                #                                                    [], [])])
+                #     scatter_counts[tool.id] = 0
+                #     scatter_totals[tool.id] = total
+
 
                 # Schedule a job for each permutation
                 for context, idx, shape in scatter_gen:
@@ -841,9 +824,9 @@ class BaseWorkflow(BaseProcess):
             # job_id,
             tool_node: ToolNode,
             # nodes,
-            runnable: Dict[str, Tuple[ToolNode, Idx | None, Idx | None]],
-            running: Dict[str, Tuple[Future, ToolNode, Idx | None, Idx |None]],
-            waiting: Dict[str, Tuple[ToolNode, Idx | None, Idx | None]],
+            runnable: Dict[str, Tuple[ToolNode, Vec | None, Vec | None]],
+            running: Dict[str, Tuple[Future, ToolNode, Vec | None, Vec |None]],
+            waiting: Dict[str, Tuple[ToolNode, Vec | None, Vec | None]],
             completed: List[str],
             runtime_context: Dict[str, Value],
             outputs: Dict[str, Value]
@@ -880,28 +863,28 @@ class BaseWorkflow(BaseProcess):
     def process_indexed_job(
             self,
             result: Dict[str, Value],
-            idx: Idx, shape: Idx,
+            idx: Vec, shape: Vec,
             tool_node: ToolNode,
             nodes,
-            runnable: Dict[str, Tuple[ToolNode, Idx | None, Idx |None]],
-            running: Dict[str, Tuple[Future, ToolNode, Idx | None, Idx |None]],
+            runnable: Dict[str, Tuple[ToolNode, Vec | None, Vec |None]],
+            running: Dict[str, Tuple[Future, ToolNode, Vec | None, Vec |None]],
             # running: Dict[str, Tuple[Future, ToolNode, Tuple[Idx, Idx] | None]],
-            waiting: Dict[str, Tuple[ToolNode, Idx | None, Idx | None]],
+            waiting: Dict[str, Tuple[ToolNode, Vec | None, Vec | None]],
             completed: List[str],
             runtime_context: Dict[str, Value],
             outputs: Dict[str, Value],
-            counts: Dict[str, int],
-            totals: Dict[str, int]
+            tracking_map: Dict[str, List],
+            scatter_counts: Dict[str, int],
+            scatter_totals: Dict[str, int]
         ) -> None:
         """
         
         """
-
         tool_id = tool_node.id
 
         # Add (scattered) results to the output and runtime context
         for output_id, result_value in result.items():
-            if counts[tool_id] == 0:
+            if scatter_counts[tool_id] == 0:
                 # First collected output from this tool: Initialize scatterized
                 # Value.
                 # TODO Test
@@ -917,10 +900,16 @@ class BaseWorkflow(BaseProcess):
         # move the tool job to completed.
         job_id = f"{tool_id}:::{':'.join([str(i) for i in idx])}"
         completed.append(job_id)
-        if counts[tool_id] == totals[tool_id]:
+        # TODO FIXME We are looking at completion of all tool executions. 
+        # However, we should look at tool completion at scatter level, 
+        # not total.
+        if scatter_counts[tool_id] == scatter_totals[tool_id]:
             completed.append(tool_id)
 
         # TODO schedule children
+        for child_id, child_t_n in tool_node.children.items():
+            for parent_id, parent_node in child_t_n.parents.items():
+
 
 
     def process_futures(
@@ -928,12 +917,13 @@ class BaseWorkflow(BaseProcess):
             runtime_context: Dict[str, Value],
             outputs: Dict[str, Value],
             nodes: Dict[str, ToolNode],
-            runnable: Dict[str, Tuple[ToolNode, Idx | None, Idx | None]],
-            running: Dict[str, Tuple[Future, ToolNode, Idx | None, Idx | None]],
-            waiting: Dict[str, Tuple[ToolNode, Idx | None, Idx | None]],
+            runnable: Dict[str, Tuple[ToolNode, Vec | None, Vec | None]],
+            running: Dict[str, Tuple[Future, ToolNode, Vec | None, Vec | None]],
+            waiting: Dict[str, Tuple[ToolNode, Vec | None, Vec | None]],
             completed: List[str],
-            counts: Dict[str, int],
-            totals: Dict[str, int],
+            tracking_map: Dict[str, List],
+            scatter_counts: Dict[str, int],
+            scatter_totals: Dict[str, int],
         ) -> None:
         """
         
@@ -957,11 +947,12 @@ class BaseWorkflow(BaseProcess):
                 #                  running, waiting, completed, runtime_context,
                 #                  outputs)
             else:
-                shape = cast(Idx, shape)
+                shape = cast(Vec, shape)
+                self.update_tracking_map(tracking_map, tool_node.id, idx, shape)
                 self.process_indexed_job(result, idx, shape, tool_node, nodes,
                                          runnable, running, waiting, completed,
-                                         runtime_context, outputs, counts,
-                                         totals)
+                                         runtime_context, outputs, tracking_map,
+                                         scatter_counts, scatter_totals)
 
         
         # # Check for completed tools. Move runnable children to the
@@ -1095,10 +1086,10 @@ class BaseWorkflow(BaseProcess):
             executor = ThreadPoolExecutor()
 
         # Init queues
-        runnable: Dict[str, Tuple[ToolNode, Idx | None, Idx | None]] = {}
+        runnable: Dict[str, Tuple[ToolNode, Vec | None, Vec | None]] = {}
         # running: Dict[str, Tuple[Future, ToolNode, Idx | None]] = {}
-        running: Dict[str, Tuple[Future, ToolNode, Idx | None, Idx | None]] = {}
-        waiting: Dict[str, Tuple[ToolNode, Idx | None, Idx | None]] = {}
+        running: Dict[str, Tuple[Future, ToolNode, Vec | None, Vec | None]] = {}
+        waiting: Dict[str, Tuple[ToolNode, Vec | None, Vec | None]] = {}
         completed: List[str] = []
 
         # Fill queues
@@ -1110,18 +1101,19 @@ class BaseWorkflow(BaseProcess):
 
         # tracking_map:    Dict[str, np.ndarray] = {}
         # tracking_map:    Dict[str, int] = {}
+        tracking_map: Dict[str, List] = {}
         scatter_counts: Dict[str, int] = {}
         scatter_totals: Dict[str, int] = {}
         outputs: Dict[str, Value] = {}
 
         # TODO FIXME What is in runnable?
         while len(runnable) != 0 or len(running) != 0:
-            self.submit_runnables(runtime_context, runnable, running, 
+            self.submit_runnables(runtime_context, runnable, running, tracking_map,
                                   scatter_counts, scatter_totals, executor,
                                   verbose)
             self.process_futures(runtime_context, outputs, nodes, runnable,
-                                 running, waiting, completed, scatter_counts,
-                                 scatter_totals)
+                                 running, waiting, completed, tracking_map,
+                                 scatter_counts, scatter_totals)
             # time.sleep(0.1)
 
         # Check for deadlock
