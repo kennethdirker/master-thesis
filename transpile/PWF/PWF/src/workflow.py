@@ -728,13 +728,27 @@ class BaseWorkflow(BaseProcess):
             idx: Vec,
             shape: Vec
         ) -> None:
-        """TODO"""
+        """
+        Update a path (or ''idx'') of ''tracking_map'' to the size indicated by
+        ''shape'' inplace.
+        """
+        def helper(
+                tracking_map: List, 
+                idx: List[int], 
+                shape: List[int]
+            ) -> None:
+            if len(idx) == 1:
+                if len(tracking_map) == 0:
+                    tracking_map.extend([False for _ in range(shape[0])])
+            else:
+                if len(tracking_map) == 0:
+                    tracking_map.extend([[] for _ in range(shape[0])])
+                helper(tracking_map[idx[0]], idx[1:], shape[1:])
+
         if tool_id not in tracking_map:
             tracking_map[tool_id] = []
-
-        l = tracking_map[tool_id]
-        for i, i_max in zip(idx, shape):
-            # TODO
+        
+        helper(tracking_map[tool_id], list(idx), list(shape))
 
 
     def submit_runnables(
@@ -743,8 +757,8 @@ class BaseWorkflow(BaseProcess):
             runnable: Dict[str, Tuple[ToolNode, Vec | None, Vec | None]],
             running: Dict[str, Tuple[Future, ToolNode, Vec | None, Vec | None]],
             tracking_map: Dict[str, List],
-            scatter_counts: Dict[str, int],
-            scatter_totals: Dict[str, int],
+            # scatter_counts: Dict[str, int],
+            # scatter_totals: Dict[str, int],
             executor: ThreadPoolExecutor,
             verbose
         ) -> None:
@@ -805,7 +819,7 @@ class BaseWorkflow(BaseProcess):
 
                 # Schedule a job for each permutation
                 for context, idx, shape in scatter_gen:
-                    print(*context.items(), sep="\n")
+                    # print(*context.items(), sep="\n")
                     job_id = f"{node_id}:::{':'.join([str(i) for i in idx])}"
                     print(f"[NODE]: Submitting tool {job_id}")
                     future = executor.submit(tool.execute,
@@ -874,41 +888,56 @@ class BaseWorkflow(BaseProcess):
             runtime_context: Dict[str, Value],
             outputs: Dict[str, Value],
             tracking_map: Dict[str, List],
-            scatter_counts: Dict[str, int],
-            scatter_totals: Dict[str, int]
+            # scatter_counts: Dict[str, int],
+            # scatter_totals: Dict[str, int]
         ) -> None:
         """
         
         """
+        def get(l: List, idx: Vec) -> Any:
+            if len(idx) == 0:
+                return l
+            if len(idx) == 1:
+                return l[idx[0]]
+            get(l[idx[0]], idx[1:])
+
+        def set(l: List, idx: Vec, value: bool) -> None:
+            if len(idx) == 1:
+                l[idx[0]] = value
+                print("[DEBUG] SET to ", value)
+            else:
+                set(l[idx[0]], idx[1:], value)
+
         tool_id = tool_node.id
 
         # Add (scattered) results to the output and runtime context
         for output_id, result_value in result.items():
-            if scatter_counts[tool_id] == 0:
+            if all(get(tracking_map[tool_id], idx[:-1])):
+                # Values in outputs and runtime context are already scatterized
+                outputs[output_id].set(idx, result_value)
+                runtime_context[output_id].set(idx, result_value)
+            else:
                 # First collected output from this tool: Initialize scatterized
                 # Value.
                 # TODO Test
                 v = result_value.scatterize(shape, idx)
                 outputs[output_id] = v
                 runtime_context[output_id] = v
-            else:
-                # Values in outputs and runtime context are already scatterized
-                outputs[output_id].set(idx, result_value)
-                runtime_context[output_id].set(idx, result_value)
 
         # Move the indexed job to completed. If this this tool's last job for,
         # move the tool job to completed.
         job_id = f"{tool_id}:::{':'.join([str(i) for i in idx])}"
         completed.append(job_id)
-        # TODO FIXME We are looking at completion of all tool executions. 
-        # However, we should look at tool completion at scatter level, 
-        # not total.
-        if scatter_counts[tool_id] == scatter_totals[tool_id]:
-            completed.append(tool_id)
+        print("[DEBUG] SET ", idx)
+        set(tracking_map[tool_id], idx, True)
+        # TODO WHEN IS TOOL COMPLETED????
+        # if all(get(tracking_map[tool_id], idx[:-1])):
+            # completed.append(tool_id)
 
         # TODO schedule children
         for child_id, child_t_n in tool_node.children.items():
             for parent_id, parent_node in child_t_n.parents.items():
+                
 
 
 
@@ -922,8 +951,8 @@ class BaseWorkflow(BaseProcess):
             waiting: Dict[str, Tuple[ToolNode, Vec | None, Vec | None]],
             completed: List[str],
             tracking_map: Dict[str, List],
-            scatter_counts: Dict[str, int],
-            scatter_totals: Dict[str, int],
+            # scatter_counts: Dict[str, int],
+            # scatter_totals: Dict[str, int],
         ) -> None:
         """
         
@@ -938,7 +967,7 @@ class BaseWorkflow(BaseProcess):
             # the running list. Runtime_context is updated for the
             # next tool.
             result: Dict[str, Value] = future.result()
-
+            print("[DEBUG] RESULT", *[f"{k}:::{v}" for k, v in result.items()], sep="\n\t")
             if idx is None:
                 self.process_job(result, tool_node, runnable,
                                  running, waiting, completed, runtime_context,
@@ -951,8 +980,9 @@ class BaseWorkflow(BaseProcess):
                 self.update_tracking_map(tracking_map, tool_node.id, idx, shape)
                 self.process_indexed_job(result, idx, shape, tool_node, nodes,
                                          runnable, running, waiting, completed,
-                                         runtime_context, outputs, tracking_map,
-                                         scatter_counts, scatter_totals)
+                                         runtime_context, outputs, tracking_map)
+                                        #  runtime_context, outputs, tracking_map,
+                                        #  scatter_counts, scatter_totals)
 
         
         # # Check for completed tools. Move runnable children to the
@@ -1102,18 +1132,20 @@ class BaseWorkflow(BaseProcess):
         # tracking_map:    Dict[str, np.ndarray] = {}
         # tracking_map:    Dict[str, int] = {}
         tracking_map: Dict[str, List] = {}
-        scatter_counts: Dict[str, int] = {}
-        scatter_totals: Dict[str, int] = {}
+        # scatter_counts: Dict[str, int] = {}
+        # scatter_totals: Dict[str, int] = {}
         outputs: Dict[str, Value] = {}
 
         # TODO FIXME What is in runnable?
         while len(runnable) != 0 or len(running) != 0:
             self.submit_runnables(runtime_context, runnable, running, tracking_map,
-                                  scatter_counts, scatter_totals, executor,
-                                  verbose)
+                                  executor, verbose)
+                                #   scatter_counts, scatter_totals, executor,
+                                #   verbose)
             self.process_futures(runtime_context, outputs, nodes, runnable,
-                                 running, waiting, completed, tracking_map,
-                                 scatter_counts, scatter_totals)
+                                 running, waiting, completed, tracking_map)
+                                #  running, waiting, completed, tracking_map,
+                                #  scatter_counts, scatter_totals)
             # time.sleep(0.1)
 
         # Check for deadlock
@@ -1315,6 +1347,9 @@ class Scatter:
         # Create an iterator that yields scatterized input combinations 
         iterable: Iterator
         arrays = [runtime_context[id].value for id in self.scattered_inputs]
+        types = [(runtime_context[id].type, runtime_context[id].cwltype)
+                  for id in self.scattered_inputs]
+        # arrays = [runtime_context[id].value for id in self.scattered_inputs]
         if self.scatter_method == "dotproduct":
             iterable = zip(*arrays)
         else:
@@ -1323,8 +1358,8 @@ class Scatter:
         # Copy the runtime_context and substitute the scattered inputs
         for values in iterable:
             runtime_copy = runtime_context.copy()
-            for key, value in zip(self.scattered_inputs, values):
-                runtime_copy[key] = value
+            for key, value, type_t in zip(self.scattered_inputs, values, types):
+                runtime_copy[key] = Value(value, type_t[0], type_t[1])
             yield runtime_copy
 
     
