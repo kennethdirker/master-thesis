@@ -389,7 +389,7 @@ class BaseCommandLineTool(BaseProcess):
                 arg["type"] = "argument"
                 arg["valueFrom"] = value
                 if not "position" in arg:
-                    arg["position"]
+                    arg["position"] = 0
                 if not "separate" in arg:
                     arg["separate"] = True
                 processed.append(arg)
