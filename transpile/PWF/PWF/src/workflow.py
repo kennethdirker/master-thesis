@@ -755,7 +755,7 @@ class BaseWorkflow(BaseProcess):
             idx: Vec
         ) -> Dict[str, Value]:
         """
-        Get the scattered runtime context for a specific index.
+        Return a new ``runtime_context`` for a specific scatter ``idx``.
         """
         context = runtime_context
         for scatter, i in zip(scatters, idx):
@@ -778,18 +778,18 @@ class BaseWorkflow(BaseProcess):
         # Execute runnable nodes in the ThreadPool
         for node_id, (node, idx, shape) in runnable.copy().items():
             tool = node.tool
-            step_runtime_context = self.prepare_step_runtime_context(tool, runtime_context)
             if len(tool.scatters) == 0:
                 # Normal execution
                 print(f"[NODE]: Submitting tool {tool.id}")
-                future = executor.submit(tool.execute,
-                                            False,
-                                            step_runtime_context,
-                                            verbose = verbose)
+                context = self.prepare_step_runtime_context(tool, runtime_context)
+                future = executor.submit(tool.execute, False, context,
+                                         verbose = verbose)
                 running[node_id] = (future, node, None, None)
             elif idx is not None:
                 # Schedule the indexed job with the correct scattered context
-                context = self.get_scattered_context(step_runtime_context, tool.scatters, idx)
+                context = self.get_scattered_context(runtime_context, 
+                                                     tool.scatters, idx)
+                context = self.prepare_step_runtime_context(tool, context)
                 job_id = f"{node_id}:::{':'.join([str(i) for i in idx])}"
                 print(f"[NODE]: Submitting tool {job_id}")
                 future = executor.submit(tool.execute,
@@ -803,11 +803,12 @@ class BaseWorkflow(BaseProcess):
 
                 # Lazily generate new runtime contexts with permutations of
                 # the scattered inputs according to the scatter method.
-                scatter_gen = self.scatter_generator(step_runtime_context,
-                                                        tool.scatters, [], [])
+                scatter_gen = self.scatter_generator(runtime_context,
+                                                     tool.scatters, [], [])
 
                 # Schedule a job for each permutation
                 for context, idx, shape in scatter_gen:
+                    context = self.prepare_step_runtime_context(tool, context)
                     job_id = f"{node_id}:::{':'.join([str(i) for i in idx])}"
                     print(f"[NODE]: Submitting tool {job_id}")
                     future = executor.submit(tool.execute,
@@ -825,7 +826,6 @@ class BaseWorkflow(BaseProcess):
             tool_node: ToolNode,
             runnable: Dict[str, Tuple[ToolNode, Vec | None, Vec | None]],
             running: Dict[str, Tuple[Future, ToolNode, Vec | None, Vec |None]],
-            waiting: Dict[str, Tuple[ToolNode, Vec | None, Vec | None]],
             completed: List[str],
             runtime_context: Dict[str, Value],
             outputs: Dict[str, Value]
@@ -845,18 +845,8 @@ class BaseWorkflow(BaseProcess):
         # Add new runnable tools to queue by checking for each
         # child if all its parents have completed.
         for child_id, child_node in tool_node.children.items():
-            # Only check waiting children
-            if child_id not in waiting:
-                continue
-
-            # ready = True
-            # for childs_parent_id in child_node.parents:
-            #     if childs_parent_id not in completed:
-            #         ready = False
-            #         break
             if any(p_id not in completed for p_id in child_node.parents):
-            # if ready:
-                runnable[child_id] = waiting.pop(child_id)
+                runnable[child_id] = (child_node, None, None)
 
 
     def process_indexed_job(
@@ -864,11 +854,8 @@ class BaseWorkflow(BaseProcess):
             result: Dict[str, Value],
             idx: Vec, shape: Vec,
             tool_node: ToolNode,
-            nodes,
             runnable: Dict[str, Tuple[ToolNode, Vec | None, Vec |None]],
             running: Dict[str, Tuple[Future, ToolNode, Vec | None, Vec |None]],
-            # running: Dict[str, Tuple[Future, ToolNode, Tuple[Idx, Idx] | None]],
-            waiting: Dict[str, Tuple[ToolNode, Vec | None, Vec | None]],
             completed: List[str],
             runtime_context: Dict[str, Value],
             outputs: Dict[str, Value],
@@ -903,20 +890,18 @@ class BaseWorkflow(BaseProcess):
 
             l = get(l, idx)
             return check_false(l)
-        
 
         tool_id = tool_node.id
 
         # Add (scattered) results to the output and runtime context
         for output_id, result_value in result.items():
-            if all(get(tracking_map[tool_id], idx[:-1])):
+            if any(get(tracking_map[tool_id], idx[:-1])):
                 # Values in outputs and runtime context are already scatterized
-                outputs[output_id].set(idx, result_value)
-                runtime_context[output_id].set(idx, result_value)
+                outputs[output_id].set(idx, result_value.value)
+                runtime_context[output_id].set(idx, result_value.value)
             else:
                 # First collected output from this tool: Initialize scatterized
                 # Value.
-                # TODO Test
                 v = result_value.scatterize(shape, idx)
                 outputs[output_id] = v
                 runtime_context[output_id] = v
@@ -924,8 +909,11 @@ class BaseWorkflow(BaseProcess):
         # Move the indexed job to completed. If this this tool's last job for,
         # move the tool job to completed.
         job_id = f"{tool_id}:::{':'.join([str(i) for i in idx])}"
+        running.pop(job_id)
         completed.append(job_id)
         set(tracking_map[tool_id], idx, True)
+        if not any_false(tracking_map[tool_id], ()):
+            completed.append(tool_id)
 
         # Schedule children
         for child_id, child_node in tool_node.children.items():
@@ -949,8 +937,8 @@ class BaseWorkflow(BaseProcess):
             if ready:
                 if len(child_scatters) == 0:
                     # Non-scattered child
-                    if child_id in waiting:
-                        runnable[child_id] = waiting.pop(child_id)
+                    if child_id not in completed:
+                        runnable[child_id] = (child_node, None, None)
                 else:
                     # Scattered child, schedule at this idx
                     child_job_id = f"{child_id}:::{':'.join([str(i) for i in idx])}"
@@ -961,15 +949,14 @@ class BaseWorkflow(BaseProcess):
             self,
             runtime_context: Dict[str, Value],
             outputs: Dict[str, Value],
-            nodes: Dict[str, ToolNode],
             runnable: Dict[str, Tuple[ToolNode, Vec | None, Vec | None]],
             running: Dict[str, Tuple[Future, ToolNode, Vec | None, Vec | None]],
-            waiting: Dict[str, Tuple[ToolNode, Vec | None, Vec | None]],
             completed: List[str],
             tracking_map: Dict[str, List],
         ) -> None:
         """
-        
+        Check the running queue for completed futures and process their 
+        results.
         """
         # Process outputs of completed and schedule new jobs 
         for (future, tool_node, idx, shape) in running.copy().values():
@@ -980,121 +967,15 @@ class BaseWorkflow(BaseProcess):
             # the running list. Runtime_context is updated for the
             # next tool.
             result: Dict[str, Value] = future.result()
-            print("[DEBUG] RESULT", *[f"{k}:::{v}" for k, v in result.items()], sep="\n\t")
             if idx is None:
-                self.process_job(result, tool_node, runnable, running, waiting,
+                self.process_job(result, tool_node, runnable, running,
                                  completed, runtime_context, outputs)
             else:
                 shape = cast(Vec, shape)
                 self.update_tracking_map(tracking_map, tool_node.id, idx, shape)
-                self.process_indexed_job(result, idx, shape, tool_node, nodes,
-                                         runnable, running, waiting, completed,
+                self.process_indexed_job(result, idx, shape, tool_node,
+                                         runnable, running, completed,
                                          runtime_context, outputs, tracking_map)
-
-        
-        # # Check for completed tools. Move runnable children to the
-        # # running queue.
-        # for job_id, (future, tool_node, scatter_info) in running.copy().items():
-        #     if future.done():
-        #         # Save results from finished tool and remove tool from
-        #         # the running list. Runtime_context is updated for the
-        #         # next tool.
-        #         result: Dict[str, Value] = future.result()
-        #         if scatter_info is None:
-        #             # Outputs from non-scattered tool
-        #             outputs.update(result)
-        #             runtime_context.update(result)
-
-        #             # Move tool to finished
-        #             completed.append(job_id)
-        #             running.pop(job_id)
-
-        #             # Add new runnable tools to queue by checking for each
-        #             # child if all its parents have completed.
-        #             for child_id in tool_node.children:
-        #                 # Only check waiting children
-        #                 if child_id not in waiting:
-        #                     continue
-
-        #                 ready = True
-        #                 for childs_parent_id in nodes[child_id].parents:
-        #                     if childs_parent_id not in completed:
-        #                         ready = False
-        #                         break
-        #                 if ready:
-        #                     runnable[child_id] = (waiting.pop(child_id), None)
-        #         else:
-        #             # Output from scattered tool
-        #             idx, shape = scatter_info
-        #             tool_id = job_id.split(":::")[0]
-
-        #             # Add the results to the scattered values
-        #             if not tracking_map[tool_id].any():
-        #                 # Scatterize the Value by creating an output slot
-        #                 # for each scatterized tool execution.
-        #                 for output_id, result_value in result.items():
-        #                     v = result_value.scatterize(shape, idx)
-        #                     outputs[output_id] = v
-        #                     runtime_context[output_id] = v
-        #             else:
-        #                 for output_id, result_value in result.items():
-        #                     outputs[output_id].set(idx, result_value)
-        #                     runtime_context[output_id].set(idx, result_value)
-
-        #             # Update output bookkeeping
-        #             tracking_map[tool_id][idx] = True
-        #             # scatter_m_processed[tool_id] += 1
-
-        #             # Move tool to finished if all scattered outputs have 
-        #             # completed
-        #             if tracking_map[tool_id].all():
-        #                 completed.append(tool_id)
-        #                 running.pop(job_id)
-
-        #             # Add new runnable tools to queue by checking for each
-        #             # child if all its parents have completed. As these
-        #             # tools might also be scattered, we want to check if 
-        #             # parents with the same idx as this tool have finished. 
-        #             for child_id in tool_node.children:
-        #                 # Only check waiting children
-        #                 if child_id not in waiting:
-        #                     # BUG FIXME if child is scattered,  
-        #                     continue
-                        
-        #                 ready = True
-        #                 child_node = nodes[child_id]
-        #                 for child_p_id, child_p_node in child_node.parents.items():
-        #                     if len(child_p_node.tool.scatters) == 0:
-        #                         if child_p_id not in completed:
-        #                             ready = False
-        #                             break
-        #                     else:
-        #                         # Parent is scattered
-        #                         # TODO TODO TODO TODO TODO TODO TODO TODO TODO 
-        #                         # How to check if parent needs to have fully completed?
-        #                         # Might only need parent with our idx
-        #                         child_scatters = child_node.tool.scatters
-        #                         child_p_scatters = child_p_node.tool.scatters
-        #                         check_idx = True
-        #                         for s in child_p_scatters:
-        #                             if s not in child_scatters:
-        #                                 # Child tool is not part of the parent's scatter
-        #                                 check_idx = False
-        #                                 break
-
-        #                         if check_idx:
-        #                             if tracking_map[child_p_id][idx] is False:
-        #                                 ready = False
-        #                                 break
-        #                         else:
-        #                             if child_p_id not in completed:
-        #                                 ready = False
-        #                                 break
-        #                         # TODO TODO TODO TODO TODO TODO TODO TODO TODO 
-
-        #                 if ready:
-        #                     runnable[child_id] = waiting.pop(child_id)
-        #                     # runnable[child_id] = (waiting.pop(child_id), None)  #FIXME BUG
 
 
     def exec_outer_node(
@@ -1105,8 +986,7 @@ class BaseWorkflow(BaseProcess):
             executor: Optional[ThreadPoolExecutor] = None
         ) -> Dict[str, Value]:
         """
-        Execute the tasks of this node. 
-        TODO If scattered, tools shouldnt be added to the queues, but tool_id+idx something
+        Execute the tasks of this node.
 
         TODO OPTIMIZATION: OuterNodes are executed if all parent OuterNodes
              have finished. However if an OuterNode InnerGraph has multiple
@@ -1122,37 +1002,29 @@ class BaseWorkflow(BaseProcess):
         if executor is None:
             executor = ThreadPoolExecutor()
 
+        ########### TODO ##############
+        #  Prepare all files locally  #
+        ########### TODO ##############
+
         # Init queues
         runnable: Dict[str, Tuple[ToolNode, Vec | None, Vec | None]] = {}
         running: Dict[str, Tuple[Future, ToolNode, Vec | None, Vec | None]] = {}
-        waiting: Dict[str, Tuple[ToolNode, Vec | None, Vec | None]] = {}
         completed: List[str] = []
 
         # Fill queues
-        nodes = graph.nodes
         runnable_nodes: List[ToolNode] = graph.get_nodes(graph.roots) # type: ignore
         runnable = {n.id: (n, None, None) for n in runnable_nodes}
-        waiting = {id: (n, None, None) for id, n in nodes.items() 
-                   if id not in runnable}
 
         tracking_map: Dict[str, List] = {}
         outputs: Dict[str, Value] = {}
 
-        # TODO FIXME What is in runnable?
-        while len(runnable) != 0 or len(running) != 0:
+        while len(runnable) > 0 or len(running) > 0:
             self.submit_runnables(runtime_context, runnable, running, executor,
                                   verbose)
-            self.process_futures(runtime_context, outputs, nodes, runnable,
-                                 running, waiting, completed, tracking_map)
-            # time.sleep(0.1)
+            self.process_futures(runtime_context, outputs, runnable, running,
+                                 completed, tracking_map)
 
-        # Check for deadlock
-        if len(runnable) == 0 and len(running) == 0 and len(waiting) != 0:
-            s = "\n\t".join([node_id for node_id in waiting.keys()])
-            raise Exception(f"Deadlock detected. Waiting nodes:\n\t{s}")
-
-        # return outputs
-        return {k: v.to_list() for k, v in outputs.items()}
+        return outputs
     
 
     def execute(
@@ -1268,7 +1140,7 @@ class BaseWorkflow(BaseProcess):
                     if verbose:
                         print("[WORKFLOW]: Completed node", graph.short_ids[running_task[1].id])
                         lprint()
-            time.sleep(0.1)
+            # time.sleep(0.1)
 
         # Check for deadlock
         if len(runnable) == 0 and len(running) == 0 and len(waiting) != 0:
@@ -1360,6 +1232,7 @@ class Scatter:
                 runtime_copy[key] = Value(value, type_t[0], type_t[1])
             yield runtime_copy
 
+
     def get_context_at_index(
             self,
             runtime_context: Dict[str, Value],
@@ -1374,7 +1247,8 @@ class Scatter:
         
         if self.scatter_method == "dotproduct":
             values = [arr[index] for arr in arrays]
-        else:  # crossproduct
+        else:
+            # crossproduct
             sizes = [len(arr) for arr in arrays]
             indices = []
             current = index
@@ -1384,6 +1258,7 @@ class Scatter:
             indices.reverse()
             values = [arrays[j][idx] for j, idx in enumerate(indices)]
         
+        # Copy the runtime_context and substitute the scattered inputs
         runtime_copy = runtime_context.copy()
         for key, value, type_t in zip(self.scattered_inputs, values, types):
             runtime_copy[key] = Value(value, type_t[0], type_t[1])
