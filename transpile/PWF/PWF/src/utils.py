@@ -263,7 +263,7 @@ class Value:
         self.value = value
         self.type = type_t
         self.cwltype = cwl_type
-        self.is_array = isinstance(value, Sequence)
+        self.is_array = scattered | isinstance(value, Sequence)
         self.scattered = scattered
 
     
