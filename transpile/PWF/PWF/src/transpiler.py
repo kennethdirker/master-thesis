@@ -19,6 +19,8 @@ from cwl_utils.parser.cwl_v1_2 import (
     CommandLineBinding,
     Dirent,
     InputArraySchema,
+    OutputArraySchema,
+    WorkflowStepOutput,
 )
 
 # Import CWL Process types
@@ -28,6 +30,18 @@ from cwl_utils.parser import (
     Workflow,
     ExpressionTool
 )
+
+
+    
+def quote(value: Any) -> str:
+    """ 
+    Encase strings and string expressions in quotes and cast other types
+    to string.
+    """
+    if isinstance(value, str):
+        return f'"{value}"'
+    else:
+        return str(value)
 
 def indent(string: str, tab_amount: int) -> str:
     """
@@ -271,13 +285,17 @@ def parse_inputs(
 
             # Default
             if hasattr(input, "default") and input.default is not None:
-                lines.append(indent(f'"default": "{input.default}",', 4))
+                lines.append(indent(f'"default": {quote(input.default)},', 4))
 
             # secondaryFiles
-            # TODO
+            if hasattr(input, "secondaryFiles"):
+                print("\t[INFO] inputs.secondaryFiles not yet supported")
+                # TODO
 
             # Streamable
-            # TODO
+            if hasattr(input, "streamable"):
+                print("\t[INFO] inputs.streamable not yet supported")
+                # TODO
 
             # Inputbinding
             if hasattr(input, "inputBinding"):
@@ -309,13 +327,16 @@ def parse_inputs(
                     valueFrom = normalize(b.valueFrom)
                     lines.append(indent(f'"valueFrom": "{valueFrom}",', 4))
 
-                # separate
-
             # loadContents
-            # TODO
+            if hasattr(input, "loadContents") and input.loadContents is not None:
+                # TODO
+                # print("\t[INFO] outputs.outputBinding.loadContents not yet supported")
+                lines.append(indent(f'"loadContents": {input.loadContents},', 4))
 
             # loadListing
-            # TODO
+            if hasattr(input, "loadListing") and input.loadListing is not None:
+                # TODO
+                print("\t[INFO] inputs.loadListing.loadContents not yet supported")
             
             # Label
             if hasattr(input, "label") and input.label is not None:
@@ -345,8 +366,12 @@ def get_output_type(types: Any | List[Any]) -> list[str]:
         types = [types]
 
     for t in types:
-        if isinstance(t, CommandOutputArraySchema):
-            ret.append(f'{t.items.lower()}[]')
+        if isinstance(t, CommandOutputArraySchema | OutputArraySchema):
+            if isinstance(t.items, str):
+                ret.append(f'{t.items.lower()}[]')
+            elif isinstance(t.items, OutputArraySchema):
+                ret.append(f'{t.items.items.lower()}[]')
+
         elif isinstance(t, str):
             ret.append(f'{t.lower()}')
         else:
@@ -456,7 +481,7 @@ def parse_outputs(
                 # loadContents
                 # TODO
                 if hasattr(binding, "loadContents") and binding.loadContents is not None:
-                    print("\t[INFO] outputs.outputBinding.loadContents not yet supported")
+                    lines.append(indent(f'"loadContents": {binding.loadContents},', 4))
                 # outputEval
                 if hasattr(binding, "outputEval") and binding.outputEval is not None:
                     outputEval = normalize(binding.outputEval)
@@ -465,6 +490,7 @@ def parse_outputs(
                 # TODO
                 if hasattr(binding, "secondaryFiles") and binding.secondaryFiles is not None:
                     print("\t[INFO] outputs.outputBinding.secondaryFiles not yet supported")
+
             # Streamable
             if hasattr(output, "streamable") and output.streamable is not None:
                 lines.append(indent(f'"streamable": {output.streamable},', 4))
@@ -582,10 +608,6 @@ def parse_arguments(
 
     if len(lines) == 4:
         return
-        # lines.clear()
-        # lines.append("")
-        # lines.append(indent("def set_arguments(self):", 1))
-        # lines.append(indent("self.arguments = []", 2))
 
     # Add newlines to each string
     lines = [line + "\n" for line in lines]
@@ -603,16 +625,6 @@ def parse_tool_requirements(
     if not hasattr(cwl, "requirements") or cwl.requirements is None or len(cwl.requirements) == 0:
         return
     
-    def quote(value: Any) -> str:
-        """ 
-        Encase strings and string expressions in quotes and cast other types
-        to string.
-        """
-        if isinstance(value, str):
-            return f'"{value}"'
-        else:
-            return str(value)
-
     lines: list[str] = [""]
     lines.append(indent("def set_requirements(self):", 1))
     lines.append(indent("self.requirements = {", 2))
@@ -702,10 +714,6 @@ def parse_tool_requirements(
 
     if len(lines) == 4:
         return
-        # lines.clear()
-        # lines.append("")
-        # lines.append(indent("def set_requirements(self):", 1))
-        # lines.append(indent("self.requirements = {}", 2))
 
     # Add newlines to each string
     lines = [line + "\n" for line in lines]
@@ -728,9 +736,6 @@ def parse_io(
         lines.append(indent(f'"stdin": "{normalize(cwl.stdin)}",', 3))
     if hasattr(cwl, "stdout") and cwl.stdout is not None:
         lines.append(indent(f'"stdout": "{normalize(cwl.stdout)}",', 3))
-    # else:
-        # for output in cwl.outputs.values():
-            # if output.
     if hasattr(cwl, "stderr") and cwl.stderr is not None:
         lines.append(indent(f'"stderr": "{normalize(cwl.stderr)}",', 3))
     if hasattr(cwl, "successCodes") and cwl.successCodes is not None:
@@ -745,10 +750,6 @@ def parse_io(
         # Special case: no stdin, stdout, stderr, successCodes, 
         # temporaryFailCodes, permanentFailCodes
         return
-        # lines.clear()
-        # lines.append("")
-        # lines.append(indent("def set_io(self):", 1))
-        # lines.append(indent("self.io = {}", 2))
 
     # Add newlines to each string
     lines = [line + "\n" for line in lines]
@@ -820,7 +821,7 @@ def parse_steps(
                         print("\t[INFO] Step input with multiple sources not yet supported")
 
             if hasattr(i, "default") and i.default is not None:
-                lines.append(indent(f'"default": "{i.default}",', 6))
+                lines.append(indent(f'"default": {quote(i.default)},', 6))
             if hasattr(i, "valueFrom") and i.valueFrom is not None:
                 lines.append(indent(f'"valueFrom": "{i.valueFrom}"', 6))
             lines.append(indent('},', 5))
@@ -839,20 +840,33 @@ def parse_steps(
                 lines.append(indent(f'"scatter": [', 4))
                 for scatter in scatters:
                     scatter = scatter.split("/")[-1]
-                    lines.append(indent(f'- "{scatter}",', 5))
+                    lines.append(indent(f'"{scatter}",', 5))
                 lines.append(indent(f'],', 4))
         
         # scatterMethod
         if hasattr(step, "scatterMethod") and step.scatterMethod is not None:
-            lines.append(indent(f'"scatterMethod": {step.scatterMethod}', 4))
+            lines.append(indent(f'"scatterMethod": "{step.scatterMethod}",', 4))
 
         # out
-        if len(step.out) == 1:
-            lines.append(indent(f'"out": ["{step.out[0].id.split("/")[-1]}"],', 4))
+        out = [step.out] if isinstance(out, str) else step.out
+        if len(out) == 1:
+            if isinstance(out[0], str):
+                out_id = out[0]
+            elif isinstance(out[0], WorkflowStepOutput):
+                out_id = out[0].id      # type: ignore
+            else:
+                raise NotImplementedError()
+            lines.append(indent(f'"out": ["{out_id.split("/")[-1]}"],', 4))
         else:
             lines.append(indent(f'"out": [', 4))
-            for out in step.out:
-                lines.append(indent(f'"{out.id.split("/")[-1]}",', 5))
+            for o in step.out:
+                if isinstance(o, str):
+                    o_id = o
+                elif isinstance(o, WorkflowStepOutput):
+                    o_id = o.id      # type: ignore
+                else:
+                    raise NotImplementedError()
+                lines.append(indent(f'"{o_id.split("/")[-1]}",', 5))
             lines.append(indent('],', 4))
             
         # run
@@ -882,11 +896,109 @@ def parse_workflow_requirements(
     """
     
     """
+    # No requirements to parse
+    if not hasattr(cwl, "requirements") or cwl.requirements is None or len(cwl.requirements) == 0:
+        return
+    
     lines: list[str] = [""]
+    lines.append(indent("def set_requirements(self):", 1))
+    lines.append(indent("self.requirements = {", 2))
 
-    # TODO: implement workflow requirements parsing
+    for req in cwl.requirements:
+        match req.class_:
+            case "InlineJavascriptRequirement":
+                # This requirement is parsed when it adds context to the JS
+                # execution context.
+                if (hasattr(req, "expressionLib") and
+                    isinstance(req.expressionLib, List)):
+                    # Multiline entry scripts are put into lists of lines to
+                    # keep it simple.
+                    lines.append(indent('"InlineJavascriptRequirement": [', 3))
+                    concat: str = ""
+                    for expr in req.expressionLib:
+                        if concat == "":
+                            concat = expr
+                        else:
+                            concat += expr
+                    js_lines = multiline_to_list(concat)
+                    lines.extend([indent(f'"{l}",', 4) for l in js_lines])
+                    lines.append(indent("],", 3))
+            case "DockerRequirement":
+                # TODO
+                print("\t[INFO] DockerRequirement not yet supported")
+            case "InitialWorkDirRequirement":
+                if isinstance(req.listing, str):
+                    # Listing is an expression
+                    expr = normalize(req.listing)
+                    lines.append(indent(f'"InitialWorkDirRequirement": "{expr}",', 3))
+                else: 
+                    lines.append(indent('"InitialWorkDirRequirement": [', 3))
+                    for e in req.listing:
+                        if isinstance(e, str):
+                            # Listing is an expression
+                            expr = normalize(e)
+                            lines.append(indent(f'"{expr}",', 4))
+                        elif isinstance(e, Dirent):
+                            lines.append(indent('{', 4))
+                            if hasattr(e, "entryname") and e.entryname is not None:
+                                lines.append(indent(f'"entryname": "{e.entryname}",', 5))
+                            if hasattr(e, "entry") and e.entry is not None:
+                                # Multiline entry scripts are put into lists of
+                                # lines to keep it simple.
+                                entry_lines = multiline_to_list(e.entry)
+                                if len(entry_lines) > 1:
+                                    lines.append(indent('"entry": [', 5))
+                                    lines.extend([indent(f'"{l}",', 6) for l in entry_lines])
+                                    lines.append(indent('],', 5))
+                                elif len(entry_lines) == 1:
+                                    lines.append(indent(f'"entry": "{entry_lines[0]}",', 5))
+                            if hasattr(e, "writable") and e.writable is not None:
+                                lines.append(indent(f'"writable": "{e.writable}",', 5))
+                            lines.append(indent('},', 4))
+                        elif isinstance(e, NoneType):
+                            pass
+                        else:
+                            raise NotImplementedError(f"Encountered unsupported type {type(e)}")
+                    lines.append(indent("],", 3))
+            case "EnvVarRequirement":
+                lines.append(indent('"EnvVarRequirement": {', 3))
+                for var in req.envDef:
+                    lines.append(indent(f'"{var.envName}": "{var.envValue}",', 4))
+                lines.append(indent("},", 3))
+            case "InplaceUpdateRequirement":
+                lines.append(indent(f'"InplaceUpdateRequirement": {req.inplaceUpdate},', 3))
+            case "ResourceRequirement":
+                lines.append(indent('"ResourceRequirement": {', 3))
+                if hasattr(req, "coresMax") and req.coresMax is not None:
+                    lines.append(indent(f'"coresMax": {quote(req.coresMax)},', 4))
+                if hasattr(req, "coresMin") and req.coresMin is not None:
+                    lines.append(indent(f'"coresMin": {quote(req.coresMin)},', 4))
+                if hasattr(req, "ramMin") and req.ramMin is not None:
+                    lines.append(indent(f'"ramMin": {quote(req.ramMin)},', 4))
+                if hasattr(req, "ramMax") and req.ramMax is not None:
+                    lines.append(indent(f'"ramMax": {quote(req.ramMax)},', 4))
+                if hasattr(req, "tmpdirMin") and req.tmpdirMin is not None:
+                    lines.append(indent(f'"tmpdirMin": {quote(req.tmpdirMin)},', 4))
+                if hasattr(req, "outdirMin") and req.tmpdirMax is not None:
+                    lines.append(indent(f'"outdirMin": {quote(req.outdirMin)},', 4))
+                lines.append(indent("},", 3))
+            case "StepInputExpressionRequirement":
+                pass
+            case "MultipleInputFeatureRequirement":
+                pass
+            case "SubworkflowFeatureRequirement":
+                pass
+            case "ScatterFeatureRequirement":
+                pass
+            case _:
+                raise NotImplementedError(f"Found unsupported requirement {req.class_}")
 
-    # Add newlines to each string and write to file
+    lines.append(indent("}", 2))
+
+    if len(lines) == 4:
+        return
+
+    # Add newlines to each string
     lines = [line + "\n" for line in lines]
     out_file.writelines(lines)
 
@@ -928,16 +1040,16 @@ def parse_cwl(
         parse_metadata(cwl, f)
         parse_inputs(cwl, f)
         parse_outputs(cwl, f)
-        # if "CommandLineTool" in cwl.class_:
+
         if isinstance(cwl, CommandLineTool):
             parse_base_command(cwl, f)
             parse_arguments(cwl, f)
             parse_tool_requirements(cwl, f)
             parse_io(cwl, f)
-        # elif "Workflow" in cwl.class_:
         elif isinstance(cwl, Workflow):
             parse_steps(cwl, f)
             parse_workflow_requirements(cwl, f)
+
         parse_suffix(class_name, f)
 
 
@@ -948,23 +1060,6 @@ def transpile_file(
     """
     Transpile a single CWL file to a PWF file.
     """
-    # Create path for the CWL input file
-    # if isinstance(cwl_file_path, str):
-    # cwl_file_path: Path = Path(cwl_file_path_string)
-    # elif not isinstance(cwl_file_path, Path):
-        # raise TypeError(f"Expected 'str' or 'Path', but got {type(cwl_file_path)}")
-    
-    # Get path for the PWF output file
-    # if output_file_path is not None:
-    #     # if isinstance(output_file_path, str):
-    #     output_file_path = Path(output_file_path_string)
-    #     # elif not isinstance(output_file_path, Path):
-    #         # raise TypeError(f"Expected 'str' or 'Path', but got {type(output_file_path)}")
-    # else:
-    #     # Use cwl_file_path basename for the output file
-    #     basename = str(cwl_file_path.stem)
-    #     output_file_path = Path(basename + ".py")
-
     cwl_dict = load_document_by_uri(cwl_file_path)
     parse_cwl(cwl_dict, output_file_path)
 
