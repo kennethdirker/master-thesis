@@ -5,4 +5,4 @@ python src/transpiler.py -i ./example/cwl_simple_workflow/workflows/*.cwl -d ./e
 # Features
 # python src/transpiler.py -i ./example/features/tools/*.cwl ./example/features/workflows/*.cwl -s
 python src/transpiler.py -i ./example/features/tools/*.cwl -s
-# python src/transpiler.py -i ./example/features/workflows/*.cwl -s
+python src/transpiler.py -i ./example/features/workflows/*.cwl -s
