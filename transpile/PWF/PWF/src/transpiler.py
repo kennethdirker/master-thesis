@@ -848,7 +848,7 @@ def parse_steps(
             lines.append(indent(f'"scatterMethod": "{step.scatterMethod}",', 4))
 
         # out
-        out = [step.out] if isinstance(out, str) else step.out
+        out = [step.out] if isinstance(step.out, str) else step.out
         if len(out) == 1:
             if isinstance(out[0], str):
                 out_id = out[0]
