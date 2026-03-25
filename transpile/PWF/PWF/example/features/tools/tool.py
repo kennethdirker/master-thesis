@@ -12,14 +12,14 @@ class tool_PWF(BaseCommandLineTool):
 				"bound": True,
 				"position": 0,
 				"prefix": "numthreads=",
-				"separate": "False",
+				"separate": False,
 			},
 			"msin": {
 				"type": "directory",
 				"bound": True,
 				"position": 0,
 				"prefix": "msin=",
-				"separate": "False",
+				"separate": False,
 				"doc": "Input Measurement Set",
 			},
 			"msin_datacolumn": {
@@ -28,7 +28,7 @@ class tool_PWF(BaseCommandLineTool):
 				"bound": True,
 				"position": 0,
 				"prefix": "msin.datacolumn=",
-				"separate": "False",
+				"separate": False,
 				"doc": "Input data Column",
 			},
 			"msout_datacolumn": {
@@ -36,7 +36,7 @@ class tool_PWF(BaseCommandLineTool):
 				"bound": True,
 				"position": 0,
 				"prefix": "msout.datacolumn=",
-				"separate": "False",
+				"separate": False,
 				"doc": "Output data column",
 			},
 			"type": {
@@ -45,7 +45,7 @@ class tool_PWF(BaseCommandLineTool):
 				"bound": True,
 				"position": 0,
 				"prefix": "applybeam.type=",
-				"separate": "False",
+				"separate": False,
 				"doc": \
 					"Type of correction to perform.  When using H5Parm, this" \
 					"is for now the name of the soltab; the type will be" \
@@ -63,31 +63,31 @@ class tool_PWF(BaseCommandLineTool):
 				"type": ["int", "null"],
 				"bound": True,
 				"prefix": "msout.storagemanager.databitrate=",
-				"separate": "False",
+				"separate": False,
 			},
 			"updateweights": {
 				"type": ["boolean", "null"],
 				"bound": True,
 				"position": 0,
 				"prefix": "applybeam.updateweights=True",
-				"separate": "False",
+				"separate": False,
 			},
 			"usechannelfreq": {
 				"type": ["boolean", "null"],
-				"default": "True",
+				"default": True,
 				"bound": True,
 				"position": 0,
 				"prefix": "applybeam.usechannelfreq=False",
-				"separate": "False",
+				"separate": False,
 				"valueFrom": "$(!self)",
 			},
 			"invert": {
 				"type": ["boolean", "null"],
-				"default": "True",
+				"default": True,
 				"bound": True,
 				"position": 0,
 				"prefix": "applybeam.invert=False",
-				"separate": "False",
+				"separate": False,
 				"valueFrom": "$(!self)",
 			},
 			"beammode": {
@@ -95,7 +95,7 @@ class tool_PWF(BaseCommandLineTool):
 				"bound": True,
 				"position": 0,
 				"prefix": "applybeam.beammode=",
-				"separate": "False",
+				"separate": False,
 			},
 		}
 

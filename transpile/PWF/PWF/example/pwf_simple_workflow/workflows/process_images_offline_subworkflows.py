@@ -92,6 +92,5 @@ class process_images_offline_subworkflows_PWF(BaseWorkflow):
 			},
 		}
 
-
 if __name__ == "__main__":
 	process_images_offline_subworkflows_PWF()

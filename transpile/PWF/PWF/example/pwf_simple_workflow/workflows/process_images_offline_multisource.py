@@ -108,6 +108,5 @@ class process_images_offline_multisource_PWF(BaseWorkflow):
 			},
 		}
 
-
 if __name__ == "__main__":
 	process_images_offline_multisource_PWF()

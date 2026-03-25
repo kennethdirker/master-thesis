@@ -70,6 +70,5 @@ class process_images_offline_scatter_PWF(BaseWorkflow):
 			},
 		}
 
-
 if __name__ == "__main__":
 	process_images_offline_scatter_PWF()

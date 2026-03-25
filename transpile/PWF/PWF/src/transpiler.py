@@ -288,12 +288,12 @@ def parse_inputs(
                 lines.append(indent(f'"default": {quote(input.default)},', 4))
 
             # secondaryFiles
-            if hasattr(input, "secondaryFiles"):
+            if hasattr(input, "secondaryFiles") and input.secondaryFiles is not None:
                 print("\t[INFO] inputs.secondaryFiles not yet supported")
                 # TODO
 
             # Streamable
-            if hasattr(input, "streamable"):
+            if hasattr(input, "streamable") and input.streamable is not None:
                 print("\t[INFO] inputs.streamable not yet supported")
                 # TODO
 
