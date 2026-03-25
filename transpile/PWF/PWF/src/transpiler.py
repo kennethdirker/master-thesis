@@ -316,7 +316,7 @@ def parse_inputs(
 
                 # separate
                 if hasattr(b, "separate") and b.separate is not None:
-                    lines.append(indent(f'"separate": "{b.separate}",', 4))
+                    lines.append(indent(f'"separate": {b.separate},', 4))
 
                 # itemSeparator
                 if hasattr(b, "itemSeparator") and b.itemSeparator is not None:
