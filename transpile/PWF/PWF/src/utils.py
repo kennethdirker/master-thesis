@@ -7,6 +7,8 @@ from types import NoneType
 from pathlib import Path
 from copy import deepcopy
 
+from cwl_utils.parser.cwl_v1_2 import File as CWLFile
+
 class Absent:
     """ 
     Used to indictate the absence of a runtime input. Useful when None is a
@@ -87,21 +89,33 @@ class FileObject:
         dirname  : path/to,
         nameroot : file,
         nameext  : .ext
+
+    TODO contents/size
     """
-    
+    attrs = [
+        "path", "basename", "dirname", "nameroot", "nameext", "contents", "size"
+    ]
+
     path: str
     basename: str
     dirname: str
     nameroot: str
     nameext: str
-    contents: str
+    contents: bytes
     size: int
     # writable: bool = True
     # MAX_SIZE: int = 64000
     
-    def __init__(self, file_path: str | Path | FileObject):
+    def __init__(self, file_path: str | Path | FileObject | CWLFile | Mapping):
+        # TODO Deduct basic attributes from path when loading from File?
+        def load(o: Any, attr: str):
+            if hasattr(o, attr) and getattr(o, attr) is not None:
+                setattr(self, attr, getattr(o, attr))
+
+
         if isinstance(file_path, str):
             file_path = Path(file_path)
+        
         if isinstance(file_path, Path):
             # path: Path = file_path.resolve() < BUG dont use
             # pathlib.Path.resolve resolves symlinks, which is unwanted
@@ -114,17 +128,21 @@ class FileObject:
             self.dirname = str(path.parent)
             self.nameroot = path.stem
             self.nameext = path.suffix
-        elif isinstance(file_path, FileObject):
-            self.path = file_path.path
-            self.basename = file_path.basename
-            self.dirname = file_path.dirname
-            self.nameroot = file_path.nameroot
-            self.nameext = file_path.nameext
-            self.contents = file_path.contents
-            self.size = file_path.size
-
+        elif isinstance(file_path, FileObject | CWLFile):
+            # TODO Deduct basic attributes from path when loading from File?
+            load(file_path, "path")
+            load(file_path, "basename")
+            load(file_path, "dirname")
+            load(file_path, "nameroot")
+            load(file_path, "nameext")
+            load(file_path, "contents")
+            load(file_path, "size")
+        elif isinstance(file_path, Mapping):
+            for k, v in file_path.items():
+                if k in self.attrs:
+                    setattr(self, k, v)
         else:
-            raise Exception(f"FileObject expects 'str' | 'Path' | 'FileObject', but found '{type(file_path)}'")
+            raise Exception(f"FileObject expects 'str' | 'Path' | 'FileObject | cwl_utils.parser.cwl_v1_2.File', but found '{type(file_path)}'")
 
     def resolve(self) -> FileObject:
         return FileObject(Path(self.path).resolve())
@@ -136,12 +154,22 @@ class FileObject:
         with open(self.path, "w") as f:
             if contents:
                 f.write(contents)
+            elif hasattr(self, "contents"):
+                f.write(self.contents.decode())
 
     def __str__(self) -> str:
         return self.path
     
+    def to_dict(self) -> dict:
+        return {k: getattr(self, k) 
+                for k in self.attrs 
+                if hasattr(self, k) and getattr(self, k) is not None}
+    
     def __repr__(self) -> str:
-        return f"FileObject('{self.path}')"
+        pairs = [f'"{k}":"{getattr(self, k)}"' 
+                 for k in self.attrs 
+                 if hasattr(self, k) and getattr(self, k) is not None]
+        return f"FileObject({', '.join(pairs)})"
     
 class DirectoryObject:
     """
