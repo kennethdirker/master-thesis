@@ -6,6 +6,7 @@ from pathlib import Path
 from types import NoneType
 from typing import (
     Any,
+    Dict,
     List,
     Mapping,
     TextIO,
@@ -22,6 +23,7 @@ from cwl_utils.parser.cwl_v1_2 import (
     OutputArraySchema,
     WorkflowStepOutput,
 )
+from cwl_utils.parser.cwl_v1_2 import File as CWLFile
 
 # Import CWL Process types
 from cwl_utils.parser import (
@@ -31,6 +33,7 @@ from cwl_utils.parser import (
     ExpressionTool
 )
 
+# from PWF.src.utils import FileObject
 
     
 def quote(value: Any) -> str:
@@ -151,6 +154,25 @@ def multiline_to_list(string: str, normalize_js_expr: bool = True):
     if normalize_js_expr:
         lines = [normalize(l) for l in lines]
     return lines
+
+def CWLFile_to_dict(f: CWLFile) -> Dict[str, Any]:
+    # NOTE Does not support http(s):// IRI schemas
+    def load(d: dict, o: Any, attr: str):
+        if hasattr(o, attr) and getattr(o, attr) is not None:
+            d[attr] = getattr(o, attr)
+
+    d: Dict[str, Any] = {}
+    load(d, f, "path")
+    load(d, f, "basename")
+    load(d, f, "dirname")
+    load(d, f, "nameroot")
+    load(d, f, "nameext")
+    load(d, f, "contents")
+    load(d, f, "size")
+    if "path" in d:
+        s: str = d["path"]
+        d["path"] = s.removeprefix("file://")
+    return d
 
 
 def parse_prefix(
@@ -285,7 +307,16 @@ def parse_inputs(
 
             # Default
             if hasattr(input, "default") and input.default is not None:
-                lines.append(indent(f'"default": {quote(input.default)},', 4))
+                default = input.default
+                if isinstance(default, CWLFile):
+                    default =  CWLFile_to_dict(default)
+                    lines.append(indent('"default": {', 4))
+                    lines.extend([indent(f'"{k}": {quote(v)},', 5) 
+                                  for k, v in default.items()])
+                    lines.append(indent("}", 4))
+
+                else:
+                    lines.append(indent(f'"default": {quote(default)},', 4))
 
             # secondaryFiles
             if hasattr(input, "secondaryFiles") and input.secondaryFiles is not None:
@@ -707,6 +738,8 @@ def parse_tool_requirements(
                 if hasattr(req, "outdirMin") and req.tmpdirMax is not None:
                     lines.append(indent(f'"outdirMin": {quote(req.outdirMin)},', 4))
                 lines.append(indent("},", 3))
+            case "ShellCommandRequirement":
+                pass
             case _:
                 raise NotImplementedError(f"Found unsupported requirement {req.class_}")
 
@@ -821,7 +854,17 @@ def parse_steps(
                         print("\t[INFO] Step input with multiple sources not yet supported")
 
             if hasattr(i, "default") and i.default is not None:
-                lines.append(indent(f'"default": {quote(i.default)},', 6))
+                # lines.append(indent(f'"default": {quote(i.default)},', 6))
+                if hasattr(i, "default") and i.default is not None:
+                    default = i.default
+                    if isinstance(default, CWLFile):
+                        default =  CWLFile_to_dict(default)
+                        lines.append(indent('"default": {', 6))
+                        lines.extend([indent(f'"{k}": {quote(v)},', 7) 
+                                    for k, v in default.items()])
+                        lines.append(indent("}", 6))
+                    else:
+                        lines.append(indent(f'"default": {quote(default)},', 6))
             if hasattr(i, "valueFrom") and i.valueFrom is not None:
                 lines.append(indent(f'"valueFrom": "{i.valueFrom}"', 6))
             lines.append(indent('},', 5))
@@ -866,6 +909,8 @@ def parse_steps(
                     o_id = o.id      # type: ignore
                 else:
                     raise NotImplementedError()
+                if o_id is None: 
+                    raise Exception()
                 lines.append(indent(f'"{o_id.split("/")[-1]}",', 5))
             lines.append(indent('],', 4))
             
@@ -1157,7 +1202,7 @@ def main():
         output_paths = args.output
     elif args.directory:
         # Output directory given, generate output paths for each input.
-        # If no other method was specified, this is the default.
+        # If no other method was specified, this is the e.
         output_dir = Path(args.directory)
         output_dir.mkdir(parents=True, exist_ok=True)
         for input_path in input_paths:
