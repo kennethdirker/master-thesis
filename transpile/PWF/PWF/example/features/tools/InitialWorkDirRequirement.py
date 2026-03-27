@@ -10,6 +10,12 @@ class InitialWorkDirRequirement_PWF(BaseCommandLineTool):
 			"message": {
 				"type": "string",
 			},
+			"stage": {
+				"type": "file",
+				"default": {
+					"path": "/home/kennethdirker/Leiden/2024-2025/Thesis/transpile/PWF/PWF/example/features/tools/InitialWorkDirRequirement.yaml",
+				}
+			},
 		}
 
 	def set_outputs(self):
@@ -19,6 +25,9 @@ class InitialWorkDirRequirement_PWF(BaseCommandLineTool):
 		self.base_command = [
 			"sh",
 			"example.sh",
+			";",
+			"cat",
+			"InitialWorkDirRequirement.yaml",
 		]
 
 	def set_requirements(self):
@@ -31,6 +40,9 @@ class InitialWorkDirRequirement_PWF(BaseCommandLineTool):
 						"$('MSG=\"${PREFIX} ' + inputs.message + '\"')",
 						"echo ${MSG}",
 					],
+				},
+				{
+					"entry": "$(inputs.stage)",
 				},
 			],
 		}
