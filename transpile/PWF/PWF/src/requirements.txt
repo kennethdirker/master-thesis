@@ -1,0 +1,5 @@
+cwl_utils==0.35
+dask==2025.4.0
+Js2Py==0.74
+numpy==2.4.3
+PyYAML==6.0.3
