@@ -17,7 +17,9 @@ from typing import (
     cast,
     Dict,
     List,
+    Mapping,
     Optional,
+    Sequence,
     Tuple,
     Type,
     Union,
@@ -89,7 +91,7 @@ class BaseCommandLineTool(BaseProcess):
         if main:
             yaml_uri = self.loading_context["input_object"]
             runtime_context = self.load_input_object(yaml_uri)
-            self.register_input_sources()
+            self.register_input_sources(runtime_context)
             outputs = self.execute(self.loading_context["use_dask"],
                                    runtime_context)
             self.finalize(outputs)
@@ -180,17 +182,33 @@ class BaseCommandLineTool(BaseProcess):
                         include = chunk.strip().removeprefix("$include").strip()
                         js_req[i] = self.inline_include(include)
 
-    def register_input_sources(self) -> None:
+    def register_input_sources(
+            self, 
+            runtime_context: Dict[str, Any]
+        ) -> None:
         """
         TODO Explain why this is needed.
-        Link local process input IDs to global input IDs.
+        Link local process input IDs to global input IDs. If the input object
+        did not provide an input value the input parameter is checked for a
+        default value to use.
         NOTE: Only executed if CommandLineTool is called as main.
         """
         if not self.is_main:
             raise Exception("register_input_sources should be called from main process")
         
-        for input_id in self.inputs:
-            self.input_to_source[input_id] = self.global_id(input_id)
+        for input_id, input_dict in self.inputs.items():
+            source = self.global_id(input_id)
+            self.input_to_source[input_id] = source
+            if source not in runtime_context:
+                if "default" in input_dict:
+                    default = input_dict["default"]
+                    value = self.resolve_input_object_value(input_id, default)
+                elif "valueFrom" in input_dict:
+                    value = Absent("Value comes from valueFrom and is not yet filled in")
+                else:
+                    value = Absent("No value registered in register_input_sources()")
+                runtime_context[source] = value
+                
 
 
     def stage_initial_work_dir_requirement(
@@ -198,96 +216,116 @@ class BaseCommandLineTool(BaseProcess):
             tmp_path: Path,
             cwl_namespace: Dict[str, Any]
         ) -> None:
-        # Stage files from InitialWorkDirRequirement
+        """
+        Stage files from InitialWorkDirRequirement into the temporary working
+        directory.
+        """
         if not "InitialWorkDirRequirement" in self.requirements:
             return
         
-        requirement = self.requirements["InitialWorkDirRequirement"]
-        # Normalize if expression
-        if isinstance(requirement, str):
-            requirement = [requirement]
+        FILE_DIR = FileObject | DirectoryObject
+        listing = self.requirements["InitialWorkDirRequirement"].copy()
+        if not isinstance(listing, str | List):
+            raise Exception(f"Expected 'str' or 'list', but found '{type(listing)}'")
         
-        for listing in requirement:
-            if isinstance(listing, str):
-                # Listing is expression
-                ret = self.eval(listing, cwl_namespace)
+        # If listing is an expression, evaluate it
+        if isinstance(listing, str):
+            expr = listing
+            listing = self.eval(expr, cwl_namespace)
+            if not isinstance(listing, List):
+                raise Exception(f"Expression '{expr}' did not evaluate to a list")
+
+        # Replace expressions in listing with their evaluations
+        for i, l in enumerate(listing.copy()):
+            if isinstance(l, str):
+                expr = l
+                listing[i] = self.eval(expr, cwl_namespace)
+
+        # Flatten listing and consume dirents
+        for i, l in enumerate(reversed(listing.copy())):
+            i = len(l) - 1 - i
+            if isinstance(l, List):
+                # Flatten
+                listing.extend(listing.pop(i))
+            elif isinstance(l, Mapping) and "entry" in l:
+                # Dirent
+                listing.pop(i)
+                contents: str
+                entry = l["entry"]
+                entryname = None
+                if "entryname" in l:
+                    expr = l["entryname"]
+                    entryname = self.eval(expr, cwl_namespace)
+                    if not isinstance(entryname, str):
+                        raise Exception(f"Expression '{expr}' did not evaluate to a str")
                 
-                # Normalize
-                if not isinstance(ret, List):
-                    ret = [ret]
-                if isinstance(ret, NoneType) or len(ret) == 0: 
+                if isinstance(entry, str):
+                    entry = self.eval(l["entry"], cwl_namespace)
+                
+                # 'null' doesnt add to the environment
+                if isinstance(entry, NoneType):
                     continue
-                
-                # Copy Files to working directory
-                for x in ret:
-                    if isinstance(x, str):
-                        # NOTE Path?
-                        path = Path(x)
-                    elif isinstance(x, (FileObject, DirectoryObject)):
-                        path = Path(x.path)
-                    else:
-                        raise NotImplementedError(x, type(x))
-                    
-                    if path.is_file():
-                        shutil.copy(path, tmp_path)
-                    elif path.is_dir():
-                        shutil.copytree(path, tmp_path)
+            
+                # If the entry expression evaluated to files or directories,
+                # add them to the listing for later processing.            
+                if  ((isinstance(entry, Sequence) and len(entry) > 0) and
+                    ((isinstance(entry[0], Mapping) and "class" in entry[0] and 
+                      entry[0]["class"] in ("file", "directory")) or
+                      isinstance(entry[0], FILE_DIR))):  
+                    # List of files and directories
+                    listing.extend(entry)
+                    continue
+                elif ((isinstance(entry, Mapping) and "class" in entry
+                       and entry["class"] in ("file", "directory")
+                      ) or isinstance(entry, FILE_DIR)):
+                    # Single file or directory
+                    listing.append(entry)
+                    continue
 
-            elif isinstance(listing, dict):
-                if "entry" in listing:
-                    # Dirent
-                    # Evaluate 'entry' field
-                    entry = listing["entry"]
-                    contents: str | None = None
-                    is_file: bool = False
-                    is_dir: bool = False
-                    if isinstance(entry, NoneType): continue
-                    if isinstance(entry, str): 
-                        ret = self.eval(line, cwl_namespace)
-                        if isinstance(ret, str):
-                            is_file = True
-                            contents = ret
-                        elif isinstance(ret, FileObject):
-                            is_file = True
-                            raise NotImplementedError()
-                        elif isinstance(ret, DirectoryObject):
-                            is_dir = True
-                            raise NotImplementedError()
-                        else:
-                            is_file = True
-                            contents = json.dumps(ret, indent = 4)
-                    elif isinstance(entry, List):
-                        # Multiline, each needs evaluation and then form file.contents together
-                        is_file = True
-                        eval_lines = []
-                        for line in entry:
-                            eval_lines.append(self.eval(line, cwl_namespace))
-                        contents = "\n".join(eval_lines)
-                    else:
-                        raise Exception(entry, type(entry))
-
-                    # Evaluate "entryname" field
-                    if "entryname" in listing:
-                        entryname = self.eval(listing["entryname"], cwl_namespace)
-                        if isinstance(entryname, str):
-                            # TODO
-                            # Must be relative path within tmp CWD
-                            entry_path = tmp_path / Path(entryname)
-                            entry_path = entry_path.resolve()
-                            if not entry_path.is_relative_to(tmp_path):
-                                raise Exception("Must create file/directory within working folder")
-                    
-                    # Create files/directories
-                    if is_file:
-                        FileObject(entry_path).create(contents)
-                    elif is_dir:
-                        DirectoryObject(entry_path).create()
-                    else:
-                        raise Exception("Listing is neither a file or a directory")
+                # File literal. Collect file contents and create the file.
+                elif (isinstance(entry, Sequence) and len(entry) > 0
+                      and isinstance(entry[0], str)):
+                    eval_lines = [self.eval(line, cwl_namespace) for line in entry]
+                    contents = "\n".join(eval_lines)
+                elif isinstance(entry, str):
+                    contents = entry
                 else:
-                    raise NotImplementedError(listing)
+                    contents = json.dumps(entry, indent = 4)
+                if entryname is None:
+                    raise Exception("Dirent with file literal must have an entryname")
+                
+                # Path must be a relative path within tmp CWD
+                entry_path = tmp_path / Path(entryname)
+                entry_path = entry_path.resolve()
+                if not entry_path.is_relative_to(tmp_path):
+                    raise Exception("Must create file/directory within working folder")
+                FileObject(entry_path).create(contents)
+
+        # Convert file/directory from map-form to object-form.
+        # Process dirent maps.
+        for i, l in enumerate(reversed(listing.copy())):
+            if not isinstance(l, Mapping):
+                continue
+
+            i = len(l) - 1 - i
+            if "class" in l:
+                if "file" in l["class"]:
+                    # TODO Comlete FileObject path attribute autocomplete?
+                    listing[i] = FileObject(l)
+                elif "directory" in l["class"]:
+                    # TODO DirectoryObject.listing?
+                    listing[i] = DirectoryObject(l)
+        
+        # Stage all remaining files and directories
+        for obj in listing:
+            if isinstance(obj, NoneType):
+                continue
+            elif isinstance(obj, FileObject):
+                obj.create()
+            elif isinstance(obj, DirectoryObject):
+                raise NotImplementedError()
             else:
-                raise NotImplementedError(listing)
+                raise Exception(f"Expected 'FileObject' or 'DirectoryObject', but found '{type(obj)}'")
 
 
     def stage_input_files(
@@ -842,6 +880,7 @@ class BaseCommandLineTool(BaseProcess):
                 stderr = stderr,
                 env = env,
                 cwd = cwd,
+                # shell=True
             )
         except Exception as e:
             raise e

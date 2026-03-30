@@ -96,6 +96,7 @@ class FileObject:
         "path", "basename", "dirname", "nameroot", "nameext", "contents", "size"
     ]
 
+    location: str
     path: str
     basename: str
     dirname: str
@@ -103,7 +104,7 @@ class FileObject:
     nameext: str
     contents: bytes
     size: int
-    # writable: bool = True
+    writable: bool
     # MAX_SIZE: int = 64000
     
     def __init__(self, file_path: str | Path | FileObject | CWLFile | Mapping):
@@ -154,6 +155,8 @@ class FileObject:
         with open(self.path, "w") as f:
             if contents:
                 f.write(contents)
+                # if loadContents:  # TODO Needed?
+                #     self.contents = contents.encode()
             elif hasattr(self, "contents"):
                 f.write(self.contents.decode())
 
@@ -171,6 +174,7 @@ class FileObject:
                  if hasattr(self, k) and getattr(self, k) is not None]
         return f"FileObject({', '.join(pairs)})"
     
+    
 class DirectoryObject:
     """
     Object that stores path properties as strings.
@@ -180,12 +184,14 @@ class DirectoryObject:
         basename : file.ext,
         listing  : [sub-file?, sub-directory?]
     """
+    # TODO handle listings?
     location: str   # TODO
     path: str
     basename: str
     listing: List[Union[FileObject, DirectoryObject]]
+    attrs = ["location", "path", "basename", "listing"]
     
-    def __init__(self, dir_path: str | Path | DirectoryObject):
+    def __init__(self, dir_path: str | Path | DirectoryObject | Mapping):
         if isinstance(dir_path, str):
             dir_path = Path(dir_path)
         if isinstance(dir_path, Path):
@@ -209,7 +215,11 @@ class DirectoryObject:
             self.path = dir_path.path
             self.basename = dir_path.basename
             self.listing = deepcopy(dir_path.listing)
-            # self.location = dir_path.location    # TODO
+            self.location = dir_path.location
+        elif isinstance(dir_path, Mapping):
+            for k, v in dir_path.items():
+                if k in self.attrs:
+                    setattr(self, k, v)
         else:
             raise Exception(f"DirectoryObject expects 'str' | 'Path' | 'DirectoryObject', but found '{type(dir_path)}'")
 

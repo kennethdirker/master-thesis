@@ -323,54 +323,51 @@ class BaseProcess(ABC):
                     raise Exception(f"Input '{input_id}' did not match the input schema")
             
                 if "file" in matched_types:
-                    return Value([FileObject(p) for p in input_value], FileObject, "file")
+                    return Value([FileObject(p) for p in input_value],
+                                 FileObject, "file")
                 if "directory" in matched_types:
-                    return Value([DirectoryObject(p) for p in input_value], DirectoryObject, "directory")
+                    return Value([DirectoryObject(p) for p in input_value],
+                                 DirectoryObject, "directory")
             
             if isinstance(head, Mapping):
+            # TODO TODO TODO other ways to create File (from dict)
             # A mapping either means a potential file/directory, or an
             # unsupported custom data type. Unsupported types result in error.
                 if "class" in head:
                     if "File" in head["class"]:
-                        return Value(
-                            [FileObject(p["path"]) for p in input_value], 
-                            FileObject, 
-                            "file"
-                        )
+                        return Value([FileObject(p["path"]) for p in input_value], 
+                                      FileObject, "file")
                     elif "Directory" in head["class"]:
-                        return Value(
-                            [DirectoryObject(p["path"]) for p in input_value],
-                            DirectoryObject, 
-                            "directory"
-                        )
+                        return Value([DirectoryObject(p["path"]) for p in input_value],
+                                      DirectoryObject, "directory")
                     else:
                         raise Exception(f'Found unsupported class in {input_id}: {input_value[0]["class"]}')
 
-            return Value(
-                input_value, 
-                type(input_value[0]), 
-                PY_CWL_T_MAPPING[type(head)][0] # Mapping isnt 1-to-1, so take first item
-            )
+            # Mapping isnt 1-to-1, so take first item of mapping
+            return Value(input_value, type(input_value[0]), 
+                         PY_CWL_T_MAPPING[type(head)][0])
+        
         elif isinstance(input_value, Mapping):
+            # TODO TODO TODO other ways to create File (from dict)
             # A mapping either means a potential file/directory, or an
             # unsupported custom data type. Unsupported types result in error.
             if "class" in input_value:
                 if "File" in input_value["class"]:
-                    return Value(
-                        FileObject(input_value["path"]), 
-                        FileObject, 
-                        "file"
-                    )
+                    return Value(FileObject(input_value["path"]),
+                                 FileObject, "file")
                 elif "Directory" in input_value["class"]:
-                    return Value(
-                        DirectoryObject(input_value["path"]), 
-                        DirectoryObject, 
-                        "directory"
-                    )
+                    return Value(DirectoryObject(input_value["path"]), 
+                                 DirectoryObject, "directory")
                 else:
                     raise Exception(f'Found unsupported class in {input_id}: {input_value["class"]}')
+            elif "file" in self.inputs[input_id]["type"]:
+                return Value(FileObject(input_value), FileObject, "file")
+            elif "directory" in self.inputs[input_id]["type"]:
+                # return Value(DirectoryObject(input_value), DirectoryObject, "directory")
+                raise NotImplementedError()
             else:
                 raise NotImplementedError()
+            
         else:
             if type(input_value) not in PY_CWL_T_MAPPING:
                 raise Exception(f"Found unsupported Python value type {type(input_value)} for input {input_id}")
@@ -385,23 +382,13 @@ class BaseProcess(ABC):
                 # It is valid in CWL to pass files and directories as a simple
                 # string path, which we need to check for.
                 if "file" in matched_types:
-                    return Value(
-                        FileObject(input_value),
-                        FileObject,
-                        "file"
-                    )
+                    return Value(FileObject(input_value), FileObject, "file")
                 elif "directory" in matched_types:
-                    return Value(
-                        DirectoryObject(input_value),
-                        DirectoryObject,
-                        "directory"
-                    )
+                    return Value(DirectoryObject(input_value),
+                                 DirectoryObject, "directory")
 
-            return Value(
-                input_value,
-                type(input_value),
-                PY_CWL_T_MAPPING[type(input_value)][0]
-            )
+            return Value(input_value, type(input_value),
+                         PY_CWL_T_MAPPING[type(input_value)][0])
 
     
     def load_input_object(self, yaml_uri: str) -> Dict[str, Any]:

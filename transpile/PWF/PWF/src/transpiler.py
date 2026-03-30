@@ -220,10 +220,11 @@ def parse_metadata(
 
     # No metadata to write
     if len(lines) == 4:
+        return
         # Special case
-        lines = [""]
-        lines.append(indent("def set_metadata(self):", 1))
-        lines.append(indent("self.metadata = {}", 2))
+        # lines = [""]
+        # lines.append(indent("def set_metadata(self):", 1))
+        # lines.append(indent("self.metadata = {}", 2))
     
 
     # Add newlines to each string
@@ -713,6 +714,7 @@ def parse_tool_requirements(
                             lines.append(indent('},', 4))
                         elif isinstance(e, NoneType):
                             pass
+                        # elif file/directory? TODO
                         else:
                             raise NotImplementedError(f"Encountered unsupported type {type(e)}")
                     lines.append(indent("],", 3))
