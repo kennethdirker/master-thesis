@@ -2,9 +2,6 @@ from PWF.src.commandlinetool import BaseCommandLineTool
 
 class tool_PWF(BaseCommandLineTool):
 
-	def set_metadata(self):
-		self.metadata = {}
-
 	def set_inputs(self):
 		self.inputs = {
 			"max_dp3_threads": {
