@@ -219,6 +219,7 @@ class BaseCommandLineTool(BaseProcess):
         """
         Stage files from InitialWorkDirRequirement into the temporary working
         directory.
+        BUG Multilayered InitialWorkDirRequirement are not sourced correctly.
         """
         if not "InitialWorkDirRequirement" in self.requirements:
             return
