@@ -741,7 +741,7 @@ def parse_tool_requirements(
                     lines.append(indent(f'"outdirMin": {quote(req.outdirMin)},', 4))
                 lines.append(indent("},", 3))
             case "ShellCommandRequirement":
-                pass
+                lines.append(indent('"ShellCommandRequirement": True,', 3))
             case _:
                 raise NotImplementedError(f"Found unsupported requirement {req.class_}")
 

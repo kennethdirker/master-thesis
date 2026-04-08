@@ -92,8 +92,13 @@ class BaseCommandLineTool(BaseProcess):
             yaml_uri = self.loading_context["input_object"]
             runtime_context = self.load_input_object(yaml_uri)
             self.register_input_sources(runtime_context)
-            outputs = self.execute(self.loading_context["use_dask"],
+            try:
+                outputs = self.execute(self.loading_context["use_dask"],
                                    runtime_context)
+            except:
+                print(f"[ERROR] Tool failed to execute correctly")
+                exit(1)
+
             self.finalize(outputs)
             
 
@@ -217,9 +222,11 @@ class BaseCommandLineTool(BaseProcess):
             cwl_namespace: Dict[str, Any]
         ) -> None:
         """
+        TODO Create soft links to read-only instead of copying.
+        BUG Files are overwritten
+        BUG Multilayered InitialWorkDirRequirement are not sourced correctly.
         Stage files from InitialWorkDirRequirement into the temporary working
         directory.
-        BUG Multilayered InitialWorkDirRequirement are not sourced correctly.
         """
         if not "InitialWorkDirRequirement" in self.requirements:
             return
@@ -244,7 +251,7 @@ class BaseCommandLineTool(BaseProcess):
 
         # Flatten listing and consume dirents
         for i, l in enumerate(reversed(listing.copy())):
-            i = len(l) - 1 - i
+            i = len(listing) - 1 - i
             if isinstance(l, List):
                 # Flatten
                 listing.extend(listing.pop(i))
@@ -308,7 +315,7 @@ class BaseCommandLineTool(BaseProcess):
             if not isinstance(l, Mapping):
                 continue
 
-            i = len(l) - 1 - i
+            i = len(listing) - 1 - i
             if "class" in l:
                 if "file" in l["class"]:
                     # TODO Comlete FileObject path attribute autocomplete?
@@ -322,9 +329,24 @@ class BaseCommandLineTool(BaseProcess):
             if isinstance(obj, NoneType):
                 continue
             elif isinstance(obj, FileObject):
-                obj.create()
+                target = tmp_path / obj.basename
+                if obj.exists():
+                    if obj.writable:
+                        obj.copy(target)
+                    else:
+                        obj.link(target)
+                else:
+                    obj.rebase(target)
+                    obj.create()
             elif isinstance(obj, DirectoryObject):
-                raise NotImplementedError()
+                target = tmp_path / obj.basename
+                if obj.exists():
+                    obj.copy(target)
+                else:
+                    obj.rebase(target)
+                    obj.create()
+                # TODO DirectoryObject.listing?
+                print("[WARNING] DirectoryObject listing attribute is not implemented")
             else:
                 raise Exception(f"Expected 'FileObject' or 'DirectoryObject', but found '{type(obj)}'")
 
@@ -344,7 +366,12 @@ class BaseCommandLineTool(BaseProcess):
             if not any(t in path_likes for t in types):
                 continue
 
-            source = self.input_to_source[input_id]
+            # Objects from the input object are not staged
+            source = self.input_to_source[input_id]            
+            if source.split(":")[-1].find("/") == -1:
+                continue
+
+
             value_wrapper = runtime_context[source]
             if isinstance(value_wrapper, Absent):
                 continue
@@ -687,6 +714,8 @@ class BaseCommandLineTool(BaseProcess):
 
         Raises:
             Exception on missing required inputs or type mismatches.
+
+        # TODO ShellCommandRequirement/ShellQuote
         """
         cmd: List[str] = []
 
@@ -863,28 +892,38 @@ class BaseCommandLineTool(BaseProcess):
         """
         # Execute tool
         print("[TOOL]: EXECUTING:", " \\\n[TOOL]:\t\t".join(cmd), "\n")
-        try:
-            stdin = sys.stdin
-            stdout = sys.stdout
-            stderr = sys.stderr
-            if "stdin" in self.io:
-                stdin = open(cwd / self.io["stdin"], "r")
-            if "stdout" in self.io:
-                stdout = open(cwd / self.io["stdout"], "w")
-            if "stderr" in self.io:
-                stderr = open(cwd / self.io["stderr"], "w")
+        stdin = sys.stdin
+        stdout = sys.stdout
+        stderr = sys.stderr
+        if "stdin" in self.io:
+            stdin = open(cwd / self.io["stdin"], "r")
+        if "stdout" in self.io:
+            stdout = open(cwd / self.io["stdout"], "w")
+        if "stderr" in self.io:
+            stderr = open(cwd / self.io["stderr"], "w")
+        
+        # TODO When the shell should be used, input bindings might contain
+        # 'shellQuote = False', which means that the argument should not be
+        # quoted. 
+        shell = False
+        if ("ShellCommandRequirement" in self.requirements
+            and self.requirements["ShellCommandRequirement"]):
+            shell = True
+            specials = [";", "&", "&&", ">", "<", "|"]  # TODO for now
+            cmd = " ".join([f'"{c}"' if c not in specials else c for c in cmd])
+            print(cmd)
+            exit
 
-            completed: CompletedProcess = run(
-                cmd,
-                stdin = stdin,
-                stdout = stdout,
-                stderr = stderr,
-                env = env,
-                cwd = cwd,
-                # shell=True
-            )
-        except Exception as e:
-            raise e
+        completed: CompletedProcess = run(
+            cmd,
+            stdin = stdin,
+            stdout = stdout,
+            stderr = stderr,
+            env = env,
+            cwd = cwd,
+            shell = shell
+        )
+        completed.check_returncode()
 
         # Process outputs.
         # Command outputs are matched against the tool's output schema. Tool 
@@ -980,7 +1019,6 @@ class BaseCommandLineTool(BaseProcess):
                     # Empty arrays dont have item types, so any can be assigned
                     if len(value) == 0:
                         ... # TODO
-                        
                  
                     # All array elements must have the same type.
                     if any([not isinstance(v, type(value[0])) for v in value]):
@@ -1095,4 +1133,6 @@ class BaseCommandLineTool(BaseProcess):
                 env,
                 cwd = tmp_path,
             )
+        # print("[DEBUG] Tool Outputs", *[f"{k}:::{v}" for k, v in new_state.items()], sep="\n")
+
         return new_state

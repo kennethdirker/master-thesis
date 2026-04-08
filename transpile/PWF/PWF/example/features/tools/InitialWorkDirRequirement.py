@@ -42,6 +42,7 @@ class InitialWorkDirRequirement_PWF(BaseCommandLineTool):
 					"entry": "$(inputs.stage)",
 				},
 			],
+			"ShellCommandRequirement": True,
 		}
 
 if __name__ == "__main__":
