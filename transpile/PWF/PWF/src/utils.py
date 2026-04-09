@@ -310,12 +310,12 @@ class DirectoryObject:
         shutil.copytree(self.path, target, symlinks=False)  #TODO copy symlinks?
 
 
-def link(self, target: str | Path) -> None:
-        if isinstance(target, str):
-            target = Path(target)
-        if not isinstance(target, Path):
-            raise Exception(f"Expected 'str' or 'Path', but found {type(target)}")
-        os.symlink(self.path, target, target_is_directory=True)
+    def link(self, target: str | Path) -> None:
+            if isinstance(target, str):
+                target = Path(target)
+            if not isinstance(target, Path):
+                raise Exception(f"Expected 'str' or 'Path', but found {type(target)}")
+            os.symlink(self.path, target, target_is_directory=True)
 
 
     def create(self) -> None:
