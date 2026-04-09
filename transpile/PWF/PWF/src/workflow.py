@@ -565,7 +565,7 @@ class BaseWorkflow(BaseProcess):
         # graph.print()
 
         # NOTE just for testing purposes.
-        # graph.merge([id for id in graph.nodes])
+        graph.merge([id for id in graph.nodes])
         # graph.print()
         # for g in graph.nodes.values():
         #     g.graph.print()
@@ -840,7 +840,7 @@ class BaseWorkflow(BaseProcess):
         # Add new runnable tools to queue by checking for each
         # child if all its parents have completed.
         for child_id, child_node in tool_node.children.items():
-            if any(p_id not in completed for p_id in child_node.parents):
+            if all(p_id in completed for p_id in child_node.parents):
                 runnable[child_id] = (child_node, None, None)
 
 
@@ -1010,7 +1010,7 @@ class BaseWorkflow(BaseProcess):
         runnable_nodes: List[ToolNode] = graph.get_nodes(graph.roots) # type: ignore
         runnable = {n.id: (n, None, None) for n in runnable_nodes}
 
-        tracking_map: Dict[str, List] = {}
+        tracking_map: Dict[str, List] = {}  # Tracks scattering
         outputs: Dict[str, Value] = {}
 
         while len(runnable) > 0 or len(running) > 0:
@@ -1018,7 +1018,7 @@ class BaseWorkflow(BaseProcess):
                                   verbose)
             self.process_futures(runtime_context, outputs, runnable, running,
                                  completed, tracking_map)
-
+            
         return outputs
     
 
