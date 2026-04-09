@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import numpy as np
+import os
+import shutil
 
 from typing import Any, List, Optional, Tuple, Type, Sequence, Mapping, Union
 from types import NoneType
@@ -93,7 +95,8 @@ class FileObject:
     TODO contents/size
     """
     attrs = [
-        "path", "basename", "dirname", "nameroot", "nameext", "contents", "size"
+        "location", "path", "basename", "dirname", "nameroot", "nameext",
+        "contents", "size", "writable"
     ]
 
     location: str
@@ -102,17 +105,29 @@ class FileObject:
     dirname: str
     nameroot: str
     nameext: str
-    contents: bytes
+    contents: str
     size: int
     writable: bool
     # MAX_SIZE: int = 64000
     
-    def __init__(self, file_path: str | Path | FileObject | CWLFile | Mapping):
-        # TODO Deduct basic attributes from path when loading from File?
+    def __init__(
+            self, 
+            file_path: str | Path | FileObject | CWLFile | Mapping
+        ):
+        
         def load(o: Any, attr: str):
             if hasattr(o, attr) and getattr(o, attr) is not None:
                 setattr(self, attr, getattr(o, attr))
 
+        self.location = ""
+        self.path = ""
+        self.basename = ""
+        self.dirname = ""
+        self.nameroot = ""
+        self.nameext = ""
+        self.contents = ""
+        self.size = 0
+        self.writable = False
 
         if isinstance(file_path, str):
             file_path = Path(file_path)
@@ -123,51 +138,90 @@ class FileObject:
             # behaviour, as we are sometimes pointing to symlinks. Normalizing
             # the parent and adding the name part circumvents this.
             path: Path = file_path.parent.resolve() / file_path.name
-            
-            self.path = str(path)
-            self.basename = path.name
-            self.dirname = str(path.parent)
-            self.nameroot = path.stem
-            self.nameext = path.suffix
+            self.set_path_attributes(path)
         elif isinstance(file_path, FileObject | CWLFile):
-            # TODO Deduct basic attributes from path when loading from File?
+            load(file_path, "location")
             load(file_path, "path")
+            self.set_path_attributes(self.path)
             load(file_path, "basename")
             load(file_path, "dirname")
             load(file_path, "nameroot")
             load(file_path, "nameext")
             load(file_path, "contents")
             load(file_path, "size")
+            load(file_path, "writable")
         elif isinstance(file_path, Mapping):
+            if "path" in file_path:
+                self.set_path_attributes(file_path["path"])
             for k, v in file_path.items():
                 if k in self.attrs:
                     setattr(self, k, v)
         else:
             raise Exception(f"FileObject expects 'str' | 'Path' | 'FileObject | cwl_utils.parser.cwl_v1_2.File', but found '{type(file_path)}'")
+        
+
+    def set_path_attributes(self, path: str | Path) -> None:
+            if isinstance(path, str):
+                path = Path(path)
+            self.path = str(path)
+            self.basename = path.name
+            self.dirname = str(path.parent)
+            self.nameroot = path.stem
+            self.nameext = path.suffix 
+
 
     def resolve(self) -> FileObject:
         return FileObject(Path(self.path).resolve())
     
+
     def resolve_as_str(self) -> str:
         return str(Path(self.path).resolve())
     
+
+    def exists(self) -> bool:
+        return Path(self.path).exists()
+    
+
+    def copy(self, target: str | Path) -> None:
+        if isinstance(target, str):
+            target = Path(target)
+        if not isinstance(target, Path):
+            raise Exception(f"Expected 'str' or 'Path', but found {type(target)}")
+        shutil.copy2(self.path, target)
+        
+
+    def link(self, target:  str | Path) -> None:
+        if isinstance(target, str):
+            target = Path(target)
+        if not isinstance(target, Path):
+            raise Exception(f"Expected 'str' or 'Path', but found {type(target)}")
+        os.symlink(self.path, target)
+    
+
     def create(self, contents: Optional[str] = None) -> None:
         with open(self.path, "w") as f:
-            if contents:
+            if contents is not None:
                 f.write(contents)
                 # if loadContents:  # TODO Needed?
-                #     self.contents = contents.encode()
+                #     self.contents = contents
             elif hasattr(self, "contents"):
-                f.write(self.contents.decode())
+                f.write(self.contents)
+
+
+    def rebase(self, new_path: str | Path) -> None:
+        self.set_path_attributes(new_path)
+
 
     def __str__(self) -> str:
         return self.path
     
+
     def to_dict(self) -> dict:
         return {k: getattr(self, k) 
                 for k in self.attrs 
                 if hasattr(self, k) and getattr(self, k) is not None}
     
+
     def __repr__(self) -> str:
         pairs = [f'"{k}":"{getattr(self, k)}"' 
                  for k in self.attrs 
@@ -192,20 +246,23 @@ class DirectoryObject:
     attrs = ["location", "path", "basename", "listing"]
     
     def __init__(self, dir_path: str | Path | DirectoryObject | Mapping):
+        self.location = ""
+        self.path = ""
+        self.basename = ""
+        self.listing = []
+        
         if isinstance(dir_path, str):
             dir_path = Path(dir_path)
+
         if isinstance(dir_path, Path):
             # path: Path = dir_path.resolve() < BUG 
             # pathlib.Path.resolve resolves symlinks, which is unwanted
             # behaviour, as we are sometimes pointing to symlinks. Normalizing
             # the parent and adding the name part circumvents this.
             path: Path = dir_path.parent.resolve() / dir_path.name
-
-            self.path = str(path)
-            self.basename = path.name
+            self.set_path_attributes(path)
             # location: str = #TODO
             # NOTE Does this need to be recursive? 
-            self.listing = []
             for p in path.iterdir():
                 if p.is_dir():
                     self.listing.append(DirectoryObject(str(p)))
@@ -217,26 +274,67 @@ class DirectoryObject:
             self.listing = deepcopy(dir_path.listing)
             self.location = dir_path.location
         elif isinstance(dir_path, Mapping):
+            if "path" in dir_path:
+                self.set_path_attributes(dir_path["path"])
             for k, v in dir_path.items():
                 if k in self.attrs:
                     setattr(self, k, v)
         else:
             raise Exception(f"DirectoryObject expects 'str' | 'Path' | 'DirectoryObject', but found '{type(dir_path)}'")
+        
+
+    def set_path_attributes(self, path: str | Path) -> None:
+            if isinstance(path, str):
+                path = Path(path)
+            self.path = str(path)
+            self.basename = path.name
+
 
     def resolve(self) -> DirectoryObject:
         return DirectoryObject(Path(self.path).resolve())
     
+
     def resolve_as_str(self) -> str:
         return str(Path(self.path).resolve())
     
+
+    def exists(self) -> bool:
+        return Path(self.path).exists()
+    
+
+    def copy(self, target: str | Path) -> None:
+        if isinstance(target, str):
+            target = Path(target)
+        if not isinstance(target, Path):
+            raise Exception(f"Expected 'str' or 'Path', but found {type(target)}")
+        shutil.copytree(self.path, target, symlinks=False)  #TODO copy symlinks?
+
+
+def link(self, target: str | Path) -> None:
+        if isinstance(target, str):
+            target = Path(target)
+        if not isinstance(target, Path):
+            raise Exception(f"Expected 'str' or 'Path', but found {type(target)}")
+        os.symlink(self.path, target, target_is_directory=True)
+
+
     def create(self) -> None:
         Path(self.path).mkdir(parents = True)
+
+
+    def rebase(self, new_path: str | Path) -> None:
+        self.set_path_attributes(new_path)
+
 
     def __str__(self) -> str:
         return self.path
     
+
     def __repr__(self) -> str:
-        return f"DirectoryObject({self.path})"
+        pairs = [f'"{k}":"{getattr(self, k)}"' 
+                 for k in self.attrs 
+                 if hasattr(self, k) and getattr(self, k) is not None]
+        return f"DirectoryObject({', '.join(pairs)})"
     
     
 """
@@ -279,7 +377,6 @@ class Value:
     type: Type
     cwltype: str
     is_array: bool
-    # is_map: bool
 
     def __init__(
             self,
@@ -301,7 +398,8 @@ class Value:
         self.value = value
         self.type = type_t
         self.cwltype = cwl_type
-        self.is_array = scattered | isinstance(value, Sequence)
+        self.is_array = scattered | isinstance(value, np.ndarray) | \
+                (isinstance(value, Sequence) and not isinstance(value, str))
         self.scattered = scattered
 
     
@@ -324,9 +422,11 @@ class Value:
         an empty multi-dimensional array where the previous ``value`` is 
         inserted at ``idx``.
         """
-        arr = np.ndarray(shape, Value)
+        arr = np.ndarray(shape, self.type)  # < new NOTE
+        # arr = np.ndarray(shape, Value)    # < old
         arr[idx] = self.value
         return Value(arr, self.type, self.cwltype, scattered=True)
+
 
     def get(
             self, 
@@ -363,14 +463,11 @@ class Value:
         v[idx[-1]] = value
 
 
-    # def is_array(self):
-    #     return isinstance(self.value, Sequence)
-    
-    # def is_map(self):
-    #     return isinstance(self.value, Mapping)
-
     def __str__(self) -> str:
+        if self.is_array:
+            return "[" + ", ".join([str(v) for v in self.value]) + "]"
         return str(self.value)
     
+
     def __repr__(self) -> str:
         return f"Value({self.value}, {self.type}, {self.cwltype})"

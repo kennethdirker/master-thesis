@@ -340,15 +340,10 @@ class BaseWorkflow(BaseProcess):
             step_in_dict = process.steps[step_id]["in"][in_id]
             if "source" in step_in_dict:
                 return False, step_in_dict["source"]
-            # NOTE get_process_parents_ids does it in this order, should it work like this?
             elif "default" in step_in_dict:
                 return True, step_in_dict["default"]
             elif "valueFrom" in step_in_dict:
                 return True, None
-            # elif "default" in step_in_dict:
-            #     return True, step_in_dict["default"]
-            # elif "valueFrom" in step_in_dict:
-            #     return True, None
             raise NotImplementedError()
 
         processes: Dict[str, BaseProcess] = self.loading_context["processes"]
@@ -383,11 +378,11 @@ class BaseWorkflow(BaseProcess):
                         # Input comes from default or valueFrom
                         process.input_to_source[input_id] = _process.global_id(_step_id + "/" + input_id)
                         if source is None:
+                            # From valueFrom
                             value = Absent("Value comes from valueFrom and is not yet filled in")
                         else:
-                            value = Value(source,
-                                          type(source),
-                                          PY_CWL_T_MAPPING[type(source)][0])
+                            # From default
+                            value = process.resolve_input_object_value(input_id, source)
 
                         runtime_context[process.input_to_source[input_id]] = value
                         break
@@ -570,10 +565,10 @@ class BaseWorkflow(BaseProcess):
         # graph.print()
 
         # NOTE just for testing purposes.
-        graph.merge([id for id in graph.nodes])
+        # graph.merge([id for id in graph.nodes])
         # graph.print()
         # for g in graph.nodes.values():
-            # g.graph.print()
+        #     g.graph.print()
         
     
     def build_step_namespace(
@@ -1003,7 +998,7 @@ class BaseWorkflow(BaseProcess):
             executor = ThreadPoolExecutor()
 
         ########### TODO ##############
-        #  Prepare all files locally  #
+        #  Prepare (stage) all files locally  #
         ########### TODO ##############
 
         # Init queues
@@ -1165,7 +1160,6 @@ class Scatter:
     scatter_method: str
     scattered_inputs: List[str]
     scattered_outputs: List[str]
-    # length: int
     
 
     def __init__(
@@ -1182,28 +1176,17 @@ class Scatter:
         self.scatter_method = scatter_method
         self.scattered_inputs = scattered_inputs
         self.scattered_outputs = scattered_outputs
-        # self.length = -1
-        # self.dims = tuple([-1])
-        # self.tools = []
-        # self.roots = []
-        # self.leaves = []
 
     
     def get_length(self, runtime_context: Dict[str, Value]) -> int:
         """
         Returns the amount of scatter input combinations are generated.
-        Caches the length for future use.
         """
-        # if self.length != -1:
-            # return self.length
-        
         sizes = [len(runtime_context[i].value) for i in self.scattered_inputs]
         if self.scatter_method == "dotproduct":
-            length = min(sizes)
+            return min(sizes)
         else:
-            length = prod(sizes)
-        
-        return length
+            return prod(sizes)
 
     
     def context_generator(
@@ -1215,11 +1198,9 @@ class Scatter:
         the iterable scatter input arrays are replaced with scattered inputs.
         """
         # Create an iterator that yields scatterized input combinations 
-        iterable: Iterator
         arrays = [runtime_context[id].value for id in self.scattered_inputs]
         types = [(runtime_context[id].type, runtime_context[id].cwltype)
                   for id in self.scattered_inputs]
-        # arrays = [runtime_context[id].value for id in self.scattered_inputs]
         if self.scatter_method == "dotproduct":
             iterable = zip(*arrays)
         else:

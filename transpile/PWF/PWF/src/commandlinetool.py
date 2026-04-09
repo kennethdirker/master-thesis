@@ -9,6 +9,7 @@ import sys
 
 from abc import abstractmethod
 from dask.distributed import Client
+from numpy import ndarray
 from pathlib import Path
 from subprocess import run, CompletedProcess
 from types import NoneType
@@ -92,13 +93,8 @@ class BaseCommandLineTool(BaseProcess):
             yaml_uri = self.loading_context["input_object"]
             runtime_context = self.load_input_object(yaml_uri)
             self.register_input_sources(runtime_context)
-            try:
-                outputs = self.execute(self.loading_context["use_dask"],
+            outputs = self.execute(self.loading_context["use_dask"],
                                    runtime_context)
-            except:
-                print(f"[ERROR] Tool failed to execute correctly")
-                exit(1)
-
             self.finalize(outputs)
             
 
@@ -517,7 +513,6 @@ class BaseCommandLineTool(BaseProcess):
 
             # If provided, valueFrom gives value to the input parameter. 
             if "valueFrom" in input_dict and isinstance(value, Value):
-            # if "valueFrom" in input_dict and not isinstance(value, Absent | NoneType):
                 # If the value of the associated input parameter is null,
                 # valueFrom is not evaluated and nothing is added to the 
                 # command line. This means we set value to None, which is
@@ -529,9 +524,19 @@ class BaseCommandLineTool(BaseProcess):
                 # String might be an expression and need evaluation
                 if isinstance(value, str):
                     value = self.eval(value, cwl_namespace)
-
-            value_t = type(value[0]) if isinstance(value, List) else type(value)
-            runtime_context[global_source_id] =  Value(value, value_t, PY_CWL_T_MAPPING[value_t][0])
+            
+            if isinstance(value, List):
+                value_t = type(value[0])
+            elif isinstance(value, ndarray):
+                # ndarray might be multidimensional
+                v = value[0]
+                while isinstance(v, ndarray):
+                    v = v[0]
+                value_t = type(v)
+            else:
+                value_t = type(value)
+            runtime_context[global_source_id] = Value(value, value_t, 
+                                                      PY_CWL_T_MAPPING[value_t][0])
 
 
     def compose_array_arg(
@@ -787,22 +792,26 @@ class BaseCommandLineTool(BaseProcess):
                     match = "directory"
                 elif "string" in expected_types or "string[]" in expected_types:
                     match = "string"
+            # elif (value_cwl_t in ("file", "directory") and
+            #       "string" in expected_types or "string[]" in expected_types):
+            #     match = "string"
             elif value_cwl_t in expected_types or value_cwl_t + "[]" in expected_types:
                 match = value_cwl_t
 
             if match is None:
                 if not optional:
-                    raise Exception(f"Tool input '{input_id}' supports CWL types [{', '.join(expected_types)}], but found CWL types '{value_cwl_t} (from '{type(value)}')")
+                    raise Exception(f"Tool input '{input_id}' supports CWL types [{', '.join(expected_types)}], but found CWL types '{value_cwl_t}' (from '{type(value)}')")
                 continue
 
             if v.type in (FileObject, DirectoryObject):
                 if is_array:
-                    resolved = []
-                    for elem in value:
-                        resolved.append(elem.resolve())
-                    value = resolved
+                    value = [elem.resolve() for elem in value]
                 else:
-                    value = value.resolve()
+                    try:
+                        value = value.resolve()
+                    except Exception as e:
+                        print("[ERROR]", type(value))
+                        raise e
 
             # Check whether an array is expected or not
             if value_cwl_t + "[]" in expected_types and is_array:
@@ -891,7 +900,6 @@ class BaseCommandLineTool(BaseProcess):
             ``loadContents`` handling), or re-raises subprocess errors.
         """
         # Execute tool
-        print("[TOOL]: EXECUTING:", " \\\n[TOOL]:\t\t".join(cmd), "\n")
         stdin = sys.stdin
         stdout = sys.stdout
         stderr = sys.stderr
@@ -909,11 +917,14 @@ class BaseCommandLineTool(BaseProcess):
         if ("ShellCommandRequirement" in self.requirements
             and self.requirements["ShellCommandRequirement"]):
             shell = True
-            specials = [";", "&", "&&", ">", "<", "|"]  # TODO for now
+            specials = [";", "&", "&&", ">", ">>", "<", "<<", "|"]  # TODO for now
             cmd = " ".join([f'"{c}"' if c not in specials else c for c in cmd])
-            print(cmd)
-            exit
+            print("[TOOL]: EXECUTING:", " \\\n[TOOL]:\t\t".join(cmd.split(" ")), "\n")
+        else:
+            print("[TOOL]: EXECUTING:", " \\\n[TOOL]:\t\t".join(cmd), "\n")
 
+        # Execute the command. This is blocking. Afterwards, the return code is
+        # checked to see if an error occured.
         completed: CompletedProcess = run(
             cmd,
             stdin = stdin,
@@ -923,8 +934,12 @@ class BaseCommandLineTool(BaseProcess):
             cwd = cwd,
             shell = shell
         )
-        completed.check_returncode()
-
+        try:
+            completed.check_returncode()
+        except Exception as e:
+            print(e)
+            raise e
+        
         # Process outputs.
         # Command outputs are matched against the tool's output schema. Tool 
         # outputs are generated based on the output bindings defined in the
