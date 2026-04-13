@@ -1,0 +1,4 @@
+input: 
+    class: File
+    path: image_mf_01.fits
+output_file_name: no_noise_image_mf_01.fits

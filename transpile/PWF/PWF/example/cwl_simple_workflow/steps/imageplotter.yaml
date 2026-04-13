@@ -1,3 +1,4 @@
-url_list: 
-    class: File
-    path: /home/kennethdirker/Leiden/2024-2025/Thesis/transpile/PWF/PWF/example/simple_workflow/links
+input_fits: 
+    -   class: File
+        path: image_mf_01.fits
+output_image: image_mf_01.png
