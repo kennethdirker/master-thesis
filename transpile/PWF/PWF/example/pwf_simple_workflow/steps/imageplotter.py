@@ -32,8 +32,18 @@ class imageplotter_PWF(BaseCommandLineTool):
 	def set_base_command(self):
 		self.base_command = [
 			"python",
-			"/home/kennethdirker/Leiden/2024-2025/Thesis/transpile/PWF/PWF/example/cwl_simple_workflow/scripts/imageplotter.py",
+			"imageplotter.py",
 		]
+
+	def set_requirements(self):
+		self.requirements = {
+			"InitialWorkDirRequirement": [
+				{
+					"class": "file",
+					"location": "/home/kennethdirker/Leiden/2024-2025/Thesis/transpile/PWF/PWF/example/cwl_simple_workflow/scripts/imageplotter.py",
+				},
+			],
+		}
 
 if __name__ == "__main__":
 	imageplotter_PWF()

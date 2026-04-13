@@ -10,6 +10,7 @@ from typing import (
     List,
     Mapping,
     TextIO,
+    cast
 )
 from uuid import uuid4
 
@@ -24,6 +25,7 @@ from cwl_utils.parser.cwl_v1_2 import (
     WorkflowStepOutput,
 )
 from cwl_utils.parser.cwl_v1_2 import File as CWLFile
+from cwl_utils.parser.cwl_v1_2 import Directory as CWLDirectory
 
 # Import CWL Process types
 from cwl_utils.parser import (
@@ -162,6 +164,8 @@ def CWLFile_to_dict(f: CWLFile) -> Dict[str, Any]:
             d[attr] = getattr(o, attr)
 
     d: Dict[str, Any] = {}
+    d["class"] = "file"
+    load(d, f, "location")
     load(d, f, "path")
     load(d, f, "basename")
     load(d, f, "dirname")
@@ -169,6 +173,32 @@ def CWLFile_to_dict(f: CWLFile) -> Dict[str, Any]:
     load(d, f, "nameext")
     load(d, f, "contents")
     load(d, f, "size")
+    if "location" in d:
+        s: str = d["location"]
+        d["location"] = s.removeprefix("file://")
+    if "path" in d:
+        s: str = d["path"]
+        d["path"] = s.removeprefix("file://")
+    return d
+
+def CWLDirectory_to_dict(f: CWLDirectory) -> Dict[str, Any]:
+    # NOTE Does not support http(s):// IRI schemas
+    def load(d: dict, o: Any, attr: str):
+        if hasattr(o, attr) and getattr(o, attr) is not None:
+            d[attr] = getattr(o, attr)
+
+    d: Dict[str, Any] = {}
+    d["class"] = "directory"
+    load(d, f, "location")
+    load(d, f, "path")
+    load(d, f, "basename")
+    load(d, f, "listing")
+    if hasattr(f, "listing") and f.listing is not None:
+        print("\t[INFO] Directory.listing not yet supported")
+        
+    if "location" in d:
+        s: str = d["location"]
+        d["location"] = s.removeprefix("file://")
     if "path" in d:
         s: str = d["path"]
         d["path"] = s.removeprefix("file://")
@@ -714,7 +744,19 @@ def parse_tool_requirements(
                             lines.append(indent('},', 4))
                         elif isinstance(e, NoneType):
                             pass
-                        # elif file/directory? TODO
+                        # elif directory? TODO
+                        elif isinstance(e, CWLFile):
+                            file = CWLFile_to_dict(e)
+                            lines.append(indent('{', 4))
+                            lines.extend([indent(f'"{k}": {quote(v)},', 5) 
+                                        for k, v in file.items()])
+                            lines.append(indent('},', 4))
+                        elif isinstance(e, CWLDirectory):
+                            file = CWLDirectory_to_dict(e)
+                            lines.append(indent('{', 4))
+                            lines.extend([indent(f'"{k}": {quote(v)},', 5) 
+                                        for k, v in file.items()])
+                            lines.append(indent('},', 4))
                         else:
                             raise NotImplementedError(f"Encountered unsupported type {type(e)}")
                     lines.append(indent("],", 3))
@@ -856,7 +898,6 @@ def parse_steps(
                         print("\t[INFO] Step input with multiple sources not yet supported")
 
             if hasattr(i, "default") and i.default is not None:
-                # lines.append(indent(f'"default": {quote(i.default)},', 6))
                 if hasattr(i, "default") and i.default is not None:
                     default = i.default
                     if isinstance(default, CWLFile):
