@@ -4,12 +4,25 @@ import numpy as np
 import os
 import shutil
 
-from typing import Any, List, Optional, Tuple, Type, Sequence, Mapping, Union
+from typing import (
+    Any,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    Sequence,
+    Mapping,
+    MutableMapping,
+    Union,
+    cast
+)
+
 from types import NoneType
 from pathlib import Path
 from copy import deepcopy
 
 from cwl_utils.parser.cwl_v1_2 import File as CWLFile
+from cwl_utils.parser.cwl_v1_2 import Directory as CWLDirectory
 
 class Absent:
     """ 
@@ -93,6 +106,7 @@ class FileObject:
         nameext  : .ext
 
     TODO contents/size
+    TODO location prefixes (file://, http://, https://)
     """
     attrs = [
         "location", "path", "basename", "dirname", "nameroot", "nameext",
@@ -137,11 +151,16 @@ class FileObject:
             # pathlib.Path.resolve resolves symlinks, which is unwanted
             # behaviour, as we are sometimes pointing to symlinks. Normalizing
             # the parent and adding the name part circumvents this.
-            path: Path = file_path.parent.resolve() / file_path.name
-            self.set_path_attributes(path)
+            # path: Path = file_path.parent.resolve() / file_path.name
+            self.set_path_attributes(file_path)
+            self.location = self.path
         elif isinstance(file_path, FileObject | CWLFile):
             load(file_path, "location")
             load(file_path, "path")
+            if self.location == "" and self.path != "":
+                self.location = self.path
+            if self.path == "" and self.location != "":
+                self.path = self.location
             self.set_path_attributes(self.path)
             load(file_path, "basename")
             load(file_path, "dirname")
@@ -150,7 +169,11 @@ class FileObject:
             load(file_path, "contents")
             load(file_path, "size")
             load(file_path, "writable")
-        elif isinstance(file_path, Mapping):
+        elif isinstance(file_path, MutableMapping):
+            if ("location" in file_path and file_path["location"] != "" 
+                and ("path" not in file_path or
+                    ("path" in file_path and file_path["path"] == ""))):
+                file_path["path"] = file_path["location"]
             if "path" in file_path:
                 self.set_path_attributes(file_path["path"])
             for k, v in file_path.items():
@@ -163,6 +186,11 @@ class FileObject:
     def set_path_attributes(self, path: str | Path) -> None:
             if isinstance(path, str):
                 path = Path(path)
+            # path: Path = file_path.resolve() < BUG dont use
+            # pathlib.Path.resolve resolves symlinks, which is unwanted
+            # behaviour, as we are sometimes pointing to symlinks. Normalizing
+            # the parent and adding the name part circumvents this.
+            path = path.parent.resolve() / path.name
             self.path = str(path)
             self.basename = path.name
             self.dirname = str(path.parent)
@@ -187,7 +215,7 @@ class FileObject:
             target = Path(target)
         if not isinstance(target, Path):
             raise Exception(f"Expected 'str' or 'Path', but found {type(target)}")
-        shutil.copy2(self.path, target)
+        shutil.copy2(Path(self.path).resolve(), target)
         
 
     def link(self, target:  str | Path) -> None:
@@ -195,7 +223,7 @@ class FileObject:
             target = Path(target)
         if not isinstance(target, Path):
             raise Exception(f"Expected 'str' or 'Path', but found {type(target)}")
-        os.symlink(self.path, target)
+        os.symlink(Path(self.path).resolve(), target)
     
 
     def create(self, contents: Optional[str] = None) -> None:
@@ -245,7 +273,14 @@ class DirectoryObject:
     listing: List[Union[FileObject, DirectoryObject]]
     attrs = ["location", "path", "basename", "listing"]
     
-    def __init__(self, dir_path: str | Path | DirectoryObject | Mapping):
+    def __init__(
+            self,
+            dir_path: str | Path | DirectoryObject | CWLDirectory | Mapping):
+
+        def load(o: Any, attr: str):
+            if hasattr(o, attr) and getattr(o, attr) is not None:
+                setattr(self, attr, getattr(o, attr))
+
         self.location = ""
         self.path = ""
         self.basename = ""
@@ -261,19 +296,28 @@ class DirectoryObject:
             # the parent and adding the name part circumvents this.
             path: Path = dir_path.parent.resolve() / dir_path.name
             self.set_path_attributes(path)
-            # location: str = #TODO
+            self.location = self.path
             # NOTE Does this need to be recursive? 
             for p in path.iterdir():
                 if p.is_dir():
                     self.listing.append(DirectoryObject(str(p)))
                 if p.is_file():
                     self.listing.append(FileObject(str(p)))
-        elif isinstance(dir_path, DirectoryObject):
-            self.path = dir_path.path
-            self.basename = dir_path.basename
-            self.listing = deepcopy(dir_path.listing)
-            self.location = dir_path.location
-        elif isinstance(dir_path, Mapping):
+        elif isinstance(dir_path, DirectoryObject | CWLDirectory):
+            load(dir_path, "location")
+            load(dir_path, "path")
+            if self.location == "" and self.path != "":
+                self.location = self.path
+            if self.path == "" and self.location != "":
+                self.path = self.location
+            self.set_path_attributes(self.path)
+            load(dir_path, "basename")
+            load(dir_path, "listing")
+        elif isinstance(dir_path, MutableMapping):
+            if ("location" in dir_path and dir_path["location"] != "" 
+                and ("path" not in dir_path or 
+                    ("path" in dir_path and dir_path["path"] == ""))):
+                dir_path["path"] = dir_path["location"]
             if "path" in dir_path:
                 self.set_path_attributes(dir_path["path"])
             for k, v in dir_path.items():
@@ -307,7 +351,7 @@ class DirectoryObject:
             target = Path(target)
         if not isinstance(target, Path):
             raise Exception(f"Expected 'str' or 'Path', but found {type(target)}")
-        shutil.copytree(self.path, target, symlinks=False)  #TODO copy symlinks?
+        shutil.copytree(Path(self.path).resolve(), target, symlinks=False)  #TODO copy symlinks?
 
 
     def link(self, target: str | Path) -> None:
@@ -315,7 +359,7 @@ class DirectoryObject:
                 target = Path(target)
             if not isinstance(target, Path):
                 raise Exception(f"Expected 'str' or 'Path', but found {type(target)}")
-            os.symlink(self.path, target, target_is_directory=True)
+            os.symlink(Path(self.path).resolve(), target, target_is_directory=True)
 
 
     def create(self) -> None:

@@ -218,8 +218,6 @@ class BaseCommandLineTool(BaseProcess):
             cwl_namespace: Dict[str, Any]
         ) -> None:
         """
-        TODO Create soft links to read-only instead of copying.
-        BUG Files are overwritten
         BUG Multilayered InitialWorkDirRequirement are not sourced correctly.
         Stage files from InitialWorkDirRequirement into the temporary working
         directory.
@@ -270,7 +268,7 @@ class BaseCommandLineTool(BaseProcess):
                 if isinstance(entry, NoneType):
                     continue
             
-                # If the entry expression evaluated to files or directories,
+                # If the entry expression evaluates to files or directories,
                 # add them to the listing for later processing.            
                 if  ((isinstance(entry, Sequence) and len(entry) > 0) and
                     ((isinstance(entry[0], Mapping) and "class" in entry[0] and 
@@ -800,7 +798,7 @@ class BaseCommandLineTool(BaseProcess):
 
             if match is None:
                 if not optional:
-                    raise Exception(f"Tool input '{input_id}' supports CWL types [{', '.join(expected_types)}], but found CWL types '{value_cwl_t}' (from '{type(value)}')")
+                    raise Exception(f"Tool input '{input_id}' supports CWL types [{', '.join(expected_types)}], but found CWL types '{value_cwl_t}' (from '{type(value)}')", value)
                 continue
 
             if v.type in (FileObject, DirectoryObject):
@@ -868,7 +866,7 @@ class BaseCommandLineTool(BaseProcess):
 
     def run_wrapper(
             self,
-            cmd: List[str],
+            cmd: List[str] | str,
             cwl_namespace: Dict[str, Any],
             output_schema: Dict[str, Any],
             env: Dict[str, Any],
