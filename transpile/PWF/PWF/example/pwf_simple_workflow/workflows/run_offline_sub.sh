@@ -18,5 +18,5 @@ if test -f no_noise_image_mf_04.fits; then rm no_noise_image_mf_04.fits; fi
 if test -f after_noise_remover.png; then rm after_noise_remover.png; fi
 if test -f before_noise_remover.png; then rm before_noise_remover.png; fi
 
-python process_images_offline_subworkflows.py -y process_images_offline_subworkflows.yaml --outdir $OUTDIR --tmpdir $TMPDIR --preserve_tmp
-# python process_images_offline_subworkflows.py -y process_images_offline_subworkflows.yaml --outdir $OUTDIR --tmpdir $TMPDIR --preserve_tmp --dask
+# python process_images_offline_subworkflows.py -y process_images_offline_subworkflows.yaml --outdir $OUTDIR --tmpdir $TMPDIR --preserve_tmp
+python process_images_offline_subworkflows.py -y process_images_offline_subworkflows.yaml --outdir $OUTDIR --tmpdir $TMPDIR --preserve_tmp --dask

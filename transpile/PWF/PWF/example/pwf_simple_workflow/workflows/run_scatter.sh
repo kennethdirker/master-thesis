@@ -15,5 +15,5 @@ if test -f no_noise_image_mf_01.fits; then rm no_noise_image_mf_01.fits; fi
 if test -f no_noise_image_mf_02.fits; then rm no_noise_image_mf_02.fits; fi
 if test -f no_noise_image_mf_04.fits; then rm no_noise_image_mf_04.fits; fi
 
-python process_images_offline_scatter.py -y process_images_offline_scatter.yaml --outdir $OUTDIR --tmpdir $TMPDIR --preserve_tmp
-# python process_images_offline_scatter.py -y process_images_offline_scatter.yaml --outdir $OUTDIR --tmpdir $TMPDIR --preserve_tmp --dask
+# python process_images_offline_scatter.py -y process_images_offline_scatter.yaml --outdir $OUTDIR --tmpdir $TMPDIR --preserve_tmp
+python process_images_offline_scatter.py -y process_images_offline_scatter.yaml --outdir $OUTDIR --tmpdir $TMPDIR --preserve_tmp --dask
