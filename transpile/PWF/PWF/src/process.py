@@ -334,10 +334,10 @@ class BaseProcess(ABC):
             # A mapping either means a potential file/directory, or an
             # unsupported custom data type. Unsupported types result in error.
                 if "class" in head:
-                    if "File" in head["class"]:
+                    if "file" in head["class"]:
                         return Value([FileObject(p["path"]) for p in input_value], 
                                       FileObject, "file")
-                    elif "Directory" in head["class"]:
+                    elif "directory" in head["class"]:
                         return Value([DirectoryObject(p["path"]) for p in input_value],
                                       DirectoryObject, "directory")
                     else:
@@ -352,10 +352,10 @@ class BaseProcess(ABC):
             # A mapping either means a potential file/directory, or an
             # unsupported custom data type. Unsupported types result in error.
             if "class" in input_value:
-                if "File" in input_value["class"]:
+                if "file" in input_value["class"]:
                     return Value(FileObject(input_value["path"]),
                                  FileObject, "file")
-                elif "Directory" in input_value["class"]:
+                elif "directory" in input_value["class"]:
                     return Value(DirectoryObject(input_value["path"]), 
                                  DirectoryObject, "directory")
                 else:

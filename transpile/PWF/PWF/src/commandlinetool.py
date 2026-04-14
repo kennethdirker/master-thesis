@@ -42,6 +42,9 @@ if TYPE_CHECKING:
     from .workflow import Scatter
 # from .workflow import Scatter
 
+# Max file size that can be loaded into file objects
+MAX_CONTENT_SIZE: int = 64000
+
 
 class BaseCommandLineTool(BaseProcess):
     # Tool info
@@ -897,16 +900,21 @@ class BaseCommandLineTool(BaseProcess):
             NotImplementedError for features not yet implemented (e.g.
             ``loadContents`` handling), or re-raises subprocess errors.
         """
+        cwl_namespace = cwl_namespace.copy()
+
         # Execute tool
         stdin = sys.stdin
         stdout = sys.stdout
         stderr = sys.stderr
         if "stdin" in self.io:
-            stdin = open(cwd / self.io["stdin"], "r")
+            res = self.eval(self.io["stdin"], cwl_namespace)
+            stdin = open(cwd / res, "r")
         if "stdout" in self.io:
-            stdout = open(cwd / self.io["stdout"], "w")
+            res = self.eval(self.io["stdout"], cwl_namespace)
+            stdout = open(cwd / res, "w")
         if "stderr" in self.io:
-            stderr = open(cwd / self.io["stderr"], "w")
+            res = self.eval(self.io["stderr"], cwl_namespace)
+            stderr = open(cwd / res, "w")
         
         # TODO When the shell should be used, input bindings might contain
         # 'shellQuote = False', which means that the argument should not be
@@ -957,6 +965,14 @@ class BaseCommandLineTool(BaseProcess):
             else:
                 raise Exception(f"Expected 'str' or 'list' in output type, but found '{type(output_dict['type'])}'")
             
+            # loadContents
+            load_contents = False
+            if ("loadContents" in output_dict and
+                output_dict["outputEval"] is not None):
+                if not glob and not any(["file" in type_ for type_ in expected_types]):
+                    raise Exception(f"loadContents must be used on globs or 'file'/'file[]' type")
+                load_contents = True
+            
             # glob
             if "glob" in output_dict and output_dict["glob"] is not None:
                 # Evaluate glob patterns. Is either a string, expression or
@@ -982,40 +998,49 @@ class BaseCommandLineTool(BaseProcess):
                     if not isinstance(g, str):
                         raise Exception(f"Output '{output_id}' has glob '{g}' that should be 'str', but is '{type(g)}'")
                     
-                # Collect matching files. Because not CWD but a tmp CWD is,
-                # the tmp CWD path needs to be prefixed. 
-                output_file_paths: List[str] = []
+                # Collect matching files. As we are working in a temporary CWD,
+                # the path match needs to be prefixed with it. 
+                paths: List[FileObject | DirectoryObject] = []
                 for g in globs:
                     for match in glob.glob(g, root_dir = cwd):
+                        # If loadContents is true, the glob content is loaded
+                        # into the resulting FileObjects.
                         match_path = Path(cwd) / Path(match)
-                        output_file_paths.append(str(match_path))
-                        
-                # Set 'self' for outputEval and loadContents
-                cwl_namespace["self"] = output_file_paths
+                        if load_contents and os.path.getsize(match_path) > MAX_CONTENT_SIZE:
+                            raise Exception(f"File '{match}' is over 64 KiB")
+                        if match_path.is_file():
+                            file = FileObject(match_path)
+                            if load_contents:
+                                with open(file.path) as f:
+                                    file.contents = f.read()
+                                    file.size = len(file.contents)
+                            paths.append(file)
+                        else:
+                            paths.append(DirectoryObject(match_path))
+
+                # Set 'self' for outputEval
+                cwl_namespace["self"] = paths 
 
                 # Set glob matches as output value
-                if len(output_file_paths) == 0:
-                    outputs[global_output_id] = None
+                if len(paths) == 0:
+                    value = Value(None, NoneType, "null")
                 elif "file" in expected_types or "stdout" in expected_types:
-                    outputs[global_output_id] = Value(FileObject(output_file_paths[0]), FileObject, "file")
+                    if len(paths) > 1:
+                        raise Exception(f"Expected 1 path, but found {len(paths)}")
+                    value = Value(paths[0], FileObject, "file")
                 elif "file[]" in expected_types:
-                    outputs[global_output_id] = Value([FileObject(p) for p in output_file_paths], FileObject, "file")
+                    value = Value(paths, FileObject, "file")
                 elif "directory" in expected_types:
-                    outputs[global_output_id] = Value(DirectoryObject(output_file_paths[0]), DirectoryObject, "directory")
+                    if len(paths) > 1:
+                        raise Exception(f"Expected 1 path, but found {len(paths)}")
+                    value = Value(paths[0], DirectoryObject,"directory")
                 elif "directory[]" in expected_types:
-                    outputs[global_output_id] = Value([DirectoryObject(p) for p in output_file_paths], DirectoryObject, "directory")
+                    value = Value(paths, DirectoryObject, "directory")
                 elif "string" in expected_types:
-                    outputs[global_output_id] = Value(output_file_paths[0], str, "string")
+                    value = Value(str(paths[0]), str, "string")
                 elif "string[]" in expected_types:
-                    outputs[global_output_id] = Value(output_file_paths, str, "string")
-
-            # loadContents
-            if ("loadContents" in output_dict and
-                output_dict["outputEval"] is not None):
-                if not any(["file" in type_ for type_ in expected_types]):
-                    raise Exception(f"loadContents must only be used on 'file' or 'file[]' type")
-                # TODO
-                raise NotImplementedError()
+                    value = Value([str(p) for p in paths], str, "string")
+                outputs[global_output_id] = value
 
             # outputEval
             if ("outputEval" in output_dict and 
