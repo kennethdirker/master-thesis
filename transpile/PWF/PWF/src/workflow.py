@@ -166,7 +166,7 @@ class BaseWorkflow(BaseProcess):
         if main:
             yaml_uri = self.loading_context["input_object"]
             runtime_context = self.load_input_object(yaml_uri)
-            self.register_step_output_sources(runtime_context)
+            # self.register_step_output_sources(runtime_context)
             self.register_input_sources(runtime_context)
             self.set_scatters(self, [])
             self.create_dependency_graph()
@@ -281,30 +281,30 @@ class BaseWorkflow(BaseProcess):
         raise Exception(f"{uri} does not contain a BaseProcess subclass")
 
 
-    def register_step_output_sources(
-            self,
-            runtime_context: Dict[str, Any]
-        ) -> None:
-        """
-        Add an empty entry in the ``runtime_context`` for each step output.
-        Empty entries are used to see which tools have not supplied their
-        outputs.
-        """
-        for process in self.loading_context["processes"].values():
-            if not issubclass(type(process), BaseWorkflow):
-                continue
+    # def register_step_output_sources(
+    #         self,
+    #         runtime_context: Dict[str, Any]
+    #     ) -> None:
+    #     """
+    #     Add an empty entry in the ``runtime_context`` for each step output.
+    #     Empty entries are used to see which tools have not supplied their
+    #     outputs.
+    #     """
+    #     for process in self.loading_context["processes"].values():
+    #         if not issubclass(type(process), BaseWorkflow):
+    #             continue
 
-            for step_id, step_dict in self.steps.items():
-                step_proc: BaseProcess = self.step_id_to_process[step_id]
+    #         for step_id, step_dict in self.steps.items():
+    #             step_proc: BaseProcess = self.step_id_to_process[step_id]
                 
-                # Register step outputs as global sources
-                if isinstance(step_dict["out"], list):
-                    for out_id in step_dict["out"]:
-                        runtime_context[step_proc.global_id(out_id)] = Absent()
-                elif isinstance(step_dict["out"], str):
-                    runtime_context[step_proc.global_id(step_dict["out"])] = Absent()
-                else:
-                    raise NotImplementedError("Encountered unsupported type", type(step_dict["out"]))
+    #             # Register step outputs as global sources
+    #             if isinstance(step_dict["out"], list):
+    #                 for out_id in step_dict["out"]:
+    #                     runtime_context[step_proc.global_id(out_id)] = Absent()
+    #             elif isinstance(step_dict["out"], str):
+    #                 runtime_context[step_proc.global_id(step_dict["out"])] = Absent()
+    #             else:
+    #                 raise NotImplementedError("Encountered unsupported type", type(step_dict["out"]))
 
 
     def register_input_sources(
@@ -391,7 +391,7 @@ class BaseWorkflow(BaseProcess):
                     if "/" in source:   # {global_process_id}:{step_id}/{output_id}
                         # A step output is the input source
                         step_id, output_id = source.split("/")
-                        output_process = self.step_id_to_process[step_id]
+                        output_process = cast(BaseWorkflow, _process).step_id_to_process[step_id]
                         process.input_to_source[input_id] = output_process.global_id(output_id)
                         break
                     else:               # {global_process_id}:{input_id}
@@ -412,7 +412,7 @@ class BaseWorkflow(BaseProcess):
 
     def source_workflow_input(self, workflow_input_id: str) -> str:
         """
-        TODO
+        Search and return the global source ID of a workflow input.
         """
         process = self
         while issubclass(type(process), BaseWorkflow):
@@ -438,6 +438,10 @@ class BaseWorkflow(BaseProcess):
             step_in_id: str,
             step_id: str
         ) -> str:
+        """
+        Search and return the global source ID of input ``step_in_id`` from
+        step ``step_id``.
+        """
         process = self.step_id_to_process[step_id]
         if issubclass(type(process), BaseCommandLineTool):
             return process.input_to_source[step_in_id]
@@ -657,11 +661,12 @@ class BaseWorkflow(BaseProcess):
             # the namespace.
             source = tool.input_to_source[input_id]
             value = step_runtime_context[source]
-            if value:
+            if isinstance(value, Value):
                 value = value.value
             cwl_namespace["self"] = value
             expression = parent_process.steps[tool.step_id]["in"][input_id]["valueFrom"]
             expr_result = self.eval(expression, cwl_namespace)
+
             # Evaluated expression needs to be wrapped
             # NOTE TO SELF: If string overlap with files and dirs is handled in commandlinetool, skip it here?
             # js2py returns lists and dicts as js2py.base.JsObjectWrapper.
