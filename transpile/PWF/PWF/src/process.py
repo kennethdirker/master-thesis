@@ -334,10 +334,10 @@ class BaseProcess(ABC):
             # A mapping either means a potential file/directory, or an
             # unsupported custom data type. Unsupported types result in error.
                 if "class" in head:
-                    if "file" in head["class"]:
+                    if "File" in head["class"]:
                         return Value([FileObject(p["path"]) for p in input_value], 
                                       FileObject, "file")
-                    elif "directory" in head["class"]:
+                    elif "Directory" in head["class"]:
                         return Value([DirectoryObject(p["path"]) for p in input_value],
                                       DirectoryObject, "directory")
                     else:
@@ -352,10 +352,10 @@ class BaseProcess(ABC):
             # A mapping either means a potential file/directory, or an
             # unsupported custom data type. Unsupported types result in error.
             if "class" in input_value:
-                if "file" in input_value["class"]:
+                if "File" in input_value["class"]:
                     return Value(FileObject(input_value["path"]),
                                  FileObject, "file")
-                elif "directory" in input_value["class"]:
+                elif "Directory" in input_value["class"]:
                     return Value(DirectoryObject(input_value["path"]), 
                                  DirectoryObject, "directory")
                 else:
@@ -363,8 +363,7 @@ class BaseProcess(ABC):
             elif "file" in self.inputs[input_id]["type"]:
                 return Value(FileObject(input_value), FileObject, "file")
             elif "directory" in self.inputs[input_id]["type"]:
-                # return Value(DirectoryObject(input_value), DirectoryObject, "directory")
-                raise NotImplementedError()
+                return Value(DirectoryObject(input_value), DirectoryObject, "directory")
             else:
                 raise NotImplementedError()
             
@@ -374,7 +373,8 @@ class BaseProcess(ABC):
 
             # Match input to schema
             value_types = PY_CWL_T_MAPPING[type(input_value)]
-            matched_types = [t for t in value_types if t in expected_cwl_types]
+            matched_types = [t for t in value_types 
+                             if t in expected_cwl_types]
             if len(matched_types) == 0:
                 raise Exception(f"Input '{input_id}' did not match the input schema")
 

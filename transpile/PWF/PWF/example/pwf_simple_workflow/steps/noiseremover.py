@@ -39,7 +39,7 @@ class noiseremover_PWF(BaseCommandLineTool):
 		self.requirements = {
 			"InitialWorkDirRequirement": [
 				{
-					"class": "file",
+					"class": "File",
 					"location": "/home/kennethdirker/Leiden/2024-2025/Thesis/transpile/PWF/PWF/example/cwl_simple_workflow/scripts/noiseremover.py",
 				},
 			],

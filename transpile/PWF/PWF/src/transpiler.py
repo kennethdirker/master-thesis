@@ -164,7 +164,7 @@ def CWLFile_to_dict(f: CWLFile) -> Dict[str, Any]:
             d[attr] = getattr(o, attr)
 
     d: Dict[str, Any] = {}
-    d["class"] = "file"
+    d["class"] = "File"
     load(d, f, "location")
     load(d, f, "path")
     load(d, f, "basename")
@@ -188,7 +188,7 @@ def CWLDirectory_to_dict(f: CWLDirectory) -> Dict[str, Any]:
             d[attr] = getattr(o, attr)
 
     d: Dict[str, Any] = {}
-    d["class"] = "directory"
+    d["class"] = "Directory"
     load(d, f, "location")
     load(d, f, "path")
     load(d, f, "basename")
