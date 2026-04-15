@@ -275,13 +275,13 @@ class BaseCommandLineTool(BaseProcess):
                 # add them to the listing for later processing.            
                 if  ((isinstance(entry, Sequence) and len(entry) > 0) and
                     ((isinstance(entry[0], Mapping) and "class" in entry[0] and 
-                      entry[0]["class"] in ("file", "directory")) or
+                      entry[0]["class"] in ("File", "Directory")) or
                       isinstance(entry[0], FILE_DIR))):  
                     # List of files and directories
                     listing.extend(entry)
                     continue
                 elif ((isinstance(entry, Mapping) and "class" in entry
-                       and entry["class"] in ("file", "directory")
+                       and entry["class"] in ("File", "Directory")
                       ) or isinstance(entry, FILE_DIR)):
                     # Single file or directory
                     listing.append(entry)
@@ -314,10 +314,10 @@ class BaseCommandLineTool(BaseProcess):
 
             i = len(listing) - 1 - i
             if "class" in l:
-                if "file" in l["class"]:
+                if "File" in l["class"]:
                     # TODO Comlete FileObject path attribute autocomplete?
                     listing[i] = FileObject(l)
-                elif "directory" in l["class"]:
+                elif "Directory" in l["class"]:
                     # TODO DirectoryObject.listing?
                     listing[i] = DirectoryObject(l)
         
