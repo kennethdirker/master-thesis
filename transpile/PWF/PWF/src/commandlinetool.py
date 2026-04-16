@@ -96,8 +96,9 @@ class BaseCommandLineTool(BaseProcess):
             yaml_uri = self.loading_context["input_object"]
             runtime_context = self.load_input_object(yaml_uri)
             self.register_input_sources(runtime_context)
-            outputs = self.execute(self.loading_context["use_dask"],
-                                   runtime_context)
+            # outputs = self.execute(self.loading_context["use_dask"],
+            outputs = self.execute(runtime_context, 
+                                   self.loading_context["client"])
             self.finalize(outputs)
             
 
@@ -900,7 +901,7 @@ class BaseCommandLineTool(BaseProcess):
             NotImplementedError for features not yet implemented (e.g.
             ``loadContents`` handling), or re-raises subprocess errors.
         """
-        cwl_namespace = cwl_namespace.copy()
+        # cwl_namespace = cwl_namespace.copy()
 
         # Execute tool
         stdin = sys.stdin
@@ -1106,11 +1107,11 @@ class BaseCommandLineTool(BaseProcess):
         
     def execute(
             self, 
-            use_dask: bool,
+            # use_dask: bool,
             runtime_context: Dict[str, Any],
             # scatter_idx: Optional[List[int]] = None,
-            verbose: Optional[bool] = True,
-            client: Optional[Client] = None,
+            client: Client,
+            verbose: bool = False,
         ) -> dict[str, Value]:
         """Top-level execution entrypoint for the tool.
 
@@ -1120,8 +1121,8 @@ class BaseCommandLineTool(BaseProcess):
         output ID as key.
 
         Args:
-            use_dask: If True, submit the work to the provided or a new
-                Dask client; otherwise run locally.
+          #  use_dask: If True, submit the work to the provided or a new
+          #      Dask client; otherwise run locally.
             runtime_context: Optional mapping of runtime inputs to override
                 the instance's current ``runtime_context``.
             verbose: Whether to print progress and debugging information.
@@ -1149,10 +1150,10 @@ class BaseCommandLineTool(BaseProcess):
 
         # Submit and execute tool and gather output
         new_state: Dict[str, Value] = {}
-        if use_dask:
-            if client is None:
-                client = Client()
-            
+        # if use_dask:
+            # if client is None:
+                # client = Client()
+        if client:
             future = client.submit(
                 self.run_wrapper,
                 cmd,
@@ -1162,15 +1163,24 @@ class BaseCommandLineTool(BaseProcess):
                 cwd = tmp_path,
                 pure = False
             )
-            new_state = future.result()
+            return future.result()
         else:
-            new_state = self.run_wrapper(
+            return self.run_wrapper(
                 cmd,
                 cwl_namespace,
                 self.outputs,
                 env,
                 cwd = tmp_path,
+                pure = False
             )
+        # else:
+        #     new_state = self.run_wrapper(
+        #         cmd,
+        #         cwl_namespace,
+        #         self.outputs,
+        #         env,
+        #         cwd = tmp_path,
+        #     )
         # print("[DEBUG] Tool Outputs", *[f"{k}:::{v}" for k, v in new_state.items()], sep="\n")
 
-        return new_state
+        # return new_state

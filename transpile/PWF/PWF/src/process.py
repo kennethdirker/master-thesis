@@ -8,6 +8,9 @@ import uuid
 import yaml
 
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
+from dask.distributed import Client
+from dask_jobqueue.slurm import SLURMCluster
 from pathlib import Path
 from typing import (
     Any,
@@ -79,6 +82,7 @@ class BaseProcess(ABC):
             - init_tmp_dir_empty (bool)
             - preserve_tmp (bool)
             - use_dask  (bool)
+            - client (ThreadPoolExecutor | dask.distributed.Client)
 
         Implementation NOTE: BaseProcess __init__ must be called from the
         subclass __init__ before any other state is touched.
@@ -159,7 +163,9 @@ class BaseProcess(ABC):
         Create and return an argument parser for command-line arguments.
 
         TODO Description (schema) of arguments
-        python PWF.py [--outdir OUTDIR, --tmpdir TMPDIR, --preserve_tmp, --dask] input_object.yaml
+        python PWF.py [--outdir OUTDIR, --tmpdir TMPDIR, --preserve_tmp,
+                       [--dask, [--slurm_config CONFIGFILE, --slurm_job JOBFILE]]]
+                      input_object.yaml
         """
         parser = argparse.ArgumentParser()
         parser.add_argument(
@@ -192,14 +198,41 @@ class BaseProcess(ABC):
             default=False,
             help="Execute process tasks with Dask instead of with standard system call."
         )
+        parser.add_argument(
+            "--slurm_config",
+            type = str,
+            help = "Path to the SLURM config file."
+        )
+        parser.add_argument(
+            "--slurm_job",
+            type = str,
+            help = "Path to the SLURM job file."
+        )
         return parser
+    
+
+    def get_slurm_client(self, slurm_config: Path, slurm_job: Path) -> Client:
+        cluster = SLURMCluster()
+        # TODO
+        # TODO
+        # TODO
+        # TODO
+        # TODO
+        # TODO
+        # TODO
+        # TODO
+        # TODO
+        # TODO
+        # TODO
+        # TODO
+        raise NotImplementedError()
+        return Client(cluster)
     
     
     def process_cli_args(self, loading_context: Dict[str, Any]) -> None:
         """
         Process CLI arguments.
         TODO Description of arguments
-        TODO out dir(empty), tmp dir(empty), use dask
         """
         parser = self.create_parser()
         args = parser.parse_args()
@@ -237,9 +270,32 @@ class BaseProcess(ABC):
         print(f"[PROCESS]:\t{tmp_dir_path}")
 
         # Configure whether Dask is used for execution
+        client = ThreadPoolExecutor()
         loading_context["use_dask"] = args.dask
         print(f"[PROCESS]: Execute with Dask: {args.dask}")
 
+        # SLURM
+        if args.slurm_config or args.slurm_job:
+            # SLURM usage requires Dask
+            if not args.dask:
+                parser.error("SLURM scheduling is Dask exclusive")
+            # Both a config file and a job file need to be submitted
+            if args.slurm_config is None or args.slurm_config is None:
+                parser.error("SLURM scheduling requires --slurm_config and --slurm_job")
+            slurm_config = Path(args.slurm_config)
+            if not slurm_config.is_file():
+                raise FileNotFoundError(f"{slurm_config} is not a file")
+            slurm_job = Path(args.slurm_config)
+            if not slurm_job.is_file():
+                raise FileNotFoundError(f"{slurm_job} is not a file")
+
+            # Configure SLURM client
+            client = self.get_slurm_client(slurm_config, slurm_job)
+
+        # Initialize the (Dask) client that executes the jobs (via SLURM) 
+        if args.dask and client is None:
+            self.loading_context["client"] = Client()
+        
 
     def global_id(self, s: str) -> str:
         """

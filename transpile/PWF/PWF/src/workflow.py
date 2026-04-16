@@ -4,13 +4,12 @@ import concurrent.futures
 import dask.distributed
 import importlib
 import inspect
-import numpy as np
 import sys
 import time
 
 from abc import abstractmethod
-from concurrent.futures import ThreadPoolExecutor   
-from dask.distributed import Client
+from concurrent.futures import ThreadPoolExecutor
+# from dask.distributed import Client as DaskClient
 from itertools import product
 from math import prod
 from pathlib import Path
@@ -39,11 +38,10 @@ from .utils import (
     PY_CWL_T_MAPPING,
 )
 
-# if TYPE_CHECKING:
-    # from .commandlinetool import BaseCommandLineTool
 from .commandlinetool import BaseCommandLineTool
 
 Future: TypeAlias = concurrent.futures.Future | dask.distributed.Future
+Client: TypeAlias = dask.distributed.Client | ThreadPoolExecutor
 Vec: TypeAlias = Tuple[int, ...]
 
 
@@ -171,9 +169,8 @@ class BaseWorkflow(BaseProcess):
             self.set_scatters(self, [])
             self.create_dependency_graph()
             self.optimize_dependency_graph()
-            outputs = self.execute(self.loading_context["use_dask"],
-                                   runtime_context,
-                                   dask_client = None)
+            outputs = self.execute(runtime_context,
+                                   self.loading_context["client"])
             self.finalize(outputs)
 
 
@@ -778,12 +775,12 @@ class BaseWorkflow(BaseProcess):
         # Execute runnable nodes in the ThreadPool
         for node_id, (node, idx, shape) in runnable.copy().items():
             tool = node.tool
+            client = self.loading_context["client"]
             if len(tool.scatters) == 0:
                 # Normal execution
                 print(f"[NODE]: Submitting tool {tool.id}")
                 context = self.prepare_step_runtime_context(tool, runtime_context)
-                future = executor.submit(tool.execute, False, context,
-                                         verbose = verbose)
+                future = executor.submit(tool.execute, context, client, verbose)
                 running[node_id] = (future, node, None, None)
             elif idx is not None:
                 # Schedule the indexed job with the correct scattered context
@@ -792,10 +789,7 @@ class BaseWorkflow(BaseProcess):
                 context = self.prepare_step_runtime_context(tool, context)
                 job_id = f"{node_id}:::{':'.join([str(i) for i in idx])}"
                 print(f"[NODE]: Submitting tool {job_id}")
-                future = executor.submit(tool.execute,
-                                         False,
-                                         context,
-                                         verbose = verbose)
+                future = executor.submit(tool.execute, context, client, verbose)
                 running[job_id] = (future, node, idx, shape)
             else:
                 # First level scatter: Scatter and submit jobs
@@ -811,10 +805,7 @@ class BaseWorkflow(BaseProcess):
                     context = self.prepare_step_runtime_context(tool, context)
                     job_id = f"{node_id}:::{':'.join([str(i) for i in idx])}"
                     print(f"[NODE]: Submitting tool {job_id}")
-                    future = executor.submit(tool.execute,
-                                             False,
-                                             context,
-                                             verbose = verbose)
+                    future = executor.submit(tool.execute, context, verbose)
                     running[job_id] = (future, node, idx, shape)
 
             runnable.pop(node_id)
@@ -982,8 +973,8 @@ class BaseWorkflow(BaseProcess):
             self,
             outer_node: OuterNode,
             runtime_context: Dict[str, Value],
-            verbose: Optional[bool] = True,
-            executor: Optional[ThreadPoolExecutor] = None
+            executor: Optional[ThreadPoolExecutor] = None,
+            verbose: Optional[bool] = False,
         ) -> Dict[str, Value]:
         """
         Execute the tasks of this node.
@@ -1029,10 +1020,9 @@ class BaseWorkflow(BaseProcess):
 
     def execute(
             self, 
-            use_dask: bool,
-            runtime_context: Dict[str, Value],
+            runtime_context: Dict[str, Any],
+            client: Client,
             verbose: bool = False,
-            dask_client: Optional[Client] = None
         ) -> dict[str, Value]:
         """
         Execute the workflow as the main process. The workflow is executed by
@@ -1045,12 +1035,13 @@ class BaseWorkflow(BaseProcess):
         Returns:
             Dictionary of (output ID, output value) key-value pairs.
         """
-        sub_client = None
-        if use_dask and dask_client is None:
-            client = Client()
-        else:
-            client = ThreadPoolExecutor()
-            sub_client = client
+        # executor = None
+        # if client is None:
+        # if isinstance(client, ThreadPoolExecutor):
+            # client = ThreadPoolExecutor()
+            # executor = client
+        # Set the InnerNode execution client
+        executor = client if isinstance(client, ThreadPoolExecutor) else None
 
         # Initialize queues
         graph: OuterGraph = self.loading_context["graph"]
@@ -1099,8 +1090,8 @@ class BaseWorkflow(BaseProcess):
                 future = client.submit(self.exec_outer_node,
                                        node,
                                        runtime_context.copy(),
-                                       verbose,
-                                       sub_client)
+                                       executor,
+                                       verbose)
 
                 running[node_id] = (future, node)
                 runnable.pop(node_id)

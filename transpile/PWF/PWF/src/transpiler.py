@@ -182,7 +182,9 @@ def CWLFile_to_dict(f: CWLFile) -> Dict[str, Any]:
     return d
 
 def CWLDirectory_to_dict(f: CWLDirectory) -> Dict[str, Any]:
+    """
     # NOTE Does not support http(s):// IRI schemas
+    """
     def load(d: dict, o: Any, attr: str):
         if hasattr(o, attr) and getattr(o, attr) is not None:
             d[attr] = getattr(o, attr)
