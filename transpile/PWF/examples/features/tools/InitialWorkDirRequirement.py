@@ -11,7 +11,7 @@ class InitialWorkDirRequirement_PWF(BaseCommandLineTool):
 				"type": "file",
 				"default": {
 					"class": "File",
-					"path": "/home/kennethdirker/Leiden/2024-2025/Thesis/transpile/PWF/PWF/example/features/tools/InitialWorkDirRequirement.yaml",
+					"path": "/home/kennethdirker/Leiden/2024-2025/Thesis/transpile/PWF/examples/features/tools/InitialWorkDirRequirement.yaml",
 				}
 			},
 		}
