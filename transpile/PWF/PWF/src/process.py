@@ -211,22 +211,16 @@ class BaseProcess(ABC):
         return parser
     
 
-    def get_slurm_client(self, slurm_config: Path, slurm_job: Path) -> Client:
-        cluster = SLURMCluster()
-        # TODO
-        # TODO
-        # TODO
-        # TODO
-        # TODO
-        # TODO
-        # TODO
-        # TODO
-        # TODO
-        # TODO
-        # TODO
-        # TODO
-        raise NotImplementedError()
-        return Client(cluster)
+    def setup_client(self) -> Client | None:
+        lc = self.loading_context
+        if lc["use_dask"]:
+            if lc["use_slurm"]:
+                cluster = SLURMCluster()
+                return Client(cluster)
+            else:
+                return Client()
+
+        return None
     
     
     def process_cli_args(self, loading_context: Dict[str, Any]) -> None:
@@ -250,7 +244,7 @@ class BaseProcess(ABC):
         if out_dir_path.exists() and not out_dir_path.is_dir():
             raise Exception(f"Output directory {out_dir_path} is not a directory")
         out_dir_path.mkdir(parents=True, exist_ok=True)            # Create out dir
-        is_empty = not any(out_dir_path.iterdir())  # Check if out dir is empty
+        is_empty = not any(out_dir_path.iterdir())  # Check out_dir empty
         loading_context["init_out_dir_empty"] = is_empty
         loading_context["designated_out_dir"] = out_dir_path
         print(f"[PROCESS]: Designated output directory:")
@@ -260,8 +254,8 @@ class BaseProcess(ABC):
         tmp_dir_path = Path(args.tmpdir).absolute()
         if tmp_dir_path.exists() and not tmp_dir_path.is_dir():
             raise Exception(f"Temporary directory {tmp_dir_path} is not a directory")
-        tmp_dir_path.mkdir(parents=True, exist_ok=True)            # Create tmp dir
-        is_empty = not any(tmp_dir_path.iterdir())  # Check if tmp dir is empty
+        tmp_dir_path.mkdir(parents=True, exist_ok=True) # Create tmp_dir
+        is_empty = not any(tmp_dir_path.iterdir())      # Check tmp_dir empty
         loading_context["init_tmp_dir_empty"] = is_empty
         loading_context["designated_tmp_dir"] = tmp_dir_path
         loading_context["preserve_tmp"] = args.preserve_tmp
@@ -270,11 +264,11 @@ class BaseProcess(ABC):
         print(f"[PROCESS]:\t{tmp_dir_path}")
 
         # Configure whether Dask is used for execution
-        client = ThreadPoolExecutor()
         loading_context["use_dask"] = args.dask
         print(f"[PROCESS]: Execute with Dask: {args.dask}")
 
         # SLURM
+        loading_context["use_slurm"] = False
         if args.slurm_config or args.slurm_job:
             # SLURM usage requires Dask
             if not args.dask:
@@ -288,13 +282,10 @@ class BaseProcess(ABC):
             slurm_job = Path(args.slurm_config)
             if not slurm_job.is_file():
                 raise FileNotFoundError(f"{slurm_job} is not a file")
-
-            # Configure SLURM client
-            client = self.get_slurm_client(slurm_config, slurm_job)
-
-        # Initialize the (Dask) client that executes the jobs (via SLURM) 
-        if args.dask and client is None:
-            self.loading_context["client"] = Client()
+            self.loading_context["slurm_config"] = slurm_config
+            self.loading_context["slurm_job"] = slurm_job
+            loading_context["use_slurm"] = True
+            print(f"[PROCESS]: Execute with SLURM: True")
         
 
     def global_id(self, s: str) -> str:

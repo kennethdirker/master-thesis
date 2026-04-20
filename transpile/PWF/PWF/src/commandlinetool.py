@@ -96,9 +96,9 @@ class BaseCommandLineTool(BaseProcess):
             yaml_uri = self.loading_context["input_object"]
             runtime_context = self.load_input_object(yaml_uri)
             self.register_input_sources(runtime_context)
-            # outputs = self.execute(self.loading_context["use_dask"],
             outputs = self.execute(runtime_context, 
-                                   self.loading_context["client"])
+                                   client = self.setup_client(),
+                                   verbose = False)
             self.finalize(outputs)
             
 
@@ -703,7 +703,8 @@ class BaseCommandLineTool(BaseProcess):
             arguments: List[Dict[str, Any]],
             runtime_context: Dict[str, Any]
         ) -> List[str]:
-        """Construct the full command line for the tool from runtime input values.
+        """
+        Construct the full command line for the tool from runtime input values.
 
         The method iterates over the tool's inputs, orders positional
         parameters by their ``position``, validates runtime types against the
@@ -794,9 +795,6 @@ class BaseCommandLineTool(BaseProcess):
                     match = "directory"
                 elif "string" in expected_types or "string[]" in expected_types:
                     match = "string"
-            # elif (value_cwl_t in ("file", "directory") and
-            #       "string" in expected_types or "string[]" in expected_types):
-            #     match = "string"
             elif value_cwl_t in expected_types or value_cwl_t + "[]" in expected_types:
                 match = value_cwl_t
 
@@ -888,9 +886,11 @@ class BaseCommandLineTool(BaseProcess):
         Args:
             cmd: The command token list to execute.
             cwl_namespace: Namespace used for evaluating output globs and
-                expressions (``outputEval``).
+                    expressions (``outputEval``).
             output_schema: Dictionary describing outputs and their bindings.
             env: Environment variables to pass to the subprocess.
+            cwd: Path to the current working directory in which the tool
+                    executes.
 
         Returns:
             A dict mapping global output ids to ``Value`` instances (or
@@ -1107,10 +1107,8 @@ class BaseCommandLineTool(BaseProcess):
         
     def execute(
             self, 
-            # use_dask: bool,
             runtime_context: Dict[str, Any],
-            # scatter_idx: Optional[List[int]] = None,
-            client: Client,
+            client: Optional[Client] = None,
             verbose: bool = False,
         ) -> dict[str, Value]:
         """Top-level execution entrypoint for the tool.
@@ -1118,16 +1116,13 @@ class BaseCommandLineTool(BaseProcess):
         This method prepares the runtime environment, builds the
         command line, and executes the tool either locally
         or via a Dask ``Client``. Outputs are returned in a dict with the
-        output ID as key.
+        global output ID as key.
 
         Args:
-          #  use_dask: If True, submit the work to the provided or a new
-          #      Dask client; otherwise run locally.
-            runtime_context: Optional mapping of runtime inputs to override
-                the instance's current ``runtime_context``.
+            runtime_context: Dictionary of values used in evaluations and for
+                    building the command line.
+            client: Optional Dask ``Client``.
             verbose: Whether to print progress and debugging information.
-            client: Optional Dask ``Client`` to use when ``use_dask`` is
-                True.
 
         Returns:
             A dictionary mapping global output ids to ``Value`` objects.
@@ -1148,11 +1143,6 @@ class BaseCommandLineTool(BaseProcess):
         # Build the execution environment
         env = self.build_env(cwl_namespace)
 
-        # Submit and execute tool and gather output
-        new_state: Dict[str, Value] = {}
-        # if use_dask:
-            # if client is None:
-                # client = Client()
         if client:
             future = client.submit(
                 self.run_wrapper,
@@ -1171,16 +1161,4 @@ class BaseCommandLineTool(BaseProcess):
                 self.outputs,
                 env,
                 cwd = tmp_path,
-                pure = False
             )
-        # else:
-        #     new_state = self.run_wrapper(
-        #         cmd,
-        #         cwl_namespace,
-        #         self.outputs,
-        #         env,
-        #         cwd = tmp_path,
-        #     )
-        # print("[DEBUG] Tool Outputs", *[f"{k}:::{v}" for k, v in new_state.items()], sep="\n")
-
-        # return new_state

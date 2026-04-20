@@ -170,7 +170,8 @@ class BaseWorkflow(BaseProcess):
             self.create_dependency_graph()
             self.optimize_dependency_graph()
             outputs = self.execute(runtime_context,
-                                   self.loading_context["client"])
+                                   client = self.setup_client(),
+                                   verbose = False)
             self.finalize(outputs)
 
 
@@ -775,12 +776,13 @@ class BaseWorkflow(BaseProcess):
         # Execute runnable nodes in the ThreadPool
         for node_id, (node, idx, shape) in runnable.copy().items():
             tool = node.tool
-            client = self.loading_context["client"]
+            # client = self.loading_context["client"]
             if len(tool.scatters) == 0:
                 # Normal execution
                 print(f"[NODE]: Submitting tool {tool.id}")
                 context = self.prepare_step_runtime_context(tool, runtime_context)
-                future = executor.submit(tool.execute, context, client, verbose)
+                future = executor.submit(tool.execute, context, verbose=verbose)
+                # future = executor.submit(tool.execute, context, client, verbose)
                 running[node_id] = (future, node, None, None)
             elif idx is not None:
                 # Schedule the indexed job with the correct scattered context
@@ -789,7 +791,7 @@ class BaseWorkflow(BaseProcess):
                 context = self.prepare_step_runtime_context(tool, context)
                 job_id = f"{node_id}:::{':'.join([str(i) for i in idx])}"
                 print(f"[NODE]: Submitting tool {job_id}")
-                future = executor.submit(tool.execute, context, client, verbose)
+                future = executor.submit(tool.execute, context, verbose=verbose)
                 running[job_id] = (future, node, idx, shape)
             else:
                 # First level scatter: Scatter and submit jobs
@@ -805,7 +807,7 @@ class BaseWorkflow(BaseProcess):
                     context = self.prepare_step_runtime_context(tool, context)
                     job_id = f"{node_id}:::{':'.join([str(i) for i in idx])}"
                     print(f"[NODE]: Submitting tool {job_id}")
-                    future = executor.submit(tool.execute, context, verbose)
+                    future = executor.submit(tool.execute, context, verbose=verbose)
                     running[job_id] = (future, node, idx, shape)
 
             runnable.pop(node_id)
@@ -1021,7 +1023,7 @@ class BaseWorkflow(BaseProcess):
     def execute(
             self, 
             runtime_context: Dict[str, Any],
-            client: Client,
+            client: Optional[Client] = None,
             verbose: bool = False,
         ) -> dict[str, Value]:
         """
@@ -1035,13 +1037,10 @@ class BaseWorkflow(BaseProcess):
         Returns:
             Dictionary of (output ID, output value) key-value pairs.
         """
-        # executor = None
-        # if client is None:
-        # if isinstance(client, ThreadPoolExecutor):
-            # client = ThreadPoolExecutor()
-            # executor = client
-        # Set the InnerNode execution client
-        executor = client if isinstance(client, ThreadPoolExecutor) else None
+        executor = None
+        if client is None:
+            client = ThreadPoolExecutor()
+            executor = client
 
         # Initialize queues
         graph: OuterGraph = self.loading_context["graph"]
