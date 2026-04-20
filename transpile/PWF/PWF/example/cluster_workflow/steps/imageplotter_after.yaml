@@ -1,0 +1,3 @@
+input_fits:
+  - /var/scratch/kdirker/no_noise_image.fits
+output_image: no_noise_out.png

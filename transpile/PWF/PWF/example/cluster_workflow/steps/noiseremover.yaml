@@ -1,0 +1,2 @@
+input: /var/scratch/kdirker/image_mf_02.fits
+output_file_name: no_noise_image.fits
