@@ -35,8 +35,6 @@ from cwl_utils.parser import (
     ExpressionTool
 )
 
-# from PWF.src.utils import FileObject
-
     
 def quote(value: Any) -> str:
     """ 
@@ -218,11 +216,11 @@ def parse_prefix(
     lines: list[str] = []
 
     if "CommandLineTool" in cwl.class_:
-        lines.append("from PWF.src.commandlinetool import BaseCommandLineTool")
+        lines.append("from PWF.commandlinetool import BaseCommandLineTool")
         lines.append("")
         lines.append(f"class {class_name}(BaseCommandLineTool):")
     elif "Workflow" in cwl.class_:
-        lines.append("from PWF.src.workflow import BaseWorkflow")
+        lines.append("from PWF.workflow import BaseWorkflow")
         lines.append("")
         lines.append(f"class {class_name}(BaseWorkflow):")
     

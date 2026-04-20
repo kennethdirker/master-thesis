@@ -1,4 +1,4 @@
-from PWF.src.commandlinetool import BaseCommandLineTool
+from PWF.commandlinetool import BaseCommandLineTool
 
 class touch_PWF(BaseCommandLineTool):
 

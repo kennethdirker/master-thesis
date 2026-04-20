@@ -1,4 +1,4 @@
-from PWF.src.commandlinetool import BaseCommandLineTool
+from PWF.commandlinetool import BaseCommandLineTool
 
 class tool_PWF(BaseCommandLineTool):
 

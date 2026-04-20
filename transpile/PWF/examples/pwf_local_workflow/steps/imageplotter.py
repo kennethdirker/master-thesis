@@ -1,4 +1,4 @@
-from PWF.src.commandlinetool import BaseCommandLineTool
+from PWF.commandlinetool import BaseCommandLineTool
 
 class imageplotter_PWF(BaseCommandLineTool):
 
@@ -40,7 +40,7 @@ class imageplotter_PWF(BaseCommandLineTool):
 			"InitialWorkDirRequirement": [
 				{
 					"class": "File",
-					"location": "/home/kennethdirker/Leiden/2024-2025/Thesis/transpile/PWF/PWF/example/cwl_simple_workflow/scripts/imageplotter.py",
+					"location": "/home/kennethdirker/Leiden/2024-2025/Thesis/transpile/PWF/examples/cwl_local_workflow/scripts/imageplotter.py",
 				},
 			],
 		}

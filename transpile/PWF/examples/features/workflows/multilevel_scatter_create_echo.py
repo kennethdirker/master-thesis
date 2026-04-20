@@ -1,4 +1,4 @@
-from PWF.src.workflow import BaseWorkflow
+from PWF.workflow import BaseWorkflow
 
 class multilevel_scatter_create_echo_PWF(BaseWorkflow):
 
