@@ -1,4 +1,4 @@
-from PWF.src.workflow import BaseWorkflow
+from PWF.workflow import BaseWorkflow
 
 class process_images_offline_PWF(BaseWorkflow):
 
