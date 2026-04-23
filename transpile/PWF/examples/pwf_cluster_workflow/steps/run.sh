@@ -16,9 +16,6 @@ fi
 if test -d $TMPDIR; then
     rm -rf $TMPDIR
 fi
-# if test -d $OUTDIR; then
-#     rm -rf $OUTDIR
-# fi
 
 # Execute the tools simulating the workflow in the workflow directory
 # python download_images.py download_images.yaml    < Doesn't work because url is broken

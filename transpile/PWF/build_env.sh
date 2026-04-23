@@ -3,4 +3,4 @@ $PYTHON -V
 which $PYTHON
 $PYTHON -m venv env
 source env/bin/activate
-python3 -m pip install -r test_requirements.txt
+python3 -m pip install -r example_requirements.txt
