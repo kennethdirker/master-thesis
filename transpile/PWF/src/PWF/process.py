@@ -8,7 +8,6 @@ import uuid
 import yaml
 
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor
 from dask.distributed import Client
 from dask_jobqueue.slurm import SLURMCluster
 from pathlib import Path
@@ -164,7 +163,7 @@ class BaseProcess(ABC):
 
         TODO Description (schema) of arguments
         python PWF.py [--outdir OUTDIR, --tmpdir TMPDIR, --preserve_tmp,
-                       [--dask, [--slurm_config CONFIGFILE, --slurm_job JOBFILE]]]
+                       [--dask, [--slurm JOBFILE]]]
                       input_object.yaml
         """
         parser = argparse.ArgumentParser()
@@ -198,24 +197,68 @@ class BaseProcess(ABC):
             default=False,
             help="Execute process tasks with Dask instead of with standard system call."
         )
+        # parser.add_argument(
+        #     "--slurm_config",
+        #     type = str,
+        #     help = "Path to the SLURM config file."
+        # )
         parser.add_argument(
-            "--slurm_config",
+            "--slurm",
             type = str,
-            help = "Path to the SLURM config file."
-        )
-        parser.add_argument(
-            "--slurm_job",
-            type = str,
-            help = "Path to the SLURM job file."
+            help = "Path to the SLURM job script."
         )
         return parser
     
 
     def setup_client(self) -> Client | None:
+        """
+        #!/bin/bash
+        #SBATCH --job-name=my_job_name        # Job name
+        #SBATCH --output=output.txt           # Standard output file
+        #SBATCH --error=error.txt             # Standard error file
+        #SBATCH --partition=partition_name    # Partition or queue name
+        #SBATCH --nodes=1                     # Number of nodes
+        #SBATCH --ntasks-per-node=1           # Number of tasks per node
+        #SBATCH --cpus-per-task=1             # Number of CPU cores per task
+        #SBATCH --time=1:00:00                # Maximum runtime (D-HH:MM:SS)
+        #SBATCH --mail-type=END               # Send email at job completion
+        #SBATCH --mail-user=your@email.com    # Email address for notifications
+        """
         lc = self.loading_context
         if lc["use_dask"]:
             if lc["use_slurm"]:
-                cluster = SLURMCluster()
+                # Check the job submission script for #SBATCH statements to
+                # configure the cluster. All non-comment expressions after the
+                # #SBATCH section are # appended as the script prologue.
+                sbatch: Dict[str, str] = {}
+                prologue: List[str] = []
+                reached_prologue: bool = False
+                with open("foo.js") as f:
+                    for line in f:
+                        line = line.strip()
+                        # Skip empty lines
+                        if len(line) == 0:
+                            continue
+                        
+                        # Add to prologue
+                        if reached_prologue: 
+                            if line[0] != "#":
+                                prologue.append(line)
+                            continue
+                        
+                        # Cache #SBATCH config line
+                        if "#SBATCH" in line:
+                            k, v = line.split(" ")[1].split("=")
+                            sbatch[k] = v
+                            continue
+
+                        # Prologue start on the first non-empty and non-comment line
+                        if line[0] != "#": 
+                            reached_prologue = True
+                            prologue.append(line)
+                
+                # TODO Initialize cluster
+                cluster = SLURMCluster(, job_script_prologue=prologue)
                 return Client(cluster)
             else:
                 return Client()
@@ -269,20 +312,21 @@ class BaseProcess(ABC):
 
         # SLURM
         loading_context["use_slurm"] = False
-        if args.slurm_config or args.slurm_job:
+        # if args.slurm_config or args.slurm_job:
+        if args.slurm:
             # SLURM usage requires Dask
             if not args.dask:
                 parser.error("SLURM scheduling is Dask exclusive")
             # Both a config file and a job file need to be submitted
-            if args.slurm_config is None or args.slurm_config is None:
-                parser.error("SLURM scheduling requires --slurm_config and --slurm_job")
-            slurm_config = Path(args.slurm_config)
-            if not slurm_config.is_file():
-                raise FileNotFoundError(f"{slurm_config} is not a file")
+            # if args.slurm_config is None or args.slurm_config is None:
+                # parser.error("SLURM scheduling requires --slurm_config and --slurm_job")
+            # slurm_config = Path(args.slurm_config)
+            # if not slurm_config.is_file():
+            #     raise FileNotFoundError(f"{slurm_config} is not a file")
             slurm_job = Path(args.slurm_config)
             if not slurm_job.is_file():
                 raise FileNotFoundError(f"{slurm_job} is not a file")
-            self.loading_context["slurm_config"] = slurm_config
+            # self.loading_context["slurm_config"] = slurm_config
             self.loading_context["slurm_job"] = slurm_job
             loading_context["use_slurm"] = True
             print(f"[PROCESS]: Execute with SLURM: True")
