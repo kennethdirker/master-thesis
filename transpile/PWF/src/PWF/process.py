@@ -81,7 +81,8 @@ class BaseProcess(ABC):
             - init_tmp_dir_empty (bool)
             - preserve_tmp (bool)
             - use_dask  (bool)
-            - client (ThreadPoolExecutor | dask.distributed.Client)
+            - use_slurm  (bool)
+            - slurm_config (Path)
 
         Implementation NOTE: BaseProcess __init__ must be called from the
         subclass __init__ before any other state is touched.
@@ -163,7 +164,7 @@ class BaseProcess(ABC):
 
         TODO Description (schema) of arguments
         python PWF.py [--outdir OUTDIR, --tmpdir TMPDIR, --preserve_tmp,
-                       [--dask, [--slurm JOBFILE]]]
+                       [--dask, [--slurm_config JOBFILE]]]
                       input_object.yaml
         """
         parser = argparse.ArgumentParser()
@@ -197,18 +198,17 @@ class BaseProcess(ABC):
             default=False,
             help="Execute process tasks with Dask instead of with standard system call."
         )
-        # parser.add_argument(
-        #     "--slurm_config",
-        #     type = str,
-        #     help = "Path to the SLURM config file."
-        # )
         parser.add_argument(
-            "--slurm",
+            "--slurm_config",
             type = str,
-            help = "Path to the SLURM job script."
+            help = "Path to the SLURM config file."
         )
-        return parser
-    
+        # parser.add_argument(
+        #     "--slurm",
+        #     type = str,
+        #     help = "Path to the SLURM job script."
+        # )
+        return parser    
 
     def setup_client(self) -> Client | None:
         """
@@ -233,7 +233,8 @@ class BaseProcess(ABC):
                 sbatch: Dict[str, str] = {}
                 prologue: List[str] = []
                 reached_prologue: bool = False
-                with open("foo.js") as f:
+                # shebang = ""
+                with open(lc["slurm_config"]) as f:
                     for line in f:
                         line = line.strip()
                         # Skip empty lines
@@ -246,7 +247,7 @@ class BaseProcess(ABC):
                                 prologue.append(line)
                             continue
                         
-                        # Cache #SBATCH config line
+                        # Cache #SBATCH config lines
                         if "#SBATCH" in line:
                             k, v = line.split(" ")[1].split("=")
                             sbatch[k] = v
@@ -258,7 +259,19 @@ class BaseProcess(ABC):
                             prologue.append(line)
                 
                 # TODO Initialize cluster
-                cluster = SLURMCluster(, job_script_prologue=prologue)
+                print(prologue)
+                cluster = SLURMCluster(
+                    cores=2,
+                    # processes=6,
+                    memory="1 GB",
+                    walltime="00:15:00",
+                    # account="co_laika",
+                    # queue="savio2_bigmem",
+                    job_script_prologue=prologue
+                )
+                
+                cluster.adapt(minimum_jobs=1, maximum_jobs=1)
+                # cluster.adapt(minimum_jobs=1, maximum_jobs=4)
                 return Client(cluster)
             else:
                 return Client()
@@ -313,21 +326,21 @@ class BaseProcess(ABC):
         # SLURM
         loading_context["use_slurm"] = False
         # if args.slurm_config or args.slurm_job:
-        if args.slurm:
+        if args.slurm_config:
             # SLURM usage requires Dask
             if not args.dask:
                 parser.error("SLURM scheduling is Dask exclusive")
             # Both a config file and a job file need to be submitted
             # if args.slurm_config is None or args.slurm_config is None:
                 # parser.error("SLURM scheduling requires --slurm_config and --slurm_job")
-            # slurm_config = Path(args.slurm_config)
-            # if not slurm_config.is_file():
-            #     raise FileNotFoundError(f"{slurm_config} is not a file")
-            slurm_job = Path(args.slurm_config)
-            if not slurm_job.is_file():
-                raise FileNotFoundError(f"{slurm_job} is not a file")
-            # self.loading_context["slurm_config"] = slurm_config
-            self.loading_context["slurm_job"] = slurm_job
+            slurm_config = Path(args.slurm_config)
+            if not slurm_config.is_file():
+                raise FileNotFoundError(f"{slurm_config} is not a file")
+            # slurm_job = Path(args.slurm_job)
+            # if not slurm_job.is_file():
+            #     raise FileNotFoundError(f"{slurm_job} is not a file")
+            self.loading_context["slurm_config"] = slurm_config
+            # self.loading_context["slurm_job"] = slurm_job
             loading_context["use_slurm"] = True
             print(f"[PROCESS]: Execute with SLURM: True")
         
