@@ -4,6 +4,7 @@ import js2py
 import json
 import os
 import shutil
+import sys
 import uuid
 import yaml
 
@@ -51,11 +52,6 @@ class BaseProcess(ABC):
     input_to_source: Dict[str, str]
     loading_context: Dict[str, Any]
 
-    # # Scatter info
-    # scatters: List   # TODO
-    # scatter_idxs: List[int] | None
-    # gathers     # TODO if needed
-
     def __init__(
             self,
             main: bool = True,
@@ -83,6 +79,7 @@ class BaseProcess(ABC):
             - use_dask  (bool)
             - use_slurm  (bool)
             - slurm_config (Path)
+            - import_paths (List[str])
 
         Implementation NOTE: BaseProcess __init__ must be called from the
         subclass __init__ before any other state is touched.
@@ -106,10 +103,6 @@ class BaseProcess(ABC):
             parent_process_id = None
         self.parent_workflow_id = parent_process_id
         self.step_id = step_id
-
-        # Scatter information
-        # self.scatters = []        # Scatters this tool is part of
-        # self.scatter_idxs = None    # Which array indices this scatter uses
 
         # Assign metadata attributes. Override in self.set_metadata().
         self.metadata = {}
@@ -234,6 +227,11 @@ class BaseProcess(ABC):
                 prologue: List[str] = []
                 reached_prologue: bool = False
                 # shebang = ""
+                
+                # Add PYTHONPATH to compute node env
+                paths = ":".join(sys.path + self.loading_context["import_paths"])
+                prologue.append(f"export PYTHONPATH={paths}")
+
                 with open(lc["slurm_config"]) as f:
                     for line in f:
                         line = line.strip()
@@ -259,18 +257,24 @@ class BaseProcess(ABC):
                             prologue.append(line)
                 
                 # TODO Initialize cluster
-                print(prologue)
+                # print(prologue)
+                # NOTE: Memory argument is forced by the SLURMCluster 
+                # initializer. This causes problems on systems that disable
+                # setting memory requirements (DAS6 has this restriction). The
+                # band-aid is to ignore the memory setting line with
+                # 'job_directives_skip'.
                 cluster = SLURMCluster(
-                    cores=2,
+                    cores=16,
                     # processes=6,
-                    memory="1 GB",
+                    memory="16GB",
                     walltime="00:15:00",
                     # account="co_laika",
                     # queue="savio2_bigmem",
-                    job_script_prologue=prologue
+                    job_script_prologue=prologue,
+                    job_directives_skip=['--mem']
                 )
-                
-                cluster.adapt(minimum_jobs=1, maximum_jobs=1)
+                cluster.scale(1)
+                # cluster.adapt(minimum=1, maximum=1)
                 # cluster.adapt(minimum_jobs=1, maximum_jobs=4)
                 return Client(cluster)
             else:

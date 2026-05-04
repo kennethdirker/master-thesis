@@ -242,13 +242,15 @@ class BaseWorkflow(BaseProcess):
         """
         # Taken from:
         # https://stackoverflow.com/questions/66833453/loading-a-class-of-unknown-name-in-a-dynamic-location
-        path = Path(uri)
+        path = Path(uri).resolve()
         if not path.is_file():
             raise FileNotFoundError(f"{uri} is not a file")
         
         # Add path of file to PYTHONPATH, so Python can import from it.
         sys.path.append(str(path.parent))
         potential_module = importlib.import_module(path.stem)
+        if "import_paths" not in self.loading_context:
+            self.loading_context["import_paths"] = []
 
         # Test all attributes in the file for being a class
         for potential_class in dir(potential_module):
@@ -268,6 +270,9 @@ class BaseWorkflow(BaseProcess):
 
             # Instantiate and return the class
             if verbose: print(f"\tFound process at {uri}")
+
+            # Save path to add to the compute node its PYTHONPATH env variable 
+            self.loading_context["import_paths"].append(str(path.parent))
 
             return obj(
                 main = False,
