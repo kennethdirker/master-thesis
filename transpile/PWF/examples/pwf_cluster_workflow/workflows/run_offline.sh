@@ -3,6 +3,8 @@
 
 OUTDIR="./output_offline"
 TMPDIR="./tmp_offline"
+# OUTDIR=/var/scratch/kdirker/out_dir
+# TMPDIR=/var/scratch/kdirker/tmp_dir
 
 if [ ! -f "./image_mf_01.fits" ] || [ ! -f "./image_mf_02.fits" ] || [ ! -f "./image_mf_04.fits" ]; then
     echo "Missing input fit(s)"
@@ -19,4 +21,5 @@ if test -f after_noise_remover.png; then rm after_noise_remover.png; fi
 if test -f before_noise_remover.png; then rm before_noise_remover.png; fi
 
 # python process_images_offline.py -y process_images_offline.yaml --outdir $OUTDIR --tmpdir $TMPDIR --preserve_tmp
+# python process_images_offline.py -y process_images_offline.yaml --outdir $OUTDIR --tmpdir $TMPDIR --preserve_tmp --dask
 python process_images_offline.py -y process_images_offline.yaml --outdir $OUTDIR --tmpdir $TMPDIR --preserve_tmp --dask --slurm_config slurm.config

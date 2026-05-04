@@ -16,9 +16,12 @@ fi
 if test -d $TMPDIR; then
     rm -rf $TMPDIR
 fi
+if test -d $OUTDIR; then
+    rm -rf $OUTDIR
+fi
 
 # Execute the tools simulating the workflow in the workflow directory
 # python download_images.py download_images.yaml    < Doesn't work because url is broken
-python imageplotter.py -y imageplotter.yaml --preserve_tmp --tmpdir $TMPDIR --outdir $OUTDIR
-python noiseremover.py -y noiseremover.yaml --preserve_tmp --tmpdir $TMPDIR --outdir $OUTDIR
-python imageplotter.py -y imageplotter_after.yaml --preserve_tmp --tmpdir $TMPDIR --outdir $OUTDIR
+python imageplotter.py -y imageplotter.yaml --preserve_tmp --tmpdir $TMPDIR --outdir $OUTDIR --dask --slurm_config ../workflows/slurm.config
+python noiseremover.py -y noiseremover.yaml --preserve_tmp --tmpdir $TMPDIR --outdir $OUTDIR --dask --slurm_config ../workflows/slurm.config
+python imageplotter.py -y imageplotter_after.yaml --preserve_tmp --tmpdir $TMPDIR --outdir $OUTDIR --dask --slurm_config ../workflows/slurm.config

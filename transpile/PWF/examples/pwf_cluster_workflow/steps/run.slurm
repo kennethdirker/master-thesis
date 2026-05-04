@@ -13,8 +13,8 @@ python3.11 -V
 OUT=out.png
 NOISE=no_noise_image.fits
 NOISEOUT=no_noise_out.png
-TMPDIR=tmp_dir
-OUTDIR=out_dir
+TMPDIR=/var/scratch/kdirker/tmp_dir
+OUTDIR=/var/scratch/kdirker/out_dir
 
 if test -f $OUTDIR/$OUT; then
     rm $OUTDIR/$OUT
