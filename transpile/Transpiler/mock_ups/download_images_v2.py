@@ -7,13 +7,7 @@ from typing import Any
 
 # File dependent imports
 import glob
-# from utils import convert2type   # pyright: ignore[reportMissingImports]
-def convert2type(t: str, value: Any):
-    if "File" in t:
-        if isinstance(value, str):
-            return value
-        elif isinstance(value, dict):
-            return value["path"]
+from utils import FileObject
 
 """
 class: CommandLineTool
@@ -32,10 +26,15 @@ def download_images(input_yaml: dict) -> list[str]:
     cmd: list[str] = []
     # Convert values from YAML to correct types  
     inputs = {}
-    inputs["url_list"] = convert2type("File", input_yaml["url_list"])
+    inputs["url_list"] = FileObject(input_yaml["url_list"])
 
     # Build the command
-    cmd = ["wget", "-i", str(inputs["url_list"])]
+    cmd = [
+        "wget",
+        "-i",
+        str(inputs["url_list"])
+    ]
+
     return cmd
 
 
