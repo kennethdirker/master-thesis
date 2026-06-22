@@ -1,0 +1,3 @@
+input_fits:
+  - image_mf_02.fits
+output_image: out.png
