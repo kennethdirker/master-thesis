@@ -1,20 +1,22 @@
 # General imports that are always needed
-import subprocess, sys, yaml
+import dask, subprocess, sys, yaml
 from dask.distributed import Client
 
 # File dependent imports
 import glob
-from utils import FileObject
+from utils import FileObject, js_eval
 
-# Typing imports
-from typing import Any
-
+@dask.delayed
 def imageplotter(input_obj: dict, env: dict) -> dict:
     """
     class: CommandLineTool
     id: imageplotter
     label: imageplotter
     """
+    def outputs_output_glob():
+        context = {"inputs": inputs, **env}
+        return js_eval("inputs.output_image", context)
+
     cmd: list[str] = []
     outputs = {}
 
@@ -32,10 +34,8 @@ def imageplotter(input_obj: dict, env: dict) -> dict:
         inputs["output_image"]
     ]
 
-    print(" ".join(cmd))
-    
     subprocess.run(cmd)
-    outputs["output"] = FileObject(glob.glob(inputs["output_image"])[0])
+    outputs["output"] = FileObject(glob.glob(outputs_output_glob())[0])
     return outputs
 
 
@@ -45,12 +45,12 @@ def main():
     # Convert input YAML to dict
     with open(sys.argv[1], "r") as f:
         input_yaml = yaml.load(f, Loader=yaml.BaseLoader)
-
+ 
     env = {}
 
-    # Submit to Dask cluster directly
-    future = client.submit(imageplotter, input_yaml, env)
-    print(future.result())
+    # Run as task graph with Dask delayed
+    future = client.compute(imageplotter(input_yaml, env))
+    print(*[f'{k}: {v}' for k, v in future.result().items()])
 
 if __name__ == "__main__":
     main()
