@@ -1,11 +1,12 @@
 # General imports that are always needed
-import subprocess, sys, yaml
+import dask, subprocess, sys, yaml
 from dask.distributed import Client
 
 # File dependent imports
 import glob
 from utils import FileObject, js_eval
 
+@dask.delayed
 def noiseremover(input_obj: dict, env: dict) -> dict:
     """
     class: CommandLineTool
@@ -47,9 +48,8 @@ def main():
     env = {}
 
     # Submit to Dask
-    future = client.submit(noiseremover, input_yaml, env)
+    future = client.compute(noiseremover(input_yaml, env))
     print(*[f'{k}: {v}' for k, v in future.result().items()])
-
 
 if __name__ == "__main__":
     main()
