@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import numpy as np
+# import numpy as np
+import js2py
 import os
 import shutil
 
@@ -17,82 +18,125 @@ from typing import (
     cast
 )
 
-from types import NoneType
+# from types import NoneType
 from pathlib import Path
-from copy import deepcopy
+# from copy import deepcopy
 
 from cwl_utils.parser.cwl_v1_2 import File as CWLFile
 from cwl_utils.parser.cwl_v1_2 import Directory as CWLDirectory
 
-class Absent:
-    """ 
-    Used to indictate the absence of a runtime input. Useful when None is a
-    valid value for an argument.
-    """
+def js_eval(
+        expression: str,
+        context: Optional[dict[str, Any]] = None,
+        requirement: Optional[Sequence] = None
+    ) -> Any:
+    # 
+    if context:
+        context_vars = context.copy()
+    else:
+        context_vars = {}
 
-    string: str
-    value = None
-    cwltype: str = "null"
+    # 'self' is null by default.
+    if "self" not in context_vars:
+        context_vars["self"] = None
 
-    def __init__(self, string: str = "None") -> None:
-        self.string = string
+    # Initialize JS engine with context
+    js_context = js2py.EvalJs(context_vars)
 
-    def __repr__(self) -> str:
-        return f'Absent("{self.string}")'
+    # InlineJavascriptRequirement may contain JS code that must be
+    # executed before the expressions evaluated. This JS code can then
+    # be referenced in JS expressions.
+    if requirement:
+        for line in requirement:
+            js_context.execute(line)
 
+    # Evaluate expression
+    result = js_context.eval(expression)
 
-class NestedObject:
-    pass
-
-def dict_to_obj(d: dict) -> Any:
-    """
-    Convert a dictionary to an object with attributes.
-    """
-    def helper(obj, d: dict):
-        for key, value in d.items():
-            if type(value) is dict:
-                setattr(obj, key, NestedObject())
-                helper(getattr(obj, key), value)
-            else:
-                setattr(obj, key, value)
-
-    obj = NestedObject()
-    helper(obj, d)
-    return obj
-
-
-def print_obj(obj: object, indent: int = 0, filter: Optional[Sequence] = None):
-    """
-    Pretty print a CWL object recursively.
-    """
-    if hasattr(obj, "__dict__"):
-        for attr, value in obj.__dict__.items():
-            if filter and attr in filter:
-                continue
-
-            print("\t" * indent + attr)
-            if isinstance(value, Sequence) and not isinstance(value, str):
-                for elem in value:
-                    print_obj(elem, indent + 1, filter)
-            elif isinstance(value, Mapping):
-                for k, v in value.items():
-                    print("\t" * indent + k + ":")
-                    print_obj(v, indent + 2, filter)
-            else:
-                print_obj(value, indent + 1, filter)
-    elif obj:
-        print("\t" * indent + str(obj))
+    if isinstance(result, js2py.base.JsObjectWrapper):
+        # NOTE: https://github.com/PiotrDabkowski/Js2Py/blob/master/js2py/base.py#L1248
+        # See link on how to check for array type.
+        # TODO Support more types, like dict. How to handle custom
+        # types?
+        if result._obj.Class in ('Array', 'Int8Array', 'Uint8Array', # type: ignore
+                            'Uint8ClampedArray', 'Int16Array',
+                            'Uint16Array', 'Int32Array', 'Uint32Array',
+                            'Float32Array', 'Float64Array', 'Arguments'):
+            result = result.to_list()
+    
+    return result
+    
 
 
-def pretty_print_dict(d, indent=0):
-    res = ""
-    for k, v in d.items():
-        res += "\t"*indent + str(k) + "\n"
-        if isinstance(v, dict):
-            res += pretty_print_dict(v, indent+1)
-        else:
-            res += "\t"*(indent+1) + str(v) + "\n"
-    return res
+# class Absent:
+#     """ 
+#     Used to indictate the absence of a runtime input. Useful when None is a
+#     valid value for an argument.
+#     """
+
+#     string: str
+#     value = None
+#     cwltype: str = "null"
+
+#     def __init__(self, string: str = "None") -> None:
+#         self.string = string
+
+#     def __repr__(self) -> str:
+#         return f'Absent("{self.string}")'
+
+
+# class NestedObject:
+#     pass
+
+# def dict_to_obj(d: dict) -> Any:
+#     """
+#     Convert a dictionary to an object with attributes.
+#     """
+#     def helper(obj, d: dict):
+#         for key, value in d.items():
+#             if type(value) is dict:
+#                 setattr(obj, key, NestedObject())
+#                 helper(getattr(obj, key), value)
+#             else:
+#                 setattr(obj, key, value)
+
+#     obj = NestedObject()
+#     helper(obj, d)
+#     return obj
+
+
+# def print_obj(obj: object, indent: int = 0, filter: Optional[Sequence] = None):
+#     """
+#     Pretty print a CWL object recursively.
+#     """
+#     if hasattr(obj, "__dict__"):
+#         for attr, value in obj.__dict__.items():
+#             if filter and attr in filter:
+#                 continue
+
+#             print("\t" * indent + attr)
+#             if isinstance(value, Sequence) and not isinstance(value, str):
+#                 for elem in value:
+#                     print_obj(elem, indent + 1, filter)
+#             elif isinstance(value, Mapping):
+#                 for k, v in value.items():
+#                     print("\t" * indent + k + ":")
+#                     print_obj(v, indent + 2, filter)
+#             else:
+#                 print_obj(value, indent + 1, filter)
+#     elif obj:
+#         print("\t" * indent + str(obj))
+
+
+# def pretty_print_dict(d, indent=0):
+#     res = ""
+#     for k, v in d.items():
+#         res += "\t"*indent + str(k) + "\n"
+#         if isinstance(v, dict):
+#             res += pretty_print_dict(v, indent+1)
+#         else:
+#             res += "\t"*(indent+1) + str(v) + "\n"
+#     return res
 
 
 class FileObject:
@@ -381,137 +425,137 @@ class DirectoryObject:
         return f"DirectoryObject({', '.join(pairs)})"
     
     
-"""
-Mapping of Python types to CWL types. CWL supports types that base Python does
-not recognize or support, like double and long. FIXME This is a band-aid for now.
-"""
-PY_CWL_T_MAPPING: dict[Type, List[str]] = {
-    NoneType: ["null"],
-    Absent: ["null"],
-    bool: ["boolean"],
-    int: ["int", "long"],
-    float: ["float", "double"],
-    str: ["string", "file", "directory"],
-    FileObject: ["file"], 
-    DirectoryObject: ["directory"],
-}
+# """
+# Mapping of Python types to CWL types. CWL supports types that base Python does
+# not recognize or support, like double and long. FIXME This is a band-aid for now.
+# """
+# PY_CWL_T_MAPPING: dict[Type, List[str]] = {
+#     NoneType: ["null"],
+#     Absent: ["null"],
+#     bool: ["boolean"],
+#     int: ["int", "long"],
+#     float: ["float", "double"],
+#     str: ["string", "file", "directory"],
+#     FileObject: ["file"], 
+#     DirectoryObject: ["directory"],
+# }
 
-"""
-Mapping of CWL types to Python types. CWL supports types that base Python does not
-recognize or support, like double and long. FIXME This is a band-aid for now.
-"""
-CWL_PY_T_MAPPING: dict[str, Type] = {
-    "null": NoneType,
-    "boolean": bool,
-    "int": int,
-    "long": int,
-    "float": float,
-    "double": float,
-    "string": str,
-    "file": FileObject,
-    "directory": DirectoryObject,
-}
-
-
-class Value:
-    """
-    Wrapper for a value and its corresponding Python and CWL datatype.
-    """
-    value: Any
-    type: Type
-    cwltype: str
-    is_array: bool
-
-    def __init__(
-            self,
-            value: Any,
-            type_t: Type,
-            cwl_type: str,
-            scattered: bool = False
-        ) -> None:
-        """
-        TODO
-        """
-        if isinstance(value, Mapping):
-            raise TypeError("Value class does not support map types.")
-        if type_t not in PY_CWL_T_MAPPING:
-            raise ValueError(f"Unsupported Python type: {type_t}")
-        if cwl_type not in CWL_PY_T_MAPPING:
-            raise ValueError(f"Unsupported CWL type: {cwl_type}")
-
-        self.value = value
-        self.type = type_t
-        self.cwltype = cwl_type
-        self.is_array = scattered | isinstance(value, np.ndarray) | \
-                (isinstance(value, Sequence) and not isinstance(value, str))
-        self.scattered = scattered
-
-    
-    def to_list(self) -> None:
-        """
-        If this value is scattered, transform the ndarray in ``value`` to a
-        (nested) list.
-        """
-        if self.scattered:
-            self.value = self.value.to_list()
+# """
+# Mapping of CWL types to Python types. CWL supports types that base Python does not
+# recognize or support, like double and long. FIXME This is a band-aid for now.
+# """
+# CWL_PY_T_MAPPING: dict[str, Type] = {
+#     "null": NoneType,
+#     "boolean": bool,
+#     "int": int,
+#     "long": int,
+#     "float": float,
+#     "double": float,
+#     "string": str,
+#     "file": FileObject,
+#     "directory": DirectoryObject,
+# }
 
 
-    def scatterize(
-            self, 
-            shape: Tuple[int, ...], 
-            idx: Tuple[int, ...]
-        ) -> Value:
-        """
-        Return a scattered version of this ``Value``, replacing ``value`` with
-        an empty multi-dimensional array where the previous ``value`` is 
-        inserted at ``idx``.
-        """
-        arr = np.ndarray(shape, self.type)  # < new NOTE
-        # arr = np.ndarray(shape, Value)    # < old
-        arr[idx] = self.value
-        return Value(arr, self.type, self.cwltype, scattered=True)
+# class Value:
+#     """
+#     Wrapper for a value and its corresponding Python and CWL datatype.
+#     """
+#     value: Any
+#     type: Type
+#     cwltype: str
+#     is_array: bool
 
+#     def __init__(
+#             self,
+#             value: Any,
+#             type_t: Type,
+#             cwl_type: str,
+#             scattered: bool = False
+#         ) -> None:
+#         """
+#         TODO
+#         """
+#         if isinstance(value, Mapping):
+#             raise TypeError("Value class does not support map types.")
+#         if type_t not in PY_CWL_T_MAPPING:
+#             raise ValueError(f"Unsupported Python type: {type_t}")
+#         if cwl_type not in CWL_PY_T_MAPPING:
+#             raise ValueError(f"Unsupported CWL type: {cwl_type}")
 
-    def get(
-            self, 
-            idx: int | Tuple[int, ...]
-        ) -> Value | None:
-        """
-        Retrieve an element at ``index`` from the (multi-dimensional) array.
-        Returns ``None`` if ``value`` does not contain an array.
-        """
-        if not isinstance(self.value, Sequence): 
-            return None
-        if isinstance(idx, int):
-            idx = (idx,)
-        v = self.value
-        for i in idx[:-1]:
-            v = v[i]
-        return Value(v[idx[-1]], self.type, self.cwltype)
+#         self.value = value
+#         self.type = type_t
+#         self.cwltype = cwl_type
+#         self.is_array = scattered | isinstance(value, np.ndarray) | \
+#                 (isinstance(value, Sequence) and not isinstance(value, str))
+#         self.scattered = scattered
 
     
-    def set(
-            self, 
-            idx: int | Tuple[int, ...], 
-            value: Any
-        ) -> None:
-        """
-        Set the element at ``index`` from the (multi-dimensional) array to 
-        ``value``. Returns ``None`` if ``value`` does not contain an array.
-        """
-        if isinstance(idx, int):
-            idx = (idx,)
-        v = self.value
-        for i in idx[:-1]:
-            v = v[i]
-        v[idx[-1]] = value
+#     def to_list(self) -> None:
+#         """
+#         If this value is scattered, transform the ndarray in ``value`` to a
+#         (nested) list.
+#         """
+#         if self.scattered:
+#             self.value = self.value.to_list()
 
 
-    def __str__(self) -> str:
-        if self.is_array:
-            return "[" + ", ".join([str(v) for v in self.value]) + "]"
-        return str(self.value)
+#     def scatterize(
+#             self, 
+#             shape: Tuple[int, ...], 
+#             idx: Tuple[int, ...]
+#         ) -> Value:
+#         """
+#         Return a scattered version of this ``Value``, replacing ``value`` with
+#         an empty multi-dimensional array where the previous ``value`` is 
+#         inserted at ``idx``.
+#         """
+#         arr = np.ndarray(shape, self.type)  # < new NOTE
+#         # arr = np.ndarray(shape, Value)    # < old
+#         arr[idx] = self.value
+#         return Value(arr, self.type, self.cwltype, scattered=True)
+
+
+#     def get(
+#             self, 
+#             idx: int | Tuple[int, ...]
+#         ) -> Value | None:
+#         """
+#         Retrieve an element at ``index`` from the (multi-dimensional) array.
+#         Returns ``None`` if ``value`` does not contain an array.
+#         """
+#         if not isinstance(self.value, Sequence): 
+#             return None
+#         if isinstance(idx, int):
+#             idx = (idx,)
+#         v = self.value
+#         for i in idx[:-1]:
+#             v = v[i]
+#         return Value(v[idx[-1]], self.type, self.cwltype)
+
+    
+#     def set(
+#             self, 
+#             idx: int | Tuple[int, ...], 
+#             value: Any
+#         ) -> None:
+#         """
+#         Set the element at ``index`` from the (multi-dimensional) array to 
+#         ``value``. Returns ``None`` if ``value`` does not contain an array.
+#         """
+#         if isinstance(idx, int):
+#             idx = (idx,)
+#         v = self.value
+#         for i in idx[:-1]:
+#             v = v[i]
+#         v[idx[-1]] = value
+
+
+#     def __str__(self) -> str:
+#         if self.is_array:
+#             return "[" + ", ".join([str(v) for v in self.value]) + "]"
+#         return str(self.value)
     
 
-    def __repr__(self) -> str:
-        return f"Value({self.value}, {self.type}, {self.cwltype})"
+#     def __repr__(self) -> str:
+#         return f"Value({self.value}, {self.type}, {self.cwltype})"

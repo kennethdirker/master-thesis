@@ -9,13 +9,12 @@ from utils import FileObject
 # Typing imports
 from typing import Any
 
-"""
-class: CommandLineTool
-id: imageplotter
-label: imageplotter
-"""
-
 def imageplotter(input_obj: dict, env: dict) -> dict:
+    """
+    class: CommandLineTool
+    id: imageplotter
+    label: imageplotter
+    """
     cmd: list[str] = []
     outputs = {}
 
@@ -49,10 +48,9 @@ def main():
 
     env = {}
 
-    # Submit to Dask
+    # Submit to Dask cluster directly
     future = client.submit(imageplotter, input_yaml, env)
     print(future.result())
-    # print(imageplotter(input_yaml, env))
 
 if __name__ == "__main__":
     main()

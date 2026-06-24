@@ -9,14 +9,12 @@ from typing import Any
 import glob
 from utils import FileObject
 
-"""
-class: CommandLineTool
-id: download_images
-label: download_images
-"""
-
-
 def download_images(input_obj: dict) -> dict:
+    """
+    class: CommandLineTool
+    id: download_images
+    label: download_images
+    """
     cmd: list[str] = []
     outputs = {}
 
