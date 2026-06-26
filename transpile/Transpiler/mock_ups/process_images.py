@@ -7,15 +7,14 @@ from glob import glob
 from utils import FileObject, js_eval
 
 
-@dask.delayed
+# @dask.delayed
 def imageplotter(input_obj: dict, context: dict) -> dict:
     """
     class: CommandLineTool
     id: imageplotter
     label: imageplotter
     """
-    def outputs_output_glob():
-        context = {"inputs": inputs, **context}
+    def outputs_output_glob(context: dict):
         return js_eval("inputs.output_image", context)
 
     cmd: list[str] = []
@@ -40,7 +39,7 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
     return outputs
 
 
-@dask.delayed
+# @dask.delayed
 def noiseremover(input_obj: dict, context: dict) -> dict:
     """
     class: CommandLineTool
@@ -72,7 +71,7 @@ def noiseremover(input_obj: dict, context: dict) -> dict:
     return outputs
 
 
-@dask.delayed
+# @dask.delayed
 def process_images(input_obj: dict, context: dict) -> dict:
     """
     class: Workflow
@@ -141,9 +140,9 @@ def main():
     context = {}
 
     # Submit to Dask
-    future = client.compute(process_images(input_yaml, context))
-    print(*[f'{k}: {v}' for k, v in future.result().items()])
-
+    # future = client.compute(process_images(input_yaml, context))
+    # print(*[f'{k}: {v}' for k, v in future.result().items()])
+    print(*[f'{k}: {v}' for k,v in process_images(input_yaml, context).items()])
 
 if __name__ == "__main__":
     main()
