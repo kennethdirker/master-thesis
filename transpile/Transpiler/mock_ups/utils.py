@@ -5,8 +5,13 @@ import js2py
 import os
 import shutil
 
+from itertools import product
+from math import prod
+from pathlib import Path
+
 from typing import (
     Any,
+    Iterator,
     List,
     Optional,
     Tuple,
@@ -17,10 +22,6 @@ from typing import (
     Union,
     cast
 )
-
-# from types import NoneType
-from pathlib import Path
-# from copy import deepcopy
 
 from cwl_utils.parser.cwl_v1_2 import File as CWLFile
 from cwl_utils.parser.cwl_v1_2 import Directory as CWLDirectory
@@ -65,7 +66,38 @@ def js_eval(
             result = result.to_list()
     
     return result
-    
+
+def scatterizer(
+        inputs: dict, 
+        keys: str | list[str],
+        scatter_method: str = "dotproduct"
+    ) -> Iterator:
+    """
+    Return a generator that creates copies of the inputs where
+    the iterable scatter input arrays are replaced with scattered input items.
+    """
+    if isinstance(keys, str):
+        keys = [keys]
+    # Create an iterator that yields scatterized input combinations 
+    arrays = [inputs[k] for k in keys]
+    if scatter_method == "dotproduct":
+        iterable = zip(*arrays)
+    else:
+        iterable = product(*arrays)
+
+    # Copy the runtime_context and substitute the scattered inputs
+    for values in iterable:
+        inputs_copy = inputs.copy()
+        for key, value in zip(keys, values):
+            inputs_copy[key] = value
+        yield inputs_copy
+
+def transpose(list_of_dicts: list[dict]) -> dict[list]:
+    """
+    Transform a list of homogeneous dicts to a dict of lists. 
+    """
+    return {k: [dic[k] for dic in list_of_dicts] 
+            for k in list_of_dicts[0]}
 
 
 # class Absent:
