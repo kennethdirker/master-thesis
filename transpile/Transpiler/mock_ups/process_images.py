@@ -81,6 +81,9 @@ def process_images(input_obj: dict, context: dict) -> dict:
     def noiseremover_input(context, self):
         context["self"] = self
         return js_eval("self[0]", context)
+        # return js_eval("self[0]", {"self": self, **context})
+    # def noiseremover_input(context):
+    #     return js_eval("self[0]", context)
     
     def noiseremover_output_file_name(context, self):
         context["self"] = self
@@ -111,6 +114,8 @@ def process_images(input_obj: dict, context: dict) -> dict:
     }
     step_context["inputs"] = {**inputs, **noiseremover_inputs}
     noiseremover_inputs["input"] = noiseremover_input(step_context, inputs["fit_list"])
+    # noiseremover_inputs["input"] = noiseremover_input({"self": inputs["fit_list"], **step_context})
+    # noiseremover_inputs["input"] = js_eval("self[0]", {"self": inputs["fit_list"], **step_context})
     noiseremover_inputs["output_file_name"] = noiseremover_output_file_name(step_context, None)
     noiseremover_out = noiseremover(noiseremover_inputs, context)
 
