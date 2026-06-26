@@ -7,7 +7,7 @@ from glob import glob
 from utils import FileObject, js_eval
 
 
-# @dask.delayed
+@dask.delayed
 def imageplotter(input_obj: dict, context: dict) -> dict:
     """
     class: CommandLineTool
@@ -39,7 +39,7 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
     return outputs
 
 
-# @dask.delayed
+@dask.delayed
 def noiseremover(input_obj: dict, context: dict) -> dict:
     """
     class: CommandLineTool
@@ -129,9 +129,12 @@ def process_images(input_obj: dict, context: dict) -> dict:
     after_plot_inspect_inputs["input_fits"] = after_plot_inspect(step_context, noiseremover_out["output"])
     after_plot_inspect_out = imageplotter(after_plot_inspect_inputs, context)
 
+    imageplotter_out.visualize("visualize_before")
+    after_plot_inspect_out.visualize("visualize_after")
+
     # Export outputs
-    outputs["before_noise_remover"] = imageplotter_out["output"]
-    outputs["after_noise_remover_plot"] = after_plot_inspect_out["output"]
+    outputs["before_noise_remover"] = imageplotter_out["output"].compute()
+    outputs["after_noise_remover_plot"] = after_plot_inspect_out["output"].compute()
     return outputs
 
 
@@ -144,8 +147,9 @@ def main():
 
     context = {}
 
-    result = process_images(input_yaml, context)
-    print(*[f'{k}: {v}' for k,v in result.items()], sep="\n")
+    # Submit to Dask
+    result = client.compute(process_images(input_yaml, context)).result()
+    print(*[f'{k}: {v}' for k, v in result.items()], sep="\n")
 
 if __name__ == "__main__":
     main()
