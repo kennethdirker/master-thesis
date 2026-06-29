@@ -1,3 +1,4 @@
 *.fits
 !image_mf_0*.fits
 *.png
+slurm*.out

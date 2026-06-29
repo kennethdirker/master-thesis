@@ -2,6 +2,7 @@ astropy==6.1.7
 cwl_utils==0.35
 dask
 distributed
+dask-jobqueue
 Js2Py==0.74
 matplotlib==3.11.0
 numpy

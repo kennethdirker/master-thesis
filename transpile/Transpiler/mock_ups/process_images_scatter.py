@@ -1,10 +1,28 @@
 # General imports that are always needed
 import dask, subprocess, sys, yaml
 from dask.distributed import Client
+from dask_jobqueue.slurm import SLURMCluster
 
 # File dependent imports
 from glob import glob
 from utils import FileObject, js_eval, scatterizer, transpose
+
+def get_client() -> Client:
+    # Initialize cluster
+    # NOTE: Memory argument is forced by the SLURMCluster 
+    # initializer. This causes problems on systems that disable
+    # setting memory requirements (DAS6 has this restriction). The
+    # band-aid is to ignore the memory setting line with
+    # 'job_directives_skip'.
+    cluster = SLURMCluster(
+        cores=16,
+        memory="16GB",
+        walltime="00:15:00",
+        job_directives_skip=['--mem']
+    )
+    cluster.scale(4)
+    # cluster.adapt(minimum_jobs=1, maximum_jobs=4)
+    return Client(cluster)
 
 
 @dask.delayed
@@ -125,7 +143,9 @@ def process_images(input_obj: dict, context: dict) -> dict:
 
 
 def main():
-    client = Client()
+    client= get_client()
+    # client = Client()
+
 
     # Convert input YAML to dict
     with open(sys.argv[1], "r") as f:
@@ -134,7 +154,7 @@ def main():
     context = {}
 
     # Submit to Dask
-    result = client.compute(process_images(input_yaml, context), retries=0).result()
+    result = client.compute(process_images(input_yaml, context)).result()
     print(*[f'{k}: {v}' for k, v in result.items()], sep="\n")
 
 if __name__ == "__main__":
