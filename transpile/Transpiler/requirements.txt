@@ -1,6 +1,7 @@
 astropy==6.1.7
 cwl_utils==0.35
-dask==2024.11.2
+dask
+distributed
 Js2Py==0.74
 matplotlib==3.11.0
 numpy
