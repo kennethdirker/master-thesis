@@ -10,7 +10,6 @@ from utils import FileObject, js_eval
 def imageplotter(input_obj: dict, env: dict) -> dict:
     """
     class: CommandLineTool
-    id: imageplotter
     label: imageplotter
     """
     def outputs_output_glob():
