@@ -60,8 +60,7 @@ class ImportManager:
         self.imports.add(module)
 
     def add_from(self, module, obj):
-        raise Exception("Not entirely correct")
-        if module in self.imports:
+        if module in self.from_imports:
             self.from_imports[module].add(obj)
         else:
             self.from_imports[module] = set([obj])
@@ -69,7 +68,7 @@ class ImportManager:
     def get_lines(self) -> list[str]:
         # Generate and return the import statements
         ls = ["import " + ', '.join(sorted(self.imports))]
-        ls.extend([f"from {k} import {','.join(sorted(v))}" 
+        ls.extend([f"from {k} import {', '.join(sorted(v))}" 
                             for k, v in sorted(self.from_imports.items())])
         ls.append("")
         return ls
@@ -188,26 +187,28 @@ def parse_output_binding(binding, exprs: list[str]) -> str:
     if "DirectoryObject" in t.types:
         IM.add_from("utils", "DirectoryObject")
 
-    if exists(binding, "outputBinding"):
-        if exists(binding.outputBinding, "glob"):
-            # Create nested function that passes the search pattern
-            g = binding.outputBinding.glob
-            IM.add_from("glob","glob")
-            exprs.append(tab(f"def outputs_{id}_glob(context: dict):"))
-            if isinstance(g, str):
-                if g.startswith("$(") and g.endswith(")"):
-                    IM.add_from("utils","js_eval")
-                    exprs.append(tab(f'return js_eval("{g}", context)', 2))
-                else:
-                    exprs.append(tab(f'return "{g}"', 2))
-            elif isinstance(g, list):
-                exprs.append(tab(f'return {g}', 2))
-            else:
-                raise TypeError(type(g))
-    if t.is_array:
-        rhs = f'[{t.types}(f) for f in input_obj["{id}"]]'
-    else:
-        rhs =  f'{t.types}(input_obj["{id}"])'
+    # if exists(binding, "outputBinding"):
+    #     if exists(binding.outputBinding, "glob"):
+    #         # Create nested function that passes the search pattern
+    #         g = binding.outputBinding.glob
+    #         IM.add_from("glob","glob")
+            
+    #         exprs.append(tab(f"def outputs_{id}_glob(context: dict):"))
+    #         if isinstance(g, str):
+    #             if g.startswith("$(") and g.endswith(")"):
+    #                 IM.add_from("utils","js_eval")
+    #                 exprs.append(tab(f'return js_eval("{g}", context)', 2))
+    #             else:
+    #                 exprs.append(tab(f'return "{g}"', 2))
+    #         elif isinstance(g, list):
+    #             exprs.append(tab(f'return {g}', 2))
+    #         else:
+    #             raise TypeError(type(g))
+    # if t.is_array:
+    #     rhs = f'[{t.types}(f) for f in input_obj["{id}"]]'
+    # else:
+    #     rhs =  f'{t.types}(input_obj["{id}"])'
+    raise NotImplementedError()
     return tab(f'outputs["{id}"] = {rhs}')
 
 
@@ -247,7 +248,7 @@ def parse_tool(tool: CommandLineTool):
     command.append(tab("outputs: dict = {}"))
     for o in tool.outputs:
         outputs.append(parse_output_binding(o, exprs))
-    outputs.append("")
+    outputs.append(tab("return outputs"))
 
     return header + exprs + inputs + command + outputs
 
@@ -292,7 +293,6 @@ def parse_cwl(cwl):
         m_ls.append(tab('memory="16GB",', 2))
         m_ls.append(tab('walltime="00:15:00",', 2))
         m_ls.append(tab('job_directives_skip=[\'--mem\']', 2))
-        m_ls.append("")
         m_ls.append(tab(")"))
         m_ls.append(tab("cluster.scale(4)"))
         m_ls.append(tab("client = Client(cluster)", 1))

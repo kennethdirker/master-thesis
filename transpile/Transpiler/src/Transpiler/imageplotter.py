@@ -2,7 +2,7 @@ import dask, subprocess, sys, yaml
 from dask.distributed import Client
 from dask_jobqueue.slurm import SLURMCluster
 from glob import glob
-from utils import js_eval
+from utils import FileObject, js_eval
 
 @dask.delayed
 def imageplotter(input_obj: dict, context: dict) -> dict:
@@ -21,14 +21,13 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
 
 	outputs: dict = {}
 	outputs["output"] = FileObject(input_obj["output"])
-
+	return outputs
 def main():
 	cluster = SLURMCluster(
 		cores=16,
 		memory="16GB",
 		walltime="00:15:00",
 		job_directives_skip=['--mem']
-
 	)
 	cluster.scale(4)
 	client = Client(cluster)
