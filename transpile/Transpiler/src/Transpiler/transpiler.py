@@ -132,11 +132,10 @@ class CWLType:
             List of strings representing lines to write to file.
         """
         if isinstance(type_, (CommandInputArraySchema, InputArraySchema)):
-            # TODO Add support
+            self.optional = False
+            self.is_array = True
             type_ = type_.items
-            self.optional = "?" in type_
-            self.is_array = "[]" in type_
-            self.types = T_MAPPING["".join([c.lower() for c in type_ if c not in ["?[]"]])]
+            self.types = T_MAPPING["".join([c.lower() for c in str(type_) if c not in ["?[]"]])]
         elif isinstance(type_, str):
             self.optional = "?" in type_
             self.is_array = "[]" in type_
@@ -175,42 +174,141 @@ def parse_input_binding(binding, exprs: list[str]) -> str:
     return tab(f'inputs["{id}"] = {rhs}')
 
 
+def parse_commandline(tool, exprs: list[str]) -> list[str]:
+    """
+    TODO Triple check clanker code
+    
+    Generate a static Python list literal for the command line.
+    """
+    global IM
+    command_items: list[str] = []
+
+    def add_expression_function(expression: str) -> str:
+        func_name = f"expr_{len(exprs)}"
+        exprs.append(tab(f"def {func_name}(context: dict) -> str:"))
+        exprs.append(tab(f"return {expression}", 2))
+        return f"{func_name}(local_context)"
+
+    def append_value(value_expr: str, is_array: bool, binding=None) -> None:
+        prefix = getattr(binding, "prefix", "")
+        separate = getattr(binding, "separate", True)
+        item_separator = getattr(binding, "itemSeparator", None)
+
+        if is_array:
+            if item_separator:
+                if prefix and separate:
+                    command_items.append(prefix)
+                    command_items.append(f'{item_separator}.join(str(v) for v in {value_expr})')
+                elif prefix and not separate:
+                    command_items.append(f'{prefix} + {item_separator}.join(str(v) for v in {value_expr})')
+                else:
+                    command_items.append(f'{item_separator}.join(str(v) for v in {value_expr})')
+            else:
+                if prefix and separate:
+                    command_items.append(repr(prefix))
+                    command_items.append(f'*[str(v) for v in {value_expr}]')
+                elif prefix and not separate:
+                    command_items.append(f'*[f"{prefix}{{str(v)}}" for v in {value_expr}]')
+                else:
+                    command_items.append(f'*[str(v) for v in {value_expr}]')
+            return
+
+        if prefix and separate:
+            command_items.append(repr(prefix))
+            command_items.append(f'str({value_expr})')
+        elif prefix and not separate:
+            command_items.append(f'{prefix} + str({value_expr})')
+        else:
+            command_items.append(f'str({value_expr})')
+
+    if exists(tool, "baseCommand"):
+        base_command = tool.baseCommand
+        if isinstance(base_command, str):
+            base_command = [base_command]
+        elif not isinstance(base_command, list):
+            raise TypeError(f"Unsupported baseCommand type: {type(base_command)}")
+
+        for entry in base_command:
+            if isinstance(entry, str):
+                command_items.append(repr(entry))
+            else:
+                raise TypeError(f"Unsupported baseCommand entry type: {type(entry)}")
+
+    # Each tuple stores: (position, original-order index, value expression, is-array, binding object)
+    ordered_items: list[tuple[int, int, str, bool, object | None]] = []
+
+    for input_ in tool.inputs:
+        if not exists(input_, "inputBinding"):
+            continue
+
+        binding = input_.inputBinding
+        input_id = input_.id.split("/")[-1]
+        t = CWLType(input_.type_, input_id)
+        position = int(getattr(binding, "position", 0))
+        ordered_items.append((position, len(ordered_items), f'inputs["{input_id}"]', t.is_array, binding))
+
+    if exists(tool, "arguments"):
+        for arg in tool.arguments:
+            if isinstance(arg, str):
+                ordered_items.append((0, len(ordered_items), repr(arg), False, None, True, None))
+            elif isinstance(arg, CommandLineBinding):
+                value_from = getattr(arg, "valueFrom", None)
+                if isinstance(value_from, str):
+                    if value_from.startswith("$(") and value_from.endswith(")"):
+                        IM.add_from("utils", "js_eval")
+                        value_expr = add_expression_function(f'js_eval({value_from!r}, context)')
+                    else:
+                        value_expr = repr(value_from)
+                else:
+                    value_expr = repr(value_from)
+                position = int(getattr(arg, "position", 0))
+                ordered_items.append((position, len(ordered_items), value_expr, False, arg))
+            else:
+                raise TypeError(f"Unsupported argument type: {type(arg)}")
+
+    ordered_items.sort(key=lambda item: (item[0], item[1]))
+    for _, _, value_expr, is_array, binding in ordered_items:
+        append_value(value_expr, is_array, binding)
+
+    lines = [tab("cmd = [")]
+    for item in command_items:
+        lines.append(tab(f"{item},", 2))
+    lines.append(tab("]"))
+    return lines
+
+
 def parse_output_binding(binding, exprs: list[str]) -> str:
     """
+    TODO Improve, generalize
+    Emit a simple output assignment for a CWL output binding.
     """
     global IM
     id = binding.id.split("/")[-1]
     t = CWLType(binding.type_, id)
-    # Add import dependency if needed
+
     if "FileObject" in t.types:
         IM.add_from("utils", "FileObject")
     if "DirectoryObject" in t.types:
         IM.add_from("utils", "DirectoryObject")
 
-    # if exists(binding, "outputBinding"):
-    #     if exists(binding.outputBinding, "glob"):
-    #         # Create nested function that passes the search pattern
-    #         g = binding.outputBinding.glob
-    #         IM.add_from("glob","glob")
-            
-    #         exprs.append(tab(f"def outputs_{id}_glob(context: dict):"))
-    #         if isinstance(g, str):
-    #             if g.startswith("$(") and g.endswith(")"):
-    #                 IM.add_from("utils","js_eval")
-    #                 exprs.append(tab(f'return js_eval("{g}", context)', 2))
-    #             else:
-    #                 exprs.append(tab(f'return "{g}"', 2))
-    #         elif isinstance(g, list):
-    #             exprs.append(tab(f'return {g}', 2))
-    #         else:
-    #             raise TypeError(type(g))
-    # if t.is_array:
-    #     rhs = f'[{t.types}(f) for f in input_obj["{id}"]]'
-    # else:
-    #     rhs =  f'{t.types}(input_obj["{id}"])'
-    raise NotImplementedError()
+    if exists(binding, "outputBinding") and exists(binding.outputBinding, "glob"):
+        g = binding.outputBinding.glob
+        IM.add_from("glob", "glob")
+        exprs.append(tab(f"def outputs_{id}_glob(context: dict):"))
+        if isinstance(g, str):
+            if g.startswith("$(") and g.endswith(")"):
+                IM.add_from("utils", "js_eval")
+                exprs.append(tab(f'return js_eval({g!r}, context)', 2))
+            else:
+                exprs.append(tab(f'return {g!r}', 2))
+        elif isinstance(g, list):
+            exprs.append(tab(f'return {g}', 2))
+        else:
+            raise TypeError(type(g))
+        rhs = f'[{t.types}(f) for f in glob(outputs_{id}_glob(local_context))]' if t.is_array else f'{t.types}(glob(outputs_{id}_glob(local_context))[0])'
+    else:
+        rhs = "None"
     return tab(f'outputs["{id}"] = {rhs}')
-
 
 def parse_tool(tool: CommandLineTool):
     header:  list[str] = []
@@ -238,18 +336,23 @@ def parse_tool(tool: CommandLineTool):
     for i in tool.inputs:
         inputs.append(parse_input_binding(i, exprs))
     inputs.append(tab('local_context = {"inputs": inputs, **context}'))
+    inputs.append("")
+
     # command
-    # command.append()
+    inputs.extend(comment(tab("# Ready the commandline and its arguments")))
+    command.extend(parse_commandline(tool, exprs))
     command.append(tab('print("Running:",  *cmd)'))
     command.append(tab("subprocess.run(cmd)"))
     command.append("")
 
     # outputs
+    inputs.extend(comment(tab("# Collect and generate outputs")))
     command.append(tab("outputs: dict = {}"))
     for o in tool.outputs:
         outputs.append(parse_output_binding(o, exprs))
     outputs.append(tab("return outputs"))
 
+    exprs.append("")
     return header + exprs + inputs + command + outputs
 
 
