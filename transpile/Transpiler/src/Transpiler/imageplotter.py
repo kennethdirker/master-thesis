@@ -1,7 +1,7 @@
 import dask, subprocess, sys, yaml
 from dask.distributed import Client
 from dask_jobqueue.slurm import SLURMCluster
-from utils import FileObject
+from utils import FileObject, glob, js_eval
 
 @dask.delayed
 def imageplotter(input_obj: dict, context: dict) -> dict:
@@ -9,24 +9,29 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
 	class: CommandLineTool
 	label: imageplotter
 	"""
+	def outputs_output(context):
+		pattern = js_eval("inputs.output_image", context)
+		return glob(pattern)
 
 	# Gather inputs in their correct format
 	inputs = {}
 	inputs["input_fits"] = [FileObject(f) for f in input_obj["input_fits"]]
 	inputs["output_image"] = str(input_obj["output_image"])
+	local_context = {"inputs": inputs, **context}
 
 	# Ready the commandline and execute the tool
 	cmd = [
 		'python',
 		'imageplotter.py',
 		*[str(v) for v in inputs["input_fits"]],
-		inputs["output_image"],
+		str(inputs["output_image"]),
 	]
 	print("Running:",  *cmd)
 	subprocess.run(cmd)
 
 	# Collect and generate outputs
 	outputs: dict = {}
+	outputs["output"] = FileObject(outputs_output(local_context))
 	return outputs
 
 def main():

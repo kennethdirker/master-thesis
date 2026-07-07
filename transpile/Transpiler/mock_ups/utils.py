@@ -6,6 +6,7 @@ import os
 import shutil
 
 from itertools import product
+from glob import glob
 from math import prod
 from pathlib import Path
 
@@ -98,6 +99,20 @@ def transpose(list_of_dicts: list[dict]) -> dict[list]:
     """
     return {k: [dic[k] for dic in list_of_dicts] 
             for k in list_of_dicts[0]}
+
+def glob(pattern: str | list[str]) -> list:
+    """
+    Takes one or more patterns and returns a list of all matches files and
+    directories. This is a helper function that wraps `glob.glob` to allow
+    searching for multiple patterns per call. 
+    """
+    if isinstance(pattern, str):
+        return glob.glob(pattern)
+    elif isinstance(pattern, list):
+        matches = []
+        for p in pattern:
+            matches.extend(glob.glob(p))
+    raise TypeError("'pattern' must be 'str' or 'list[str]', but found", type(pattern))
 
 
 # class Absent:
