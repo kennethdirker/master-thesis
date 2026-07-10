@@ -11,7 +11,7 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
 	"""
 	def outputs_output(context):
 		pattern = js_eval("inputs.output_image", context)
-		return glob(pattern)
+		return FileObject(glob(pattern)[0])
 
 	# Gather inputs in their correct format
 	inputs = {
@@ -32,9 +32,9 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
 	subprocess.run(cmd)
 
 	# Collect and generate outputs
-	outputs: dict = {}
-	outputs["output"] = FileObject(outputs_output(tool_context))
-	return outputs
+	return {
+		"output": outputs_output(tool_context),
+	}
 
 def main():
 	# Initialize cluster

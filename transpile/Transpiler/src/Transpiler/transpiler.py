@@ -342,7 +342,7 @@ def parse_output_binding(
         exprs: list[str]
     ) -> str:
     """
-    TODO Improve, generalize
+    TODO 
     Emit a simple output assignment for a CWL output.
 
     NOTE: Output must have outputBinding, which is only not the case when the
@@ -368,13 +368,15 @@ def parse_output_binding(
         IM.add_from("utils", "glob")
         if isinstance(g, str):
             if is_expr(g):
+                # Expression
                 IM.add_from("utils", "js_eval")
                 exprs.append(tab(f'pattern = js_eval("{g[2:-1]}", context)', 2))
                 x = "glob(pattern)"
             else:
+                # Simple string
                 x = f'glob("{g}")'
         else:
-            # List of patterns
+            # List of simple strings
             patterns = ", ".join([f'"{p}"' for p in g])
             exprs.append(tab(f'pattern = [{patterns}]'), 2)
             g = "glob(pattern)"
@@ -385,9 +387,10 @@ def parse_output_binding(
             exprs.append(tab(f'context["self"] = [FileObject(m) for m in matches]'), 2)
         exprs.append(tab(f'return js_eval("{binding.outputEval[2:-1]}", context)', 2))
     else:
-        exprs.append(tab(f"return " + x, 2))
+        p = "" if t.is_array else "[0]"
+        exprs.append(tab(f"return {t.types}({x}{p})", 2))
 
-    return tab(f'outputs["{id}"] = {t.types}(outputs_{id}(tool_context))')
+    return tab(f'"{id}": outputs_{id}(tool_context),', 2)
 
 
 def parse_tool(tool: CommandLineTool):
@@ -430,10 +433,10 @@ def parse_tool(tool: CommandLineTool):
 
     # Parse outputs
     outputs.extend(comment(tab("# Collect and generate outputs")))
-    outputs.append(tab("outputs: dict = {}"))
+    outputs.append(tab("return {"))
     for o in tool.outputs:
         outputs.append(parse_output_binding(o, exprs))
-    outputs.append(tab("return outputs"))
+    outputs.append(tab("}"))
 
     # Remove tool_context statement if no expressions are used
     if len(exprs) == 0:
