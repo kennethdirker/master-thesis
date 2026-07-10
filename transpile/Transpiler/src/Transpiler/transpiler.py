@@ -6,6 +6,8 @@ from typing import (
     Optional
 )
 
+from utils import FileObject, DirectoryObject
+
 from cwl_utils.parser import (
     load_document_by_uri,
     CommandLineTool,
@@ -15,6 +17,7 @@ from cwl_utils.parser import (
 )
 from cwl_utils.parser.cwl_v1_2 import (
     CommandInputArraySchema,
+    CommandInputParameter,
     CommandLineBinding,
     CommandOutputArraySchema, 
     CommandOutputBinding,
@@ -25,27 +28,33 @@ from cwl_utils.parser.cwl_v1_2 import (
     WorkflowStepOutput,
 )
 
-"""
-Mapping of CWL types to Python types. CWL supports types that base Python does not
-recognize or support, like double and long. FIXME This is a band-aid for now.
-"""
-T_MAPPING: dict[str, str] = {
-    "null": "NoneType",
-    "boolean": "bool",
-    "int": "int",
-    "long": "int",
-    "float": "float",
-    "double": "float",
-    "string": "str",
-    "file": "FileObject",
-    "directory": "DirectoryObject",
-}
 
 # Whether to use the default Dask Client or jobqueue SLURM client
 SLURM = False
 
 # Whether code comments will be added to the script
 COMMENTS = False
+
+def tab(string: str, tab_amount: int = 1) -> str:
+    """
+    Apply a number of tabs to a string and return it.
+    """
+    return "\t" * tab_amount + string
+
+def comment(string: str) -> list[str]:
+    """
+    Wraps the string in a list if the transpiler has comments activated.
+    Otherwise returns an empty list.
+    """
+    if COMMENTS:
+        return [string]
+    return []
+
+def exists(o: object, key: str) -> bool:
+    return hasattr(o, key) and getattr(o, key) is not None
+
+def is_expr(s: str) -> bool:
+    return s.startswith("$(") and s.endswith(")")
 
 class ImportManager:
     imports: set
@@ -80,56 +89,22 @@ class ImportManager:
     
 IM = ImportManager()
 
-def tab(string: str, tab_amount: int = 1) -> str:
-    """
-    Apply a number of tabs to a string and return it.
-    """
-    return "\t" * tab_amount + string
 
-def comment(string: str) -> list[str]:
-    """
-    Wraps the string in a list if the transpiler has comments activated.
-    Otherwise returns an empty list.
-    """
-    if COMMENTS:
-        return [string]
-    return []
-
-def exists(o: object, key: str) -> bool:
-    return hasattr(o, key) and getattr(o, key) is not None
-
-def is_expr(s: str) -> bool:
-    return s.startswith("$(") and s.endswith(")")
-
-def create_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="progname",
-        description=""
-    )
-
-    parser.add_argument(
-        "-i", "--input",
-        required=True,
-        type=str,
-        help="CWL process that will be transpiled."
-    )
-    parser.add_argument(
-        "-o", "--output",
-        type=str,
-        help="Filename of the output file containing the Python script."
-    )
-    parser.add_argument(
-        "-s", "--slurm",
-        action="store_true",
-        help="Initialize the Dask client with a SLURM cluster for distributed workflow execution."
-    )
-    parser.add_argument(
-        "-c", "--comments",
-        action="store_true",
-        help="Let the transpiler add descriptive comments to the code."
-    )
-
-    return parser
+"""
+Mapping of CWL types to Python types. CWL supports types that base Python does not
+recognize or support, like double and long. FIXME This is a band-aid for now.
+"""
+T_MAPPING: dict[str, str] = {
+    "null": "NoneType",
+    "boolean": "bool",
+    "int": "int",
+    "long": "int",
+    "float": "float",
+    "double": "float",
+    "string": "str",
+    "file": "FileObject",
+    "directory": "DirectoryObject",
+}
 
 class CWLType:
     is_array: bool
@@ -164,28 +139,89 @@ class CWLType:
             raise NotImplementedError(f"Found unsupported type {type(type_)}")
 
 
-def parse_input_binding(
-        binding: CommandLineBinding, 
-        exprs: list[str]
-    ) -> str:
-    """
-    """
-    global IM
-    id = binding.id.split("/")[-1]
-    t = CWLType(binding.type_, id)
+def create_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="progname",
+        description=""
+    )
 
-    # Add import dependency if needed
-    if "FileObject" in t.types:
-        IM.add_from("utils", "FileObject")
-    if "DirectoryObject" in t.types:
-        IM.add_from("utils", "DirectoryObject")
+    parser.add_argument(
+        "-i", "--input",
+        required=True,
+        type=str,
+        help="CWL process that will be transpiled."
+    )
+    parser.add_argument(
+        "-o", "--output",
+        type=str,
+        help="Filename of the output file containing the Python script."
+    )
+    parser.add_argument(
+        "-s", "--slurm",
+        action="store_true",
+        help="Initialize the Dask client with a SLURM cluster for distributed workflow execution."
+    )
+    parser.add_argument(
+        "-c", "--comments",
+        action="store_true",
+        help="Let the transpiler add descriptive comments to the code."
+    )
 
-    source = f'input_obj["{id}"]'
-    if t.is_array:
-        rhs = f'[{t.types}(f) for f in {source}]'
+    return parser
+
+
+def parse_default(default, cwl_type) -> str | list[str]:
+    """
+    TODO Add quotes to 'size', 'listing', 'contents' fields
+    """
+    FILE_KEYS = ["location", "path", "basename", "dirname", "nameroot",
+                 "checksum", "size", "secondaryFiles", "contents"]
+    DIR_KEYS = ["location", "path", "basename", "listing"]
+
+    def parse_item(default):
+        match cwl_type.types:
+            # case "bool":
+            case "bool" | "int" | "float": 
+                value = default
+            case "str":
+                value = f'"{default}"'
+            case "FileObject":
+                IM.add_from("utils", "FileObject")
+                # value = repr(FileObject(default))
+                value = [f'"{k}":"{v}"' for k, v in default.items() if k in FILE_KEYS]
+                value = f'FileObject({{{", ".join(value)}}})'
+                
+            case "DirectoryObject":
+                IM.add_from("utils", "DirectoryObject")
+                # value = repr(DirectoryObject(default))
+        return value
+
+    if cwl_type.is_array:
+        return [parse_item(d) for d in default]
     else:
-        rhs =  f'{t.types}({source})'
-    return tab(f'inputs["{id}"] = {rhs}')
+        return parse_item(default)
+        # return tab(f'{parse_item(default)}', 2)
+
+
+def parse_input_parameter(input: CommandInputParameter) -> list[str]:
+    """
+    """
+    id = input.id.split("/")[-1]
+    cwl_type = CWLType(input.type_, id)
+
+    if exists(input, "default"):
+        default = parse_default(input.default, cwl_type)
+    else:
+        return [tab(f'"{id}": None,', 2)]
+    
+    if isinstance(default, str):
+        return [tab(f'"{id}": {default},', 2)]
+    else:
+        return [
+            tab(f'"{id}": [', 2),
+            *[tab(f'{d},', 3) for d in default],
+            tab("],", 2)
+        ]
 
 
 def parse_commandline(
@@ -207,7 +243,7 @@ def parse_commandline(
         func_name = f"cmd{len(exprs)}"
         exprs.append(tab(f"def {func_name}(context: dict) -> str:"))
         exprs.append(tab(f"return {expression}", 2))
-        return f"{func_name}(local_context)"
+        return f"{func_name}(tool_context)"
 
     def compose_cmd_arg(
             value_expr: str,
@@ -275,7 +311,8 @@ def parse_commandline(
         binding = input_.inputBinding
         t = CWLType(input_.type_, input_id)
         pos = int(getattr(binding, "position", 0))
-        ordered_items.append((pos, len(ordered_items), f'inputs["{input_id}"]', t.is_array, binding))
+        ordered_items.append((pos, len(ordered_items), f'inputs["{input_id}"]',
+                              t.is_array, binding))
 
     # All inputs with an inputBinding and all arguments are sorted and
     # prefixed with the baseCommand to produce the final command
@@ -350,7 +387,7 @@ def parse_output_binding(
     else:
         exprs.append(tab(f"return " + x, 2))
 
-    return tab(f'outputs["{id}"] = {t.types}(outputs_{id}(local_context))')
+    return tab(f'outputs["{id}"] = {t.types}(outputs_{id}(tool_context))')
 
 
 def parse_tool(tool: CommandLineTool):
@@ -375,15 +412,12 @@ def parse_tool(tool: CommandLineTool):
     # Input object to inputs
     inputs.extend(comment(tab("# Gather inputs in their correct format")))
     # Parse default values
-    defaults = []
+    inputs.append(tab("inputs = {"))
     for i in tool.inputs:
-        if exists(i, "default"):
-            defaults.append(f'"{i.id.split("/")[-1]}": "{i.default}"')
-    inputs.append(tab(f'inputs = {{{", ".join(defaults)}}}'))
-    # Parse inputs
-    for i in tool.inputs:
-        inputs.append(parse_input_binding(i, exprs))
-    inputs.append(tab('local_context = {"inputs": inputs, **context}'))
+        inputs.extend(parse_input_parameter(i))
+    inputs.append(tab("}"))
+    inputs.append(tab("inputs.update(input_obj)"))
+    inputs.append(tab('tool_context = {"inputs": inputs, **context}'))
     context_pos = len(inputs)
     inputs.append("")
 
@@ -401,8 +435,7 @@ def parse_tool(tool: CommandLineTool):
         outputs.append(parse_output_binding(o, exprs))
     outputs.append(tab("return outputs"))
 
-    # Remove local_context statement if no expressions are used
-    # FIXME glob can also fill exprs
+    # Remove tool_context statement if no expressions are used
     if len(exprs) == 0:
         inputs.pop(context_pos - 1)
     exprs.append("")

@@ -14,16 +14,18 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
 		return glob(pattern)
 
 	# Gather inputs in their correct format
-	inputs = {}
-	inputs["input_fits"] = [FileObject(f) for f in input_obj["input_fits"]]
-	inputs["output_image"] = str(input_obj["output_image"])
-	local_context = {"inputs": inputs, **context}
+	inputs = {
+		"input_fits": None,
+		"output_image": None,
+	}
+	inputs.update(input_obj)
+	tool_context = {"inputs": inputs, **context}
 
 	# Ready the commandline and execute the tool
 	cmd = [
 		'python',
 		'imageplotter.py',
-		*[str(v) for v in inputs["input_fits"]],
+		str(inputs["input_fits"]),
 		str(inputs["output_image"]),
 	]
 	print("Running:",  *cmd)
@@ -31,7 +33,7 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
 
 	# Collect and generate outputs
 	outputs: dict = {}
-	outputs["output"] = FileObject(outputs_output(local_context))
+	outputs["output"] = FileObject(outputs_output(tool_context))
 	return outputs
 
 def main():
