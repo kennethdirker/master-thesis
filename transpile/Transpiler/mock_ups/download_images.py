@@ -1,37 +1,37 @@
 # General imports that are always needed
-import subprocess, sys, yaml
+import dask, subprocess, sys, yaml
 from dask.distributed import Client
 
-# Typing imports
-from typing import Any
-
 # File dependent imports
-import glob
-from utils import FileObject
+from utils import FileObject, glob
 
-def download_images(input_obj: dict) -> dict:
+@dask.delayed
+def download_images(input_obj: dict, context: dict) -> dict:
     """
     class: CommandLineTool
-    id: download_images
     label: download_images
     """
-    cmd: list[str] = []
-    outputs = {}
+    def outputs_output(context: dict):
+        return [FileObject(m) for m in glob("*.fits")]
 
     # Convert values from YAML to correct types  
-    inputs = {}
-    inputs["url_list"] = FileObject(input_obj["url_list"])
+    inputs = {
+        "url_list": None
+    }
+    inputs.update(input_obj)
+    tool_context = {"inputs": inputs, **context}
 
     # Build the command
     cmd = [
         "wget",
-        "-i",
-        str(inputs["url_list"])
+        "-i", str(inputs["url_list"]),
     ]
-
+    print("Running:", *cmd)
     subprocess.run(cmd)
-    outputs["output"] = glob.glob("*.fits")
-    return outputs
+
+    return {
+        "output": outputs_output(tool_context)
+    }
 
 
 def main():
@@ -41,9 +41,11 @@ def main():
     with open(sys.argv[1], "r") as f:
         input_yaml = yaml.load(f, Loader=yaml.BaseLoader)
 
+    env = {}
+
     # Submit to Dask
-    future = client.submit(download_images, input_yaml)
-    print(future.result())
+    result = client.compute(download_images(input_yaml, env)).result()
+    print(*[f'{k}: {v}' for k, v in result.items()])
 
 
 if __name__ == "__main__":

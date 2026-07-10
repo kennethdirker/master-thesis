@@ -3,27 +3,25 @@ import dask, subprocess, sys, yaml
 from dask.distributed import Client
 
 # File dependent imports
-import glob
-from utils import FileObject, js_eval
+from utils import FileObject, glob, js_eval
 
 @dask.delayed
-def noiseremover(input_obj: dict, env: dict) -> dict:
+def noiseremover(input_obj: dict, context: dict) -> dict:
     """
     class: CommandLineTool
-    id: noiseremover
     label: noiseremover
     """
-    def outputs_output_glob():
-        context = {"inputs": inputs, **env}
-        return js_eval("inputs.output_file_name", context)
-    cmd: list[str] = []
-    outputs = {}
+    def outputs_output(context: dict):
+        pattern = js_eval("inputs.output_file_name", context)
+        return FileObject(glob(pattern)[0])
 
     # Convert values from YAML to correct types  
-    inputs = {}
-    inputs["input"] = FileObject(input_obj["input"])
-    inputs["output_file_name"] = str(input_obj["output_file_name"])
-
+    inputs = {
+        "input": None, 
+        "output_file_name": None
+    }
+    inputs.update(input_obj)
+    tool_context = {"inputs": inputs, **context}
 
     # Build the command
     cmd = [
@@ -32,10 +30,12 @@ def noiseremover(input_obj: dict, env: dict) -> dict:
         str(inputs["input"]),
         inputs["output_file_name"]
     ]
-    
+    print("Running:", *cmd)
     subprocess.run(cmd)
-    outputs["output"] = FileObject(glob.glob(outputs_output_glob())[0])
-    return outputs
+
+    return {
+        "output": outputs_output(tool_context)
+    }
 
 
 def main():
@@ -48,8 +48,8 @@ def main():
     env = {}
 
     # Submit to Dask
-    future = client.compute(noiseremover(input_yaml, env))
-    print(*[f'{k}: {v}' for k, v in future.result().items()])
+    result = client.compute(noiseremover(input_yaml, env)).result()
+    print(*[f'{k}: {v}' for k, v in result.items()])
 
 if __name__ == "__main__":
     main()

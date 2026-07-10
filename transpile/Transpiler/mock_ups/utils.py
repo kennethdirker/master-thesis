@@ -4,9 +4,10 @@ from __future__ import annotations
 import js2py
 import os
 import shutil
+import yaml
 
 from itertools import product
-from glob import glob
+from glob import glob as globglob
 from math import prod
 from pathlib import Path
 
@@ -68,6 +69,31 @@ def js_eval(
     
     return result
 
+def load_input_object(yaml_path):
+    """
+    Load the input object with values from a yaml. Special datatypes like
+    files and directories are converted to their respective equivalents.
+    """
+    with open(yaml_path, "r") as f:
+        input_yaml = yaml.load(f, Loader=yaml.BaseLoader)
+        for k, v in input_yaml.items():
+            if isinstance(v, dict):
+                if hasattr(v, "class"):
+                    if "file" in v["class"].lower():
+                        input_yaml[k] = FileObject(v)
+                    elif "directory" in v["class"].lower():
+                        input_yaml[k] = DirectoryObject(v)
+            elif isinstance(v, list):
+                if len(v) == 0:
+                    continue
+                if "file" in v[0]["class"].lower():
+                    input_yaml[k] = [FileObject(i) for i in v]
+                elif "directory" in v[0]["class"].lower():
+                    input_yaml[k] = [DirectoryObject(i) for i in v]
+        return input_yaml
+                
+
+
 def scatterizer(
         inputs: dict, 
         keys: str | list[str],
@@ -107,11 +133,11 @@ def glob(pattern: str | list[str]) -> list:
     searching for multiple patterns per call. 
     """
     if isinstance(pattern, str):
-        return glob.glob(pattern)
+        return globglob(pattern)
     elif isinstance(pattern, list):
         matches = []
         for p in pattern:
-            matches.extend(glob.glob(p))
+            matches.extend(globglob(p))
     raise TypeError("'pattern' must be 'str' or 'list[str]', but found", type(pattern))
 
 

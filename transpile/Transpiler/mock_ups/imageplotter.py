@@ -3,39 +3,36 @@ import dask, subprocess, sys, yaml
 from dask.distributed import Client
 
 # File dependent imports
-import glob
-from utils import FileObject, js_eval
+from utils import FileObject, glob, js_eval
 
 @dask.delayed
-def imageplotter(input_obj: dict, env: dict) -> dict:
+def imageplotter(input_obj: dict, context: dict) -> dict:
     """
     class: CommandLineTool
     label: imageplotter
     """
-    def outputs_output_glob():
-        context = {"inputs": inputs, **env}
-        return js_eval("inputs.output_image", context)
+    def outputs_output(context: dict):
+        pattern = js_eval("inputs.output_image", context)
+        return FileObject(glob(pattern)[0])
 
-    cmd: list[str] = []
-    outputs = {}
-
-    # Convert values from YAML to correct types  
-    inputs = {}
-    inputs["input_fits"] = [FileObject(f) for f in input_obj["input_fits"]]
-    inputs["output_image"] = str(input_obj["output_image"])
-
+    # Set input defaults and bind values from the input object 
+    inputs = {"input_fits": None, "output_image": None}
+    inputs.update(input_obj)
+    tool_context = {"inputs": inputs, **context}
 
     # Build the command
     cmd = [
-        "python",
-        "scripts/imageplotter.py",
-        *[str(s) for s in inputs["input_fits"]],
-        inputs["output_image"]
+        'python',
+        'scripts/imageplotter.py',
+        *[str(s) for s in inputs['input_fits']],
+        inputs['output_image']
     ]
-
+    print("Running:", *cmd)
     subprocess.run(cmd)
-    outputs["output"] = FileObject(glob.glob(outputs_output_glob())[0])
-    return outputs
+
+    return {
+        "output": outputs_output(tool_context)
+    }
 
 
 def main():
@@ -48,8 +45,8 @@ def main():
     env = {}
 
     # Run as task graph with Dask delayed
-    future = client.compute(imageplotter(input_yaml, env))
-    print(*[f'{k}: {v}' for k, v in future.result().items()])
+    result = client.compute(imageplotter(input_yaml, env)).result()
+    print(*[f'{k}: {v}' for k, v in result.items()])
 
 if __name__ == "__main__":
     main()
