@@ -25,7 +25,7 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
 	cmd = [
 		'python',
 		'imageplotter.py',
-		str(inputs["input_fits"]),
+		*[str(v) for v in inputs["input_fits"]],
 		str(inputs["output_image"]),
 	]
 	print("Running:",  *cmd)

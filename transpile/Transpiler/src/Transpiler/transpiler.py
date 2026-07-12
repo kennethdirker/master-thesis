@@ -230,6 +230,7 @@ def parse_commandline(
     ) -> list[str]:
     """
     TODO Handle input valueFrom
+    TODO Handle arrays
 
     Generate a Python list that holds the commandline-building statements for 
     `tool`. Any expression handlers generated are added to `exprs`.
@@ -240,7 +241,7 @@ def parse_commandline(
     def add_expression_function(expression: str) -> str:
         global IM
         IM.add_from("utils", "js_eval")
-        func_name = f"cmd{len(exprs)}"
+        func_name = f"expr_handler_{len(exprs)}"
         exprs.append(tab(f"def {func_name}(context: dict) -> str:"))
         exprs.append(tab(f"return {expression}", 2))
         return f"{func_name}(tool_context)"
@@ -250,6 +251,7 @@ def parse_commandline(
             is_array: bool,
             binding: Optional[CommandLineBinding] = None,
         ) -> str:
+        # TODO Remove 'str(X)' when arg type is string
         prefix = getattr(binding, "prefix", "")
         separate = getattr(binding, "separate", True)
         itemSeparator = getattr(binding, "itemSeparator", None)
@@ -287,6 +289,7 @@ def parse_commandline(
 
     # Assign a sorting key (inputBinding.position, argument index) to the tool
     # arguments.
+    # TODO Handle arg valueFrom typing?
     if exists(tool, "arguments"):
         for i, arg in enumerate(tool.arguments):
             if isinstance(arg, str):
@@ -302,7 +305,7 @@ def parse_commandline(
             else:
                 raise TypeError(f"Unsupported argument type: {type(arg)}")
  
-    # TODO Handle input valueFrom
+    # TODO Handle input valueFrom typing?
     for input_ in tool.inputs:        
         if not exists(input_, "inputBinding"):
             continue
@@ -310,12 +313,21 @@ def parse_commandline(
         input_id = input_.id.split("/")[-1]
         binding = input_.inputBinding
         t = CWLType(input_.type_, input_id)
-        pos = int(getattr(binding, "position", 0))
-        ordered_items.append((pos, len(ordered_items), f'inputs["{input_id}"]',
+        pos: int = getattr(binding, "position", 0)
+        value_expr = f'inputs["{input_id}"]'
+
+        # If the binding has valueFrom, add a expression handler if needed
+        if exists(binding, "valueFrom"):
+            value_expr = binding.valueFrom
+            if is_expr(value_expr):
+                value_expr = add_expression_function(value_expr[2:-1])
+            else:
+                value_expr = f'"{value_expr}"'
+        ordered_items.append((pos, len(ordered_items), value_expr,
                               t.is_array, binding))
 
-    # All inputs with an inputBinding and all arguments are sorted and
-    # prefixed with the baseCommand to produce the final command
+    # Both the inputs with an inputBinding as well as the tool arguments are
+    # sorted, prefixed with the baseCommand to produce the final command.
     command_items: list[str] = []
     if exists(tool, "baseCommand"):
         baseCommand = tool.baseCommand
@@ -325,7 +337,8 @@ def parse_commandline(
             command_items.extend([f"'{s}'"  for s in baseCommand])
         else:
             raise TypeError(f"Unsupported baseCommand type: {type(baseCommand)}")
-        
+    
+    # Sort and apply the commandline bindings
     ordered_items.sort(key=lambda item: (item[0], item[1]))
     for _, _, value_expr, is_array, binding in ordered_items:
         command_items.append(compose_cmd_arg(value_expr, is_array, binding))
@@ -343,7 +356,7 @@ def parse_output_binding(
     ) -> str:
     """
     TODO 
-    Emit a simple output assignment for a CWL output.
+    Return an output assignment for a CWL output.
 
     NOTE: Output must have outputBinding, which is only not the case when the
     output type is stdout.

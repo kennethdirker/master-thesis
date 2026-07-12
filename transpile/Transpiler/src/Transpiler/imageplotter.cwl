@@ -6,7 +6,7 @@ baseCommand:
   - imageplotter.py
 inputs:
   - id: input_fits
-    type: File
+    type: File[]
     inputBinding:
       position: 0
   - id: output_image
