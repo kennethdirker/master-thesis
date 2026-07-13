@@ -1,12 +1,11 @@
 
 
-default = {
-    "a": "A",
-    "b": "B",
-    "c": "C",
-}
 
-l = [f'"{k}":{v}' for k, v in default.items()]
-l = f'{{{", ".join(l)}}}'
-print(default)
-print(l)
+
+
+
+a = 0 if False else [
+    0,
+    2,
+]
+print(a)
