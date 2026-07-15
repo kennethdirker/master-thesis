@@ -26,6 +26,7 @@ from cwl_utils.parser.cwl_v1_2 import (
     InputArraySchema,
     OutputArraySchema,
     WorkflowOutputParameter,
+    WorkflowStep,
     WorkflowStepOutput,
 )
 
@@ -36,8 +37,8 @@ SLURM = False
 # Whether code comments will be added to the script
 COMMENTS = False
 
-# Cache all processes, indexed by their path
-PROCS: dict[str, list[str]] = {}
+# # Cache for storing ({proc_id}/{step_id}, Process)
+# STEP_TO_PROC: dict[str, Process] = {}
 
 
 def tab(string: str, tab_amount: int = 1) -> str:
@@ -213,32 +214,37 @@ def create_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def gather_processes(path: Path, processes: dict[str, Process]) -> None:
+def gather_processes(
+        path: Path, 
+        processes: dict[str, Process], 
+        parent_step: Optional[WorkflowStep] = None,
+        cache: bool = True
+    ) -> None:
     # Index by the absolute file path to prevent duplicates
     path = path.resolve()
     if path in processes:
-        return
+        cache = False
     
-    process = load_document_by_uri(path)
-    processes[path] = process
+    if cache:
+        process = load_document_by_uri(path)
+        processes[path] = process
+    else:
+        process = processes[path]
+
+    if parent_step:
+        setattr(parent_step, "subprocess", process)
 
     if isinstance(process, Workflow):
         for step in process.steps:
             step_path = Path(step.run[step.run.find(":") + 1:])
-            # step_path = Path(step.run.(":")[])
             if not step_path.is_absolute():
-                print(path)
-                print(step_path)
-                
                 step_path = path / step_path
-            gather_processes(step_path, processes)
+            gather_processes(step_path, processes, step, cache)
         return
 
     if not isinstance(process, CommandLineTool):
         raise TypeError(type(process), " is not a supported process type")
     
-    
-
 
 def parse_default(default, cwl_type: CWLType) -> str | list[str]:
     """
@@ -462,6 +468,7 @@ def parse_tool_output_binding(
             g = "glob(pattern)"
 
     if exists(binding, "outputEval"):
+        IM.add_from("utils", "js_eval")
         if glob_flag:
             exprs.append(tab(f'matches = {x}'))
             exprs.append(tab(f'context["self"] = [FileObject(m) for m in matches]'), 2)
@@ -526,39 +533,8 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
     return header + exprs + inputs + command + outputs
 
 
-# def parse_workflow_input_parameter(input) -> list[str]:
-#     """
-#     """
-#     id = input.id.split("/")[-1]
-#     cwl_type = CWLType(input.type_)
-
-#     if exists(input, "default"):
-#         default = parse_default(input.default, cwl_type)
-#     else:
-#         return [tab(f'"{id}": None,', 2)]
-    
-#     if isinstance(default, str):
-#         return [tab(f'"{id}": {default},', 2)]
-#     else:
-#         return [
-#             tab(f'"{id}": [', 2),
-#             *[tab(f'{d},', 3) for d in default],
-#             tab("],", 2)
-#         ]
-
-
-def parse_workflow_step(step, exprs) -> list[str]:
-    lines = []
-    step_id = step.id.split("/")[-1]
-    
-    
-    # Parse step metadata
-    lines.append(tab(f'# Step ID:    {step_id}'))
-    if exists(step, "label"):
-        lines.append(tab(f'# Step label: {step.label}'))
-
-    # Parse step inputs (source/default/valueFrom)
-    lines.append(tab(f'{step_id}_in = {{'))
+def parse_workflow_step_inputs(step, step_id) -> list[str]:
+    lines: list[str] = [tab(f'{step_id}_in = {{')]
     for input in step.in_:
         input_id = input.id.split("/")[-1]
 
@@ -602,27 +578,71 @@ def parse_workflow_step(step, exprs) -> list[str]:
         elif exists(input, "source"):
             # Source
             lines.append(tab(f'"{input_id}": {source},', 2))
-
-
     lines.append(tab('}'))
-        
+    return lines
+
+
+def parse_workflow_step(step: WorkflowStep, exprs: list[str]) -> list[str]:
+    global IM
+    step_id = step.id.split("/")[-1]
+
+    def parse_valueFrom(tabs: int = 1) -> list[str]:
+        lines: list[str] = []
+        for input in step.in_:
+            if exists(input, "valueFrom"):
+                valueFrom = input.valueFrom
+                input_id = input.id.split("/")[-1]
+                if is_expr(input.valueFrom):
+                    IM.add_from("utils", "js_eval")
+                    if exists(input, "source") or exists(input, "default"):
+                        exprs.append(tab(f"def {step_id}_{input_id}(context, self):"))
+                        exprs.append(tab('context["self"] = self', 2))
+                        lines.append(tab(f'scattered_inputs["{input_id}"] = {step_id}_{input_id}(tool_context, {step_id}_in[{"{input_id}"}])', tabs))
+                    else:
+                        exprs.append(tab(f"def {step_id}_{input_id}(context):"))
+                        exprs.append(tab('context["self"] = None', 2))
+                        lines.append(tab(f'scattered_inputs["{input_id}"] = {step_id}_{input_id}(tool_context)', tabs))
+                        
+                else:
+                    lines.append(tab(f'scattered_inputs["{input_id}"] = "{valueFrom}"', tabs))
+        return lines
+    
+    # Parse step metadata
+    lines = []
+    lines.append(tab(f'# Step ID:    {step_id}'))
+    if exists(step, "label"):
+        lines.append(tab(f'# Step label: {step.label}'))
+
+    # Parse step inputs (source/default)
+    lines.extend(parse_workflow_step_inputs(step, step_id))
 
     # Parse step context and execution
+    subprocess_id = step.subprocess.id.split("#")[-1]
     if exists(step, "scatter"):
-        ...
+        IM.add_from("utils", "scatterizer")
+        IM.add_from("utils", "transpose")
+        lines.append(tab(f'{step_id}_scattered_out = []'))
+        lines.append(tab(f'for scattered_inputs in scatterizer({step_id}_in, "input"):'))
+        lines.append(tab(f'tool_context["inputs"] = {{**inputs, **scattered_inputs}}', 2))
+        lines.extend(parse_valueFrom(2))
+        lines.append(tab(f'{step_id}_scattered_out.append({subprocess_id}(scattered_inputs, context))', 2))
+        lines.append(tab(f"{step_id}_out = dask.delayed(transpose)({step_id}_scattered_out)"))
     else:
-        ...
-        
+        lines.append(tab(f'{step_id}_out = {subprocess_id}({step_id}_in, context)'))
+        lines.extend(parse_valueFrom())
 
     lines.append("")
     return lines
 
 
-def parse_workflow_output_binding(
-        output: WorkflowOutputParameter, 
-        exprs: list[str]
-    ) -> str:
-    return
+def parse_workflow_output(output: WorkflowOutputParameter):
+    outputSource = output.outputSource
+    if len(outputSource) > 1:
+        raise NotImplementedError()
+    
+    step_id, input_id = output.outputSource[0].split("/")[-2:]
+    output_id = output.id.split("/")[-1]
+    return tab(f'"{output_id}": {step_id}_out["{input_id}"].compute(),', 2)
 
 
 def parse_workflow(wf: Workflow):
@@ -653,7 +673,7 @@ def parse_workflow(wf: Workflow):
     inputs.append(tab("}"))
     inputs.append(tab("inputs.update(input_obj)"))
     inputs.append(tab('tool_context = {"inputs": inputs, **context}'))
-    context_pos = len(inputs)
+    # context_pos = len(inputs)
     inputs.append("")
 
     # Parse steps
@@ -662,11 +682,17 @@ def parse_workflow(wf: Workflow):
 
     # Parse outputs
     outputs.extend(comment(tab("# Compute outputs")))
+    outputs.append(tab("return {"))
+    for output in wf.outputs:
+        outputs.append(parse_workflow_output(output))
+    outputs.append(tab("}"))
 
-    # Remove tool_context statement if no expressions are used
-    if len(exprs) == 0:
-        inputs.pop(context_pos - 1)
-    exprs.append("")
+
+    # # Remove tool_context statement if no expressions are used
+    # if len(exprs) == 0:
+    #     inputs.pop(context_pos - 1)
+    if len(exprs) > 0:
+        exprs.append("")
         
     return header + exprs + inputs + steps  + outputs
 
@@ -675,7 +701,7 @@ def parse_main(main_id: str) -> list[str]:
     """
     Create the script main entry.
     """
-    m_ls: list[str] = ["", "def main():"]
+    m_ls: list[str] = ["def main():"]
 
     # Write DASK client initialization
     m_ls.extend(comment(tab("# Initialize cluster")))
@@ -715,11 +741,12 @@ def parse_main(main_id: str) -> list[str]:
 
 def parse_cwl(cwl_path):
     global IM
-    body_lines = []
-    processes = {}
+    body_lines: list[str] = []
+    processes: dict[str, Process] = {}
 
     # Gather all unique procesess in preorder fashion
     gather_processes(cwl_path, processes)
+    # assign_workflow_subprocesses(processes)
 
     # Parse tools and workflow functions inorder
     for process in reversed(processes.values()):
