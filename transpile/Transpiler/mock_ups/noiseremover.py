@@ -26,7 +26,7 @@ def noiseremover(input_obj: dict, context: dict) -> dict:
     # Build the command
     cmd = [
         "python",
-        "scripts/noiseremover.py",
+        "noiseremover.py",
         str(inputs["input"]),
         inputs["output_file_name"]
     ]

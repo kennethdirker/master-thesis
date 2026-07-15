@@ -77,8 +77,8 @@ class ImportManager:
         self.add("dask")
         self.add("subprocess")
         self.add("sys")
-        self.add("yaml")
         self.add_from("dask.distributed", "Client")
+        self.add_from("utils", "load_input_object")
 
     def add(self, module):
         self.imports.add(module)
@@ -167,15 +167,7 @@ def convert_to_CWLType(value) -> CWLType:
                 else:
                     raise NotImplementedError("Dicts are not supported")
         return t
-    # "null": "NoneType",
-    # "boolean": "bool",
-    # "int": "int",
-    # "long": "int",
-    # "float": "float",
-    # "double": "float",
-    # "string": "str",
-    # "file": "FileObject",
-    # "directory": "DirectoryObject",
+
     if isinstance(value, list):
         if len(value) == 0:
             raise Exception("Empty list not supported")
@@ -220,6 +212,12 @@ def gather_processes(
         parent_step: Optional[WorkflowStep] = None,
         cache: bool = True
     ) -> None:
+    """
+    Load the Process (and its subprocesses) from the file pointed to by `path`.
+    If `cache` is `True`, the processes are cached in `processes`, indexed by
+    the absolute path to the process file. Duplicate subprocesses are cached a
+    single time.
+    """
     # Index by the absolute file path to prevent duplicates
     path = path.resolve()
     if path in processes:
@@ -256,7 +254,6 @@ def parse_default(default, cwl_type: CWLType) -> str | list[str]:
 
     def parse_item(default):
         match cwl_type.types:
-            # case "bool":
             case "bool" | "int" | "float": 
                 value = default
             case "str":
@@ -268,6 +265,8 @@ def parse_default(default, cwl_type: CWLType) -> str | list[str]:
                 
             case "DirectoryObject":
                 IM.add_from("utils", "DirectoryObject")
+                value = [f'"{k}":"{v}"' for k, v in default.items() if k in DIR_KEYS]
+                value = f'DirectoryObject({{{", ".join(value)}}})'
         return value
 
     if cwl_type.is_array:
@@ -302,9 +301,6 @@ def parse_commandline(
         exprs: list[str]
     ) -> list[str]:
     """
-    TODO Handle input valueFrom
-    TODO Handle arrays
-
     Generate a Python list that holds the commandline-building statements for 
     `tool`. Any expression handlers generated are added to `exprs`.
 
@@ -378,7 +374,6 @@ def parse_commandline(
             else:
                 raise TypeError(f"Unsupported argument type: {type(arg)}")
  
-    # TODO Handle input valueFrom typing?
     for input_ in tool.inputs:        
         if not exists(input_, "inputBinding"):
             continue
@@ -428,7 +423,6 @@ def parse_tool_output_binding(
         exprs: list[str]
     ) -> str:
     """
-    TODO 
     Return an output assignment for a CWL output.
 
     NOTE: Output must have outputBinding, which is only not the case when the
@@ -593,6 +587,7 @@ def parse_workflow_step(step: WorkflowStep, exprs: list[str]) -> list[str]:
                 valueFrom = input.valueFrom
                 input_id = input.id.split("/")[-1]
                 if is_expr(input.valueFrom):
+                    expr = input.valueFrom[2:-1]
                     IM.add_from("utils", "js_eval")
                     if exists(input, "source") or exists(input, "default"):
                         exprs.append(tab(f"def {step_id}_{input_id}(context, self):"))
@@ -602,6 +597,7 @@ def parse_workflow_step(step: WorkflowStep, exprs: list[str]) -> list[str]:
                         exprs.append(tab(f"def {step_id}_{input_id}(context):"))
                         exprs.append(tab('context["self"] = None', 2))
                         lines.append(tab(f'scattered_inputs["{input_id}"] = {step_id}_{input_id}(tool_context)', tabs))
+                    exprs.append(tab(f'return js_eval("{expr}", context)', 2))
                         
                 else:
                     lines.append(tab(f'scattered_inputs["{input_id}"] = "{valueFrom}"', tabs))
@@ -701,42 +697,41 @@ def parse_main(main_id: str) -> list[str]:
     """
     Create the script main entry.
     """
-    m_ls: list[str] = ["def main():"]
+    ls: list[str] = ["def main():"]
 
     # Write DASK client initialization
-    m_ls.extend(comment(tab("# Initialize cluster")))
+    ls.extend(comment(tab("# Initialize cluster")))
     if SLURM:
-        m_ls.extend(comment(tab("# NOTE: Memory argument is forced by the SLURMCluster ")))
-        m_ls.extend(comment(tab("# initializer. This causes problems on systems that disable")))
-        m_ls.extend(comment(tab("# setting memory requirements (DAS6 has this restriction). The")))
-        m_ls.extend(comment(tab("# band-aid is to ignore the memory setting line with")))
-        m_ls.extend(comment(tab("# 'job_directives_skip'.")))
-        m_ls.append(tab('cluster = SLURMCluster('))
-        m_ls.append(tab('cores=16,', 2))
-        m_ls.append(tab('memory="16GB",', 2))
-        m_ls.append(tab('walltime="00:15:00",', 2))
-        m_ls.append(tab('job_directives_skip=[\'--mem\']', 2))
-        m_ls.append(tab(")"))
-        m_ls.append(tab("cluster.scale(4)"))
-        m_ls.append(tab("client = Client(cluster)", 1))
+        ls.extend(comment(tab("# NOTE: Memory argument is forced by the SLURMCluster ")))
+        ls.extend(comment(tab("# initializer. This causes problems on systems that disable")))
+        ls.extend(comment(tab("# setting memory requirements (DAS6 has this restriction). The")))
+        ls.extend(comment(tab("# band-aid is to ignore the memory setting line with")))
+        ls.extend(comment(tab("# 'job_directives_skip'.")))
+        ls.append(tab('cluster = SLURMCluster('))
+        ls.append(tab('cores=16,', 2))
+        ls.append(tab('memory="16GB",', 2))
+        ls.append(tab('walltime="00:15:00",', 2))
+        ls.append(tab('job_directives_skip=[\'--mem\']', 2))
+        ls.append(tab(")"))
+        ls.append(tab("cluster.scale(4)"))
+        ls.append(tab("client = Client(cluster)", 1))
     else:
-        m_ls.append(tab("client = Client()"))
+        ls.append(tab("client = Client()"))
 
-    m_ls.append("")
-    m_ls.extend(comment(tab("# Convert input YAML to dict")))
-    m_ls.append(tab('with open(sys.argv[1], "r") as f:'))
-    m_ls.append(tab("input_yaml = yaml.load(f, Loader=yaml.BaseLoader)", 2))
-    m_ls.append("")
-    m_ls.extend(comment(tab("# Initialize CWL context")))
-    m_ls.append(tab("context = {}"))
-    m_ls.append("")
-    m_ls.extend(comment(tab("# Submit to DASK")))
-    m_ls.append(tab(f"result = client.compute({main_id}(input_yaml, context)).result()"))
-    m_ls.append(tab("print(*[f'{k}: {v}' for k, v in result.items()])"))
-    m_ls.append("")
-    m_ls.append('if __name__ == "__main__":')
-    m_ls.append(tab("main()"))
-    return m_ls
+    ls.append("")
+    ls.extend(comment(tab("# Convert input YAML to dict")))
+    ls.append(tab('input_obj = load_input_object(sys.argv[1])'))
+    ls.append("")
+    ls.extend(comment(tab("# Initialize CWL context")))
+    ls.append(tab("context = {}"))
+    ls.append("")
+    ls.extend(comment(tab("# Submit to DASK")))
+    ls.append(tab(f"result = client.compute({main_id}(input_obj, context)).result()"))
+    ls.append(tab("print(*[f'{k}: {v}' for k, v in result.items()])"))
+    ls.append("")
+    ls.append('if __name__ == "__main__":')
+    ls.append(tab("main()"))
+    return ls
 
 
 def parse_cwl(cwl_path):
@@ -746,7 +741,6 @@ def parse_cwl(cwl_path):
 
     # Gather all unique procesess in preorder fashion
     gather_processes(cwl_path, processes)
-    # assign_workflow_subprocesses(processes)
 
     # Parse tools and workflow functions inorder
     for process in reversed(processes.values()):

@@ -23,7 +23,7 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
     # Build the command
     cmd = [
         'python',
-        'scripts/imageplotter.py',
+        'imageplotter.py',
         *[str(s) for s in inputs['input_fits']],
         inputs['output_image']
     ]
