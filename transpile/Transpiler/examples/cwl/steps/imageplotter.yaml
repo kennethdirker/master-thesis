@@ -1,0 +1,4 @@
+input_fits: 
+    -   class: File
+        path: image_mf_01.fits
+output_image: image_mf_01.png
