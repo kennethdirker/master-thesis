@@ -1,1 +1,0 @@
-/home/kennethdirker/Leiden/2024-2025/Thesis/transpile/PWF/examples/cwl_local_workflow/workflows/process_images_offline_scatter.cwl

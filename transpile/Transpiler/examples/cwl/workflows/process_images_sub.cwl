@@ -33,7 +33,7 @@ steps:
     out:
       - id: before_noise_remover
       - id: after_noise_remover_plot
-    run: process_images_offline.cwl
+    run: process_images.cwl
     label: subworkflow
 
   - id: imageplotter

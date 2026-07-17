@@ -1,7 +1,6 @@
-import dask, subprocess, sys, yaml
+import dask, subprocess, sys
+from CWL2DASK.scripting import FileObject, glob, js_eval, load_input_object
 from dask.distributed import Client
-from dask_jobqueue.slurm import SLURMCluster
-from utils import FileObject, glob, js_eval
 
 @dask.delayed
 def imageplotter(input_obj: dict, context: dict) -> dict:
@@ -24,7 +23,7 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
 	# Ready the commandline and execute the tool
 	cmd = [
 		'python',
-		'imageplotter.py',
+		'scripts/imageplotter.py',
 		*[str(v) for v in inputs["input_fits"]],
 		str(inputs["output_image"]),
 	]
@@ -36,31 +35,19 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
 		"output": outputs_output(tool_context),
 	}
 
+
 def main():
 	# Initialize cluster
-	# NOTE: Memory argument is forced by the SLURMCluster 
-	# initializer. This causes problems on systems that disable
-	# setting memory requirements (DAS6 has this restriction). The
-	# band-aid is to ignore the memory setting line with
-	# 'job_directives_skip'.
-	cluster = SLURMCluster(
-		cores=16,
-		memory="16GB",
-		walltime="00:15:00",
-		job_directives_skip=['--mem']
-	)
-	cluster.scale(4)
-	client = Client(cluster)
+	client = Client()
 
 	# Convert input YAML to dict
-	with open(sys.argv[1], "r") as f:
-		input_yaml = yaml.load(f, Loader=yaml.BaseLoader)
+	input_obj = load_input_object(sys.argv[1])
 
 	# Initialize CWL context
 	context = {}
 
 	# Submit to DASK
-	result = client.compute(imageplotter(input_yaml, context)).result()
+	result = client.compute(imageplotter(input_obj, context)).result()
 	print(*[f'{k}: {v}' for k, v in result.items()])
 
 if __name__ == "__main__":

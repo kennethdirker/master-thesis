@@ -1,0 +1,8 @@
+[project]
+name = "CWL2DASK"
+version = "0.1.0"
+description = "Transpiler and SDK for transforming CWL tools and workflows into a single, executable Python script that uses DASK as an execution backend."
+
+[build-system]
+build-backend = "flit_core.buildapi"
+requires = ["flit_core >=3.2,<4"]

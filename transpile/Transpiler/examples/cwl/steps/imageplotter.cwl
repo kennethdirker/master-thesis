@@ -3,7 +3,7 @@ cwlVersion: v1.2
 id: imageplotter
 baseCommand:
   - python
-  - imageplotter.py
+  - scripts/imageplotter.py
 inputs:
   - id: input_fits
     type: File[]
@@ -21,7 +21,3 @@ outputs:
 label: imageplotter
 requirements:
   - class: InlineJavascriptRequirement
-  - class: InitialWorkDirRequirement
-    listing:
-      - class: File
-        location: ../scripts/imageplotter.py

@@ -1,0 +1,16 @@
+
+Supported:
+    Scatter
+    Arrays
+    Expressions
+    
+
+Not supported:
+    Input null checking
+    Optional inputs
+    Multi-typed inputs
+    stdin
+    stdout
+    stderr
+    Complex data types
+

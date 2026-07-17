@@ -6,7 +6,7 @@ from typing import (
     Optional
 )
 
-from utils import FileObject, DirectoryObject
+# from scripting import FileObject, DirectoryObject
 
 from cwl_utils.parser import (
     load_document_by_uri,
@@ -30,15 +30,13 @@ from cwl_utils.parser.cwl_v1_2 import (
     WorkflowStepOutput,
 )
 
+SDK = "CWL2DASK.scripting"
 
 # Whether to use the default Dask Client or jobqueue SLURM client
 SLURM = False
 
 # Whether code comments will be added to the script
 COMMENTS = False
-
-# # Cache for storing ({proc_id}/{step_id}, Process)
-# STEP_TO_PROC: dict[str, Process] = {}
 
 
 def tab(string: str, tab_amount: int = 1) -> str:
@@ -78,7 +76,7 @@ class ImportManager:
         self.add("subprocess")
         self.add("sys")
         self.add_from("dask.distributed", "Client")
-        self.add_from("utils", "load_input_object")
+        self.add_from(SDK, "load_input_object")
 
     def add(self, module):
         self.imports.add(module)
@@ -259,12 +257,12 @@ def parse_default(default, cwl_type: CWLType) -> str | list[str]:
             case "str":
                 value = f'"{default}"'
             case "FileObject":
-                IM.add_from("utils", "FileObject")
+                IM.add_from(SDK, "FileObject")
                 value = [f'"{k}":"{v}"' for k, v in default.items() if k in FILE_KEYS]
                 value = f'FileObject({{{", ".join(value)}}})'
                 
             case "DirectoryObject":
-                IM.add_from("utils", "DirectoryObject")
+                IM.add_from(SDK, "DirectoryObject")
                 value = [f'"{k}":"{v}"' for k, v in default.items() if k in DIR_KEYS]
                 value = f'DirectoryObject({{{", ".join(value)}}})'
         return value
@@ -309,7 +307,7 @@ def parse_commandline(
 
     def add_expression_function(expression: str) -> str:
         global IM
-        IM.add_from("utils", "js_eval")
+        IM.add_from(SDK, "js_eval")
         func_name = f"expr_handler_{len(exprs)}"
         exprs.append(tab(f"def {func_name}(context: dict) -> str:"))
         exprs.append(tab(f"return {expression}", 2))
@@ -418,6 +416,25 @@ def parse_commandline(
     return lines
 
 
+def parse_run(tool: CommandLineTool, exprs: list[str]) -> list[str]:
+    lines = []
+    if exists(tool, "stdin"):
+        lines.append(f"stdin={tool.stdin}")
+    if exists(tool, "stdout"):
+        lines.append(f"stdout={tool.stdout}")
+    if exists(tool, "stderr"):
+        lines.append(f"stderr={tool.stderr}")
+    # TODO
+    if len(lines) == 0:
+        return [tab("subprocess.run(cmd)")]
+    else:
+        return [
+            tab("subprocess.run("),
+            *[tab(f'{l},', 2) for l in lines],
+            tab(")"),
+        ]
+
+
 def parse_tool_output_binding(
         output: CommandOutputParameter, 
         exprs: list[str]
@@ -433,9 +450,9 @@ def parse_tool_output_binding(
     t = CWLType(output.type_)
 
     if "FileObject" in t.types:
-        IM.add_from("utils", "FileObject")
+        IM.add_from(SDK, "FileObject")
     if "DirectoryObject" in t.types:
-        IM.add_from("utils", "DirectoryObject")
+        IM.add_from(SDK, "DirectoryObject")
 
     # Create expression handler that takes handles an output's glob matching
     # and outputEval.
@@ -445,11 +462,11 @@ def parse_tool_output_binding(
     if exists(binding,"glob"):
         glob_flag = True
         g = binding.glob
-        IM.add_from("utils", "glob")
+        IM.add_from(SDK, "glob")
         if isinstance(g, str):
             if is_expr(g):
                 # Expression
-                IM.add_from("utils", "js_eval")
+                IM.add_from(SDK, "js_eval")
                 exprs.append(tab(f'pattern = js_eval("{g[2:-1]}", context)', 2))
                 x = "glob(pattern)"
             else:
@@ -462,7 +479,7 @@ def parse_tool_output_binding(
             g = "glob(pattern)"
 
     if exists(binding, "outputEval"):
-        IM.add_from("utils", "js_eval")
+        IM.add_from(SDK, "js_eval")
         if glob_flag:
             exprs.append(tab(f'matches = {x}'))
             exprs.append(tab(f'context["self"] = [FileObject(m) for m in matches]'), 2)
@@ -509,7 +526,7 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
     command.extend(comment(tab("# Ready the commandline and execute the tool")))
     command.extend(parse_commandline(tool, exprs))
     command.append(tab('print("Running:",  *cmd)'))
-    command.append(tab("subprocess.run(cmd)"))
+    command.extend(parse_run(tool, exprs))
     command.append("")
 
     # Parse outputs
@@ -588,7 +605,7 @@ def parse_workflow_step(step: WorkflowStep, exprs: list[str]) -> list[str]:
                 input_id = input.id.split("/")[-1]
                 if is_expr(input.valueFrom):
                     expr = input.valueFrom[2:-1]
-                    IM.add_from("utils", "js_eval")
+                    IM.add_from(SDK, "js_eval")
                     if exists(input, "source") or exists(input, "default"):
                         exprs.append(tab(f"def {step_id}_{input_id}(context, self):"))
                         exprs.append(tab('context["self"] = self', 2))
@@ -615,8 +632,8 @@ def parse_workflow_step(step: WorkflowStep, exprs: list[str]) -> list[str]:
     # Parse step context and execution
     subprocess_id = step.subprocess.id.split("#")[-1]
     if exists(step, "scatter"):
-        IM.add_from("utils", "scatterizer")
-        IM.add_from("utils", "transpose")
+        IM.add_from(SDK, "scatterizer")
+        IM.add_from(SDK, "transpose")
         lines.append(tab(f'{step_id}_scattered_out = []'))
         lines.append(tab(f'for scattered_inputs in scatterizer({step_id}_in, "input"):'))
         lines.append(tab(f'tool_context["inputs"] = {{**inputs, **scattered_inputs}}', 2))
