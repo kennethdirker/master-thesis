@@ -22,8 +22,8 @@ def stdout(input_obj: dict, context: dict) -> dict:
 		'echo',
 		str(inputs["message"]),
 	]
-	print("Running:",  *cmd)
 	stdout = open("output.txt", "w")
+	print("Running:",  *cmd)
 	subprocess.run(
 		args=cmd,
 		stdout=stdout,

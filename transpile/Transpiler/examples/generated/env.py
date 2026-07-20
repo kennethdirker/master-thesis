@@ -1,5 +1,5 @@
 import dask, subprocess, sys
-from CWL2DASK.scripting import FileObject, glob, load_input_object
+from CWL2DASK.scripting import FileObject, glob, js_eval, load_input_object
 from dask.distributed import Client
 
 @dask.delayed
@@ -7,6 +7,8 @@ def env(input_obj: dict, context: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
+	def env_HELLO(context):
+		return js_eval(inputs.message, context)
 	def outputs_example_out(context):
 		return FileObject(glob("output.txt")[0])
 
@@ -19,11 +21,13 @@ def env(input_obj: dict, context: dict) -> dict:
 
 	# Ready the commandline and execute the tool
 	cmd = ['env']
-	print("Running:",  *cmd)
 	stdout = open("output.txt", "w")
+	env = {"HELLO": env_HELLO(tool_context)}
+	print("Running:",  *cmd)
 	subprocess.run(
 		args=cmd,
 		stdout=stdout,
+		env=env,
 	)
 	stdout.close()
 

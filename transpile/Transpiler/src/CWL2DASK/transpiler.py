@@ -3,7 +3,8 @@ import argparse, os
 from pathlib import Path
 from types import NoneType
 from typing import (
-    Optional
+    Any,
+    Optional,
 )
 from uuid import uuid4
 
@@ -423,15 +424,24 @@ def parse_commandline(
     return lines
 
 
-def parse_run(tool: CommandLineTool, exprs: list[str]) -> list[str]:
+def parse_run(
+        tool: CommandLineTool,
+        requirements,
+        exprs: list[str]
+    ) -> list[str]:
     global IM
     lines = []
     run_lines = []
     clean_up = []
 
     def uses_stdout() -> None | str:
+        """
+        Returns the stdout filename or stdout expression handler function as a
+        string.
+        Adds/overwrites stdout in the respective output's outputBinding.glob.
+        """
         stdout = None
-        random_stdout = f"stdout_{str(uuid4)}"
+        random_stdout = f"stdout_{str(uuid4())}"
         if exists(tool, "stdout"):
             random_stdout = tool.stdout
         
@@ -449,6 +459,16 @@ def parse_run(tool: CommandLineTool, exprs: list[str]) -> list[str]:
                 break
         return stdout
 
+    def envVar_handler(var) -> str:
+        envValue = var.envValue
+        if is_expr(envValue):
+            IM.add_from(SDK, "js_eval")
+            exprs.append(tab(f'def env_{var.envName}(context):'))
+            exprs.append(tab(f'return js_eval({envValue[2:-1]}, context)', 2))
+            return f'env_{var.envName}(tool_context)'
+        return f'"{envValue}"'
+
+    # Parse stdin, stdout, stderr
     if exists(tool, "stdin"):
         raise NotImplementedError("Tool with stdin not supported")
     stdout = uses_stdout()
@@ -456,7 +476,7 @@ def parse_run(tool: CommandLineTool, exprs: list[str]) -> list[str]:
         if is_expr(stdout):
             IM.add_from(SDK, "js_eval")
             exprs.append(tab("def stdout_handler(context):"))
-            exprs.append(tab(f'return js_eval({stdout[2:-1]}, context)', 2))
+            exprs.append(tab(f'return js_eval("{stdout[2:-1]}", context)', 2))
             stdout = "stdout_handler(tool_context)"
         else:
             stdout = f'"{stdout}"'
@@ -466,9 +486,24 @@ def parse_run(tool: CommandLineTool, exprs: list[str]) -> list[str]:
         clean_up.append(tab(f'stdout.close()'))
     if exists(tool, "stderr"):
         raise NotImplementedError("Tool with stderr not supported")
+
+    # Parse EnvVarRequirement
+    if "EnvVarRequirement" in requirements:
+        if len(requirements["EnvVarRequirement"].envDef) > 1:
+            lines.append(tab("env = {"))
+            for var in requirements["EnvVarRequirement"].envDef:
+                envValue = envVar_handler(var)
+                lines.append(tab(f'"{var.envName}": {envValue},', 2))
+            lines.append(tab("}"))
+        else:
+            var = requirements["EnvVarRequirement"].envDef[0]
+            envValue = envVar_handler(var)
+            lines.append(tab(f'env = {{"{var.envName}": {envValue}}}'))
+        run_lines.append("env=env")
     
+    lines.append(tab('print("Running:",  *cmd)'))
     if len(run_lines) == 0:
-        return [tab("subprocess.run(cmd)")]
+        return lines + [tab("subprocess.run(cmd)")] + clean_up
     else:
         return lines + [
             tab("subprocess.run("),
@@ -538,6 +573,11 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
     command: list[str] = []
     outputs: list[str] = []
 
+    requirements: dict[str, Any] = {}
+    if exists(tool, "requirements"):
+        requirements = {str(req.class_): req for req in tool.requirements}
+    # print(requirements)
+
     # header
     tool_id = tool.id.split("#")[-1]
     if "file://" in tool_id:
@@ -568,8 +608,7 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
     # Parse command
     command.extend(comment(tab("# Ready the commandline and execute the tool")))
     command.extend(parse_commandline(tool, exprs))
-    command.append(tab('print("Running:",  *cmd)'))
-    command.extend(parse_run(tool, exprs))
+    command.extend(parse_run(tool, requirements, exprs))
     command.append("")
 
     # Parse outputs
@@ -842,7 +881,7 @@ def main():
     # # Expression tools are extracted as normal tools
     # if isinstance(cwl, ExpressionTool):
     #     raise NotImplementedError("ExpressionTool transpilation is not supported")
-    
+    print("Transpiling", str(cwl_path), "to", str(output_path), "...")
     with open(output_path, "w") as output_file:
         lines = parse_cwl(cwl_path)
         output_file.writelines([f'{l}\n' for l in lines])

@@ -18,8 +18,8 @@ def hostname(input_obj: dict, context: dict) -> dict:
 
 	# Ready the commandline and execute the tool
 	cmd = ['hostname']
-	print("Running:",  *cmd)
 	stdout = open("hostname.txt", "w")
+	print("Running:",  *cmd)
 	subprocess.run(
 		args=cmd,
 		stdout=stdout,
