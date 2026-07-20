@@ -5,6 +5,7 @@ from types import NoneType
 from typing import (
     Optional
 )
+from uuid import uuid4
 
 # from scripting import FileObject, DirectoryObject
 
@@ -112,6 +113,9 @@ T_MAPPING: dict[str, str] = {
     "string": "str",
     "file": "FileObject",
     "directory": "DirectoryObject",
+    "stdin": "FileObject",
+    "stdout": "FileObject",
+    "stderr": "FileObject",
 }
 
 class CWLType:
@@ -409,30 +413,69 @@ def parse_commandline(
     for _, _, value_expr, is_array, binding in ordered_items:
         command_items.append(compose_cmd_arg(value_expr, is_array, binding))
 
-    lines = [tab("cmd = [")]
-    for item in command_items:
-        lines.append(tab(f"{item},", 2))
-    lines.append(tab("]"))
+    if len(command_items) > 1:
+        lines = [tab("cmd = [")]
+        for item in command_items:
+            lines.append(tab(f"{item},", 2))
+        lines.append(tab("]"))
+    else:
+        lines = [tab(f'cmd = [{command_items[0]}]')]
     return lines
 
 
 def parse_run(tool: CommandLineTool, exprs: list[str]) -> list[str]:
+    global IM
     lines = []
+    run_lines = []
+    clean_up = []
+
+    def uses_stdout() -> None | str:
+        stdout = None
+        random_stdout = f"stdout_{str(uuid4)}"
+        if exists(tool, "stdout"):
+            random_stdout = tool.stdout
+        
+        for output in tool.outputs:
+            if "stdout" in output.type_:
+                if exists(output, "outputBinding"):
+                    if exists(output.outputBinding, "glob"):
+                        stdout = output.outputBinding.glob
+                    else:
+                        setattr(output.outputBinding, "glob", random_stdout)
+                        stdout = random_stdout
+                else:
+                    setattr(output, "outputBinding", CommandOutputBinding(glob=random_stdout))
+                    stdout = random_stdout
+                break
+        return stdout
+
     if exists(tool, "stdin"):
-        lines.append(f"stdin={tool.stdin}")
-    if exists(tool, "stdout"):
-        lines.append(f"stdout={tool.stdout}")
+        raise NotImplementedError("Tool with stdin not supported")
+    stdout = uses_stdout()
+    if stdout:
+        if is_expr(stdout):
+            IM.add_from(SDK, "js_eval")
+            exprs.append(tab("def stdout_handler(context):"))
+            exprs.append(tab(f'return js_eval({stdout[2:-1]}, context)', 2))
+            stdout = "stdout_handler(tool_context)"
+        else:
+            stdout = f'"{stdout}"'
+
+        lines.append(tab(f'stdout = open({stdout}, "w")'))
+        run_lines.append("stdout=stdout")
+        clean_up.append(tab(f'stdout.close()'))
     if exists(tool, "stderr"):
-        lines.append(f"stderr={tool.stderr}")
-    # TODO
-    if len(lines) == 0:
+        raise NotImplementedError("Tool with stderr not supported")
+    
+    if len(run_lines) == 0:
         return [tab("subprocess.run(cmd)")]
     else:
-        return [
+        return lines + [
             tab("subprocess.run("),
-            *[tab(f'{l},', 2) for l in lines],
+            tab("args=cmd,", 2),
+            *[tab(f'{l},', 2) for l in run_lines],
             tab(")"),
-        ]
+        ] + clean_up
 
 
 def parse_tool_output_binding(
@@ -441,9 +484,6 @@ def parse_tool_output_binding(
     ) -> str:
     """
     Return an output assignment for a CWL output.
-
-    NOTE: Output must have outputBinding, which is only not the case when the
-    output type is stdout.
     """
     global IM
     id = output.id.split("/")[-1]
@@ -500,6 +540,9 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
 
     # header
     tool_id = tool.id.split("#")[-1]
+    if "file://" in tool_id:
+        raise Exception(f"CWL file {tool_id} misses an ID, which is required!")
+    
     header.append('@dask.delayed')
     header.append(f'def {tool_id}(input_obj: dict, context: dict) -> dict:')
     
