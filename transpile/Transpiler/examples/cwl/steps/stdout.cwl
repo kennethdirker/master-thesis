@@ -2,6 +2,7 @@
 cwlVersion: v1.2
 class: CommandLineTool
 baseCommand: echo
+id: stdout
 stdout: output.txt
 inputs:
   message:

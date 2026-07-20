@@ -3,15 +3,15 @@ from CWL2DASK.scripting import FileObject, load_input_object
 from dask.distributed import Client
 
 @dask.delayed
-def file:///home/kennethdirker/Leiden/2024-2025/Thesis/transpile/Transpiler/examples/cwl/steps/InitialWorkDirRequirement.cwl(input_obj: dict, context: dict) -> dict:
+def InitialWorkDirRequirement(input_obj: dict, context: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
 
 	# Gather inputs in their correct format
 	inputs = {
-		"InitialWorkDirRequirement.cwl#message": None,
-		"InitialWorkDirRequirement.cwl#stage": FileObject({"path":"InitialWorkDirRequirement.yaml"}),
+		"message": None,
+		"stage": FileObject({"path":"InitialWorkDirRequirement.yaml"}),
 	}
 	inputs.update(input_obj)
 
@@ -42,7 +42,7 @@ def main():
 	context = {}
 
 	# Submit to DASK
-	result = client.compute(file:///home/kennethdirker/Leiden/2024-2025/Thesis/transpile/Transpiler/examples/cwl/steps/InitialWorkDirRequirement.cwl(input_obj, context)).result()
+	result = client.compute(InitialWorkDirRequirement(input_obj, context)).result()
 	print(*[f'{k}: {v}' for k, v in result.items()])
 
 if __name__ == "__main__":

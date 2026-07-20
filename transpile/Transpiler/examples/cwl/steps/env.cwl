@@ -1,5 +1,6 @@
 cwlVersion: v1.2
 class: CommandLineTool
+id: env
 baseCommand: env
 requirements:
   EnvVarRequirement:
@@ -7,4 +8,7 @@ requirements:
       HELLO: $(inputs.message)
 inputs:
   message: string
-outputs: []
+outputs:
+  example_out:
+    type: stdout
+stdout: output.txt

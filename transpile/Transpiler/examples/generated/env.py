@@ -1,28 +1,35 @@
 import dask, subprocess, sys
-from CWL2DASK.scripting import load_input_object
+from CWL2DASK.scripting import FileObject, glob, load_input_object
 from dask.distributed import Client
 
 @dask.delayed
-def file:///home/kennethdirker/Leiden/2024-2025/Thesis/transpile/Transpiler/examples/cwl/steps/env.cwl(input_obj: dict, context: dict) -> dict:
+def env(input_obj: dict, context: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
+	def outputs_example_out(context):
+		return FileObject(glob("output.txt")[0])
 
 	# Gather inputs in their correct format
 	inputs = {
-		"env.cwl#message": None,
+		"message": None,
 	}
 	inputs.update(input_obj)
+	tool_context = {"inputs": inputs, **context}
 
 	# Ready the commandline and execute the tool
-	cmd = [
-		'env',
-	]
+	cmd = ['env']
 	print("Running:",  *cmd)
-	subprocess.run(cmd)
+	stdout = open("output.txt", "w")
+	subprocess.run(
+		args=cmd,
+		stdout=stdout,
+	)
+	stdout.close()
 
 	# Collect and generate outputs
 	return {
+		"example_out": outputs_example_out(tool_context),
 	}
 
 
@@ -37,7 +44,7 @@ def main():
 	context = {}
 
 	# Submit to DASK
-	result = client.compute(file:///home/kennethdirker/Leiden/2024-2025/Thesis/transpile/Transpiler/examples/cwl/steps/env.cwl(input_obj, context)).result()
+	result = client.compute(env(input_obj, context)).result()
 	print(*[f'{k}: {v}' for k, v in result.items()])
 
 if __name__ == "__main__":

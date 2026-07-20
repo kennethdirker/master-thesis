@@ -1,6 +1,7 @@
 #!/usr/bin/env cwl-runner
 cwlVersion: v1.2
 class: CommandLineTool
+id: InitialWorkDirRequirement
 baseCommand: ["sh", "example.sh", ";", "cat", "InitialWorkDirRequirement.yaml"]
 
 requirements:

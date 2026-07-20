@@ -1,5 +1,6 @@
 cwlVersion: v1.2
 class: CommandLineTool
+id: print
 baseCommand: echo
 
 inputs:
