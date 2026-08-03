@@ -15,7 +15,10 @@ arguments:
   - valueFrom: $(inputs.world)
     position: 2
   - valueFrom: $(inputs.beautiful)
+    prefix: "#"
     position: 1
+  - valueFrom: Bazinga
+    position: 8
 
 stdout: output.txt
 

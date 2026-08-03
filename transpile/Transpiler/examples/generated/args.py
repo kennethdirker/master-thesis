@@ -8,9 +8,9 @@ def args(input_obj: dict, context: dict) -> dict:
 	class: CommandLineTool
 	"""
 	def expr_handler_0(context: dict) -> str:
-		return inputs.world
-	def expr_handler_2(context: dict) -> str:
-		return inputs.beautiful
+		return js_eval("inputs.world", context)
+	def expr_handler_1(context: dict) -> str:
+		return js_eval("inputs.beautiful", context)
 	def outputs_output(context):
 		return FileObject(glob("output.txt")[0])
 
@@ -25,10 +25,11 @@ def args(input_obj: dict, context: dict) -> dict:
 	# Ready the commandline and execute the tool
 	cmd = [
 		'echo',
-		str(Hello),
-		str(there),
-		str(expr_handler_2(tool_context)),
+		"Hello",
+		"there",
+		"#" + expr_handler_1(tool_context),
 		str(expr_handler_0(tool_context)),
+		"Bazinga",
 	]
 	stdout = open("output.txt", "w")
 	print("Running:",  *cmd)

@@ -309,21 +309,21 @@ def parse_commandline(
 
     NOTE: Only accept an integer as inputBinding.position value
     """
-
-    def add_expression_function(expression: str) -> str:
+    n_func = 0
+    def add_expression_function(expression: str, n_func: int) -> str:
         global IM
         IM.add_from(SDK, "js_eval")
-        func_name = f"expr_handler_{len(exprs)}"
+        func_name = f"expr_handler_{n_func}"
         exprs.append(tab(f"def {func_name}(context: dict) -> str:"))
-        exprs.append(tab(f"return {expression}", 2))
+        exprs.append(tab(f'return js_eval("{expression}", context)', 2))
         return f"{func_name}(tool_context)"
 
     def compose_cmd_arg(
-            value_expr: str,
+            value_or_expr: str,
             is_array: bool,
             binding: Optional[CommandLineBinding] = None,
+            var_cast: bool = False,
         ) -> str:
-        # TODO Remove 'str(X)' when arg type is string
         prefix = getattr(binding, "prefix", "")
         separate = getattr(binding, "separate", True)
         itemSeparator = getattr(binding, "itemSeparator", None)
@@ -331,75 +331,89 @@ def parse_commandline(
             if itemSeparator:
                 if prefix and separate:         # -i= A,B,C
                     arg = f'"{prefix}", '
-                    arg += f'{itemSeparator}.join(str(x) for x in {value_expr})'
+                    arg += f'{itemSeparator}.join(str(x) for x in {value_or_expr})'
                 elif prefix and not separate:   # -i=A,B,C
                     arg = f'"{prefix}"'
-                    arg += f'{itemSeparator}.join(str(x) for x in {value_expr})'
+                    arg += f'{itemSeparator}.join(str(x) for x in {value_or_expr})'
                 else:                           # A,B,C
-                    arg = f'{itemSeparator}.join(str(x) for x in {value_expr})' 
+                    arg = f'{itemSeparator}.join(str(x) for x in {value_or_expr})' 
             else:
                 if prefix and separate:         # -i= A B C
                     arg = f'"{prefix}", '
-                    arg += f'*[str(v) for v in {value_expr}]'
+                    arg += f'*[str(v) for v in {value_or_expr}]'
                 if prefix and not separate:     # -i=A -i=B -i=C
-                    arg = f'*["{prefix}" + str(v) for v in {value_expr}]'
+                    arg = f'*["{prefix}" + str(v) for v in {value_or_expr}]'
                 else:                           # A B C
-                    arg = f'*[str(v) for v in {value_expr}]'
+                    arg = f'*[str(v) for v in {value_or_expr}]'
         else:
             if prefix:
                 if separate:
-                    arg = f'"{prefix}", str({value_expr})'
+                    if var_cast:
+                        arg = f'"{prefix}", str({value_or_expr})'
+                    else:
+                        arg = f'"{prefix}", {value_or_expr}'
                 else:
-                    arg = f'"{prefix}" + str({value_expr})'
+                    arg = f'"{prefix}" + {value_or_expr}'
             else:
-                arg = f"str({value_expr})"
+                arg = f'str({value_or_expr})' if var_cast else value_or_expr
         return arg
 
     # Each tuple stores:
-    # (position, argument index, value expression, is-array, binding object)
-    ordered_items: list[tuple[int, int, str, bool, object | None]] = []
+    # (position, argument index, value expression, is-array, binding object, var_cast)
+    ordered_items: list[tuple[int, int, str, bool, object | None, bool]] = []
 
     # Assign a sorting key (inputBinding.position, argument index) to the tool
     # arguments.
-    # TODO Handle arg valueFrom typing?
     if exists(tool, "arguments"):
         for i, arg in enumerate(tool.arguments):
+            var_cast = False
             if isinstance(arg, str):
                 if is_expr(arg):
-                    arg = add_expression_function(arg[2:-1])
-                ordered_items.append((0, i, arg, False, None))
+                    var_cast = True
+                    arg = add_expression_function(arg[2:-1], n_func)
+                    n_func += 1
+                else:
+                    arg = f'"{arg}"'
+                ordered_items.append((0, i, arg, False, None, var_cast))
             elif isinstance(arg, CommandLineBinding):
-                value_expr = arg.valueFrom
-                if is_expr(value_expr):
-                    value_expr = add_expression_function(value_expr[2:-1])
+                value_or_expr = arg.valueFrom
+                if is_expr(value_or_expr):
+                    var_cast = True
+                    value_or_expr = add_expression_function(value_or_expr[2:-1], n_func)
+                    n_func += 1
+                else:
+                    value_or_expr = f'"{value_or_expr}"'
 
                 # Read the position attribute. If 'None' is found, set default
                 pos = getattr(arg, "position", 0)
                 if pos is None: 
                     pos = 0
-                ordered_items.append((pos, i, value_expr, False, arg))
+                ordered_items.append((pos, i, value_or_expr, False, arg, var_cast))
             else:
                 raise TypeError(f"Unsupported argument type: {type(arg)}")
  
+    # Assign a sorting key (inputBinding.position, argument index) to the tool
+    # inputs.
     for input_ in tool.inputs:        
-        if not exists(input_, "inputBinding"):
+        if not exists(input_, "inputBinding"):  # Unbound input
             continue
 
         input_id = input_.id.split("/")[-1]
         binding = input_.inputBinding
         t = CWLType(input_.type_)
         pos: int = getattr(binding, "position", 0)
-        value_expr = f'inputs["{input_id}"]'
+        value_or_expr = f'inputs["{input_id}"]'
+        var_cast = True
 
         # If the binding has valueFrom, add a expression handler if needed
         if exists(binding, "valueFrom"):
-            value_expr = binding.valueFrom
-            if is_expr(value_expr):
-                value_expr = add_expression_function(value_expr[2:-1])
+            value_or_expr = binding.valueFrom
+            if is_expr(value_or_expr):
+                value_or_expr = add_expression_function(value_or_expr[2:-1])
             else:
-                value_expr = f'"{value_expr}"'
-        ordered_items.append((pos, len(ordered_items), value_expr,
-                              t.is_array, binding))
+                var_cast = False
+                value_or_expr = f'"{value_or_expr}"'
+        ordered_items.append((pos, len(ordered_items), value_or_expr, t.is_array, binding, var_cast))
 
     # Both the inputs with an inputBinding as well as the tool arguments are
     # sorted, prefixed with the baseCommand to produce the final command.
@@ -413,12 +427,10 @@ def parse_commandline(
         else:
             raise TypeError(f"Unsupported baseCommand type: {type(baseCommand)}")
     
-    # Sort and apply the commandline bindings
-    print(*ordered_items, sep="\n")
+    # Sort and apply the commandline bindings from arguments/inputs
     ordered_items.sort(key=lambda item: (item[0], item[1]))
-    print(*ordered_items, sep="\n")
-    for _, _, value_expr, is_array, binding in ordered_items:
-        command_items.append(compose_cmd_arg(value_expr, is_array, binding))
+    for _, _, value_or_expr, is_array, binding, var_cast in ordered_items:
+        command_items.append(compose_cmd_arg(value_or_expr, is_array, binding, var_cast))
 
     if len(command_items) > 1:
         lines = [tab("cmd = [")]

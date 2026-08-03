@@ -21,7 +21,7 @@ def download_images(input_obj: dict, context: dict) -> dict:
 	# Ready the commandline and execute the tool
 	cmd = [
 		'wget',
-		"-i" + str(inputs["url_list"]),
+		"-i" + inputs["url_list"],
 	]
 	print("Running:",  *cmd)
 	subprocess.run(cmd)
