@@ -187,7 +187,8 @@ class FileObject:
     
     def __init__(
             self, 
-            file_path: str | Path | FileObject | CWLFile | Mapping
+            file_path: str | Path | FileObject | CWLFile | Mapping,
+            loadContents: bool = False
         ):
         
         def load(o: Any, attr: str):
@@ -215,6 +216,8 @@ class FileObject:
             # path: Path = file_path.parent.resolve() / file_path.name
             self.set_path_attributes(file_path)
             self.location = self.path
+            if loadContents:
+                self.load_contents()
         elif isinstance(file_path, FileObject | CWLFile):
             load(file_path, "location")
             load(file_path, "path")
@@ -230,6 +233,9 @@ class FileObject:
             load(file_path, "contents")
             load(file_path, "size")
             load(file_path, "writable")
+            # TODO Enable?
+            # if loadContents:
+            #     self.load_contents()
         elif isinstance(file_path, MutableMapping):
             if ("location" in file_path and file_path["location"] != "" 
                 and ("path" not in file_path or
@@ -240,6 +246,9 @@ class FileObject:
             for k, v in file_path.items():
                 if k in self.attrs:
                     setattr(self, k, v)
+            # TODO Enable?
+            # if loadContents:
+            #     self.load_contents()
         else:
             raise Exception(f"FileObject expects 'str' | 'Path' | 'FileObject | cwl_utils.parser.cwl_v1_2.File', but found '{type(file_path)}'")
         
@@ -295,6 +304,11 @@ class FileObject:
                 #     self.contents = contents
             elif hasattr(self, "contents"):
                 f.write(self.contents)
+
+    def load_contents(self):
+        with open(self.path) as f:
+            self.contents = f.read()
+            self.size = len(self.contents)
 
 
     def rebase(self, new_path: str | Path) -> None:

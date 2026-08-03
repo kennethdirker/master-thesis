@@ -556,8 +556,12 @@ def parse_tool_output_binding(
     if exists(binding, "outputEval"):
         IM.add_from(SDK, "js_eval")
         if glob_flag:
-            exprs.append(tab(f'matches = {x}'))
-            exprs.append(tab(f'context["self"] = [FileObject(m) for m in matches]'), 2)
+            loadContents = ""
+            if exists(binding, "loadContents"):
+                loadContents = ", loadContents = True"
+            IM.add_from(SDK, "FileObject")
+            exprs.append(tab(f'matches = {x}', 2))
+            exprs.append(tab(f'context["self"] = [FileObject(m{loadContents}) for m in matches]', 2))
         exprs.append(tab(f'return js_eval("{binding.outputEval[2:-1]}", context)', 2))
     else:
         p = "" if t.is_array else "[0]"
