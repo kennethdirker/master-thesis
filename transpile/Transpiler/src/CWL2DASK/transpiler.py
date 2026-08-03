@@ -444,6 +444,7 @@ def parse_run(
         random_stdout = f"stdout_{str(uuid4())}"
         if exists(tool, "stdout"):
             random_stdout = tool.stdout
+            stdout = tool.stdout
         
         for output in tool.outputs:
             if "stdout" in output.type_:
@@ -529,12 +530,13 @@ def parse_tool_output_binding(
     if "DirectoryObject" in t.types:
         IM.add_from(SDK, "DirectoryObject")
 
-    # Create expression handler that takes handles an output's glob matching
+    # Create expression handler that handles an output's glob matching
     # and outputEval.
     binding = output.outputBinding
     exprs.append(tab(f"def outputs_{id}(context):"))
     glob_flag = False
-    if exists(binding,"glob"):
+    x = ""
+    if exists(binding, "glob"):
         glob_flag = True
         g = binding.glob
         IM.add_from(SDK, "glob")
@@ -551,16 +553,16 @@ def parse_tool_output_binding(
             # List of simple strings
             patterns = ", ".join([f'"{p}"' for p in g])
             exprs.append(tab(f'pattern = [{patterns}]'), 2)
-            g = "glob(pattern)"
+            x = "glob(pattern)"
 
     if exists(binding, "outputEval"):
         IM.add_from(SDK, "js_eval")
         if glob_flag:
+            IM.add_from(SDK, "FileObject")
+            exprs.append(tab(f'matches = {x}', 2))
             loadContents = ""
             if exists(binding, "loadContents"):
                 loadContents = ", loadContents = True"
-            IM.add_from(SDK, "FileObject")
-            exprs.append(tab(f'matches = {x}', 2))
             exprs.append(tab(f'context["self"] = [FileObject(m{loadContents}) for m in matches]', 2))
         exprs.append(tab(f'return js_eval("{binding.outputEval[2:-1]}", context)', 2))
     else:

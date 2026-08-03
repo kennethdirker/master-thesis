@@ -7,6 +7,8 @@ def print(input_obj: dict, context: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
+	def stdout_handler(context):
+		return js_eval("inputs.str", context)
 	def outputs_echo(context):
 		pattern = js_eval("inputs.str", context)
 		matches = glob(pattern)
@@ -25,8 +27,13 @@ def print(input_obj: dict, context: dict) -> dict:
 		'echo',
 		str(inputs["str"]),
 	]
+	stdout = open(stdout_handler(tool_context), "w")
 	print("Running:",  *cmd)
-	subprocess.run(cmd)
+	subprocess.run(
+		args=cmd,
+		stdout=stdout,
+	)
+	stdout.close()
 
 	# Collect and generate outputs
 	return {
