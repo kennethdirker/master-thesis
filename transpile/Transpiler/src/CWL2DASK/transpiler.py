@@ -367,12 +367,16 @@ def parse_commandline(
             if isinstance(arg, str):
                 if is_expr(arg):
                     arg = add_expression_function(arg[2:-1])
-                ordered_items.append((0, i, arg, False, None, False, None))
+                ordered_items.append((0, i, arg, False, None))
             elif isinstance(arg, CommandLineBinding):
                 value_expr = arg.valueFrom
                 if is_expr(value_expr):
                     value_expr = add_expression_function(value_expr[2:-1])
+
+                # Read the position attribute. If 'None' is found, set default
                 pos = getattr(arg, "position", 0)
+                if pos is None: 
+                    pos = 0
                 ordered_items.append((pos, i, value_expr, False, arg))
             else:
                 raise TypeError(f"Unsupported argument type: {type(arg)}")
@@ -410,7 +414,9 @@ def parse_commandline(
             raise TypeError(f"Unsupported baseCommand type: {type(baseCommand)}")
     
     # Sort and apply the commandline bindings
+    print(*ordered_items, sep="\n")
     ordered_items.sort(key=lambda item: (item[0], item[1]))
+    print(*ordered_items, sep="\n")
     for _, _, value_expr, is_array, binding in ordered_items:
         command_items.append(compose_cmd_arg(value_expr, is_array, binding))
 

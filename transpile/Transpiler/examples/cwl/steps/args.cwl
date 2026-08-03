@@ -11,6 +11,7 @@ inputs:
 
 arguments:
   - valueFrom: Hello
+  - there
   - valueFrom: $(inputs.world)
     position: 2
   - valueFrom: $(inputs.beautiful)
