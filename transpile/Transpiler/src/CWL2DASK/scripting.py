@@ -37,7 +37,14 @@ def js_eval(
         requirement: Optional[Sequence] = None
     ) -> Any:
     """
-    
+    Evaluate a Javascript expression and return the result. A ``context`` of
+    name-object pairs can be supplied, after which the names can be used as
+    variables in the expression.
+
+    CWL processes may have the InlineJavascriptRequirement, which may contain
+    Javascript code that should be executed by the JS engine before evaluation
+    takes place. Such code can be provided with ``requirement``, which expects
+    a list of JS statements.
     """
     if context:
         context_vars = context.copy()
@@ -125,6 +132,7 @@ def scatterizer(
             inputs_copy[key] = value
         yield inputs_copy
 
+
 def transpose(list_of_dicts: list[dict]) -> dict[list]:
     """
     Transform a list of homogeneous dicts to a dict of lists. 
@@ -132,9 +140,10 @@ def transpose(list_of_dicts: list[dict]) -> dict[list]:
     return {k: [dic[k] for dic in list_of_dicts] 
             for k in list_of_dicts[0]}
 
+
 def glob(pattern: str | list[str]) -> list:
     """
-    Takes one or more patterns and returns a list of all matches files and
+    Takes one or more patterns and returns a list of all matched files and
     directories. This is a helper function that wraps `glob.glob` to allow
     searching for multiple patterns per call. 
     """
