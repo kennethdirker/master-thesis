@@ -127,7 +127,7 @@ class CWLType:
     def __init__(self, type_):
         """
         """
-        if isinstance(type_, (CommandInputArraySchema, InputArraySchema)):
+        if isinstance(type_, (CommandInputArraySchema, InputArraySchema, CommandOutputArraySchema)):
             self.optional = False
             self.is_array = True
             type_ = type_.items
@@ -330,27 +330,27 @@ def parse_commandline(
         if is_array:
             if itemSeparator:
                 if prefix and separate:         # -i= A,B,C
-                    arg = f'{prefix}, '
+                    arg = f'"{prefix}", '
                     arg += f'{itemSeparator}.join(str(x) for x in {value_expr})'
                 elif prefix and not separate:   # -i=A,B,C
-                    arg = f'{prefix}'
+                    arg = f'"{prefix}"'
                     arg += f'{itemSeparator}.join(str(x) for x in {value_expr})'
                 else:                           # A,B,C
                     arg = f'{itemSeparator}.join(str(x) for x in {value_expr})' 
             else:
                 if prefix and separate:         # -i= A B C
-                    arg = f'{prefix}, '
+                    arg = f'"{prefix}", '
                     arg += f'*[str(v) for v in {value_expr}]'
                 if prefix and not separate:     # -i=A -i=B -i=C
-                    arg = f'*[{prefix} + str(v) for v in {value_expr}]'
+                    arg = f'*["{prefix}" + str(v) for v in {value_expr}]'
                 else:                           # A B C
                     arg = f'*[str(v) for v in {value_expr}]'
         else:
             if prefix:
                 if separate:
-                    arg = f"{prefix}, str({value_expr})"
+                    arg = f'"{prefix}", str({value_expr})'
                 else:
-                    arg = f"{prefix} + str({value_expr})"
+                    arg = f'"{prefix}" + str({value_expr})'
             else:
                 arg = f"str({value_expr})"
         return arg
@@ -447,6 +447,10 @@ def parse_run(
             stdout = tool.stdout
         
         for output in tool.outputs:
+            # type_ may contain complex type, which can be ignored
+            if not isinstance(output.type_, str): 
+                continue
+
             if "stdout" in output.type_:
                 if exists(output, "outputBinding"):
                     if exists(output.outputBinding, "glob"):

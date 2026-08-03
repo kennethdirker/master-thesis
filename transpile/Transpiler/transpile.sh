@@ -2,6 +2,7 @@
 # 
 python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/download_images.cwl -o examples/generated/download_images.py
 python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/env.cwl -o examples/generated/env.py
+python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/args.cwl -o examples/generated/args.py
 python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/hostname.cwl -o examples/generated/hostname.py
 python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/imageplotter.cwl -o examples/generated/imageplotter.py
 python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/InitialWorkDirRequirement.cwl -o examples/generated/InitialWorkDirRequirement.py
