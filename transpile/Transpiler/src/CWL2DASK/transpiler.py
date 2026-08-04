@@ -13,7 +13,7 @@ CommandLineTool AND Workflow
     TODO Handle Enum complex input type
     TODO Multiline valueFrom
     TODO Arrays as default (step) input valuevalue
-
+    TODO runtime context variables
 """
 
 import argparse, os
@@ -836,26 +836,46 @@ def parse_workflow_step(step: WorkflowStep, exprs: list[str]) -> list[str]:
     # Parse step inputs (source/default)
     lines.extend(parse_workflow_step_inputs(step, step_id))
 
+    # Parse when
+    x = 0   # Extra tabs to be inserted resulting from the when conditional
+    if exists(step, "when"):
+        x = 1
+        IM.add_from(SDK, "js_eval")
+        when = normalize(step.when)[2:-1]
+        exprs.append(tab(f'def {step_id}_when(context):'))
+        exprs.append(tab(f'return js_eval("{when}", context)', 2))
+        lines.append(tab(f'tool_context["inputs"] = {step_id}_in'))
+        lines.append(tab(f'if {step_id}_when(tool_context):'))
+
     # Parse step context and execution
     subprocess_id = step.subprocess.id.split("#")[-1]
     if exists(step, "scatter"):
         IM.add_from(SDK, "scatterizer")
         IM.add_from(SDK, "transpose")
-        lines.append(tab(f'{step_id}_scattered_out = []'))
-        lines.append(tab(f'for scattered_inputs in scatterizer({step_id}_in, "input"):'))
-        lines.append(tab(f'tool_context["inputs"] = {{**inputs, **scattered_inputs}}', 2))
-        lines.extend(parse_valueFrom(2))
-        lines.append(tab(f'{step_id}_scattered_out.append({subprocess_id}(scattered_inputs, context))', 2))
-        lines.append(tab(f"{step_id}_out = dask.delayed(transpose)({step_id}_scattered_out)"))
+        lines.append(tab(f'{step_id}_scattered_out = []', 1 + x))
+        lines.append(tab(f'for scattered_inputs in scatterizer({step_id}_in, "input"):', 1 + x))
+        lines.append(tab(f'tool_context["inputs"] = {{**inputs, **scattered_inputs}}', 2 + x))
+        lines.extend(parse_valueFrom(2 + x))
+        lines.append(tab(f'{step_id}_scattered_out.append({subprocess_id}(scattered_inputs, context))', 2 + x))
+        lines.append(tab(f"{step_id}_out = dask.delayed(transpose)({step_id}_scattered_out)", 1 + x))
     else:
-        lines.append(tab(f'{step_id}_out = {subprocess_id}({step_id}_in, context)'))
-        lines.extend(parse_valueFrom())
+        lines.append(tab(f'{step_id}_out = {subprocess_id}({step_id}_in, context)', 1 + x))
+        lines.extend(parse_valueFrom(1 + x))
+
+    # Parse when null results
+    if x == 1:
+        lines.append(tab("else:"))
+        lines.append(tab(f'{step_id}_out = {{', 2))
+        for out in step.out:
+            out_id = out if isinstance(out, str) else out.id
+            lines.append(tab(f'"{out_id.split("/")[-1]}": None,', 3))
+        lines.append(tab("}", 2))
 
     lines.append("")
     return lines
 
 
-def parse_workflow_output(output: WorkflowOutputParameter):
+def parse_workflow_output(output: WorkflowOutputParameter) -> str:
     outputSource = output.outputSource
     if len(outputSource) > 1:
         raise NotImplementedError("Output multisourcing is currently not supported")

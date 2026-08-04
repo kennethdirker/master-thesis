@@ -13,4 +13,5 @@ python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/stdout.cwl -o examples/
 python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/touch.cwl -o examples/generated/touch.py
 python src/CWL2DASK/transpiler.py -ci examples/cwl/workflows/process_images.cwl -o examples/generated/process_images.py
 python src/CWL2DASK/transpiler.py -ci examples/cwl/workflows/process_images_sub.cwl -o examples/generated/process_images_sub.py
-python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/LoSoTo.ClockTec.cwl -o examples/generated/LoSoTo.ClockTec.py
+python src/CWL2DASK/transpiler.py -ci examples/cwl/workflows/when.cwl -o examples/generated/when.py
+# python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/LoSoTo.ClockTec.cwl -o examples/generated/LoSoTo.ClockTec.py
