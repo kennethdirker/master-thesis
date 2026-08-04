@@ -20,7 +20,6 @@ def touch(input_obj: dict, context: dict) -> dict:
 
 	# Gather inputs in their correct format
 	inputs = {
-		"filename": None,
 	}
 	inputs.update(input_obj)
 	tool_context = {"inputs": inputs, **context}

@@ -1,12 +1,13 @@
 """
 TODO TODO TODO TODO
 CommandLineTool
+
 Workflow
     TODO PickValue
     TODO LinkMerge
-    TODO steps.when
+
 CommandLineTool AND Workflow
-    TODO Optional arguments
+    # TODO Optional arguments
     TODO Mutlityping
     TODO InitialWorkDirRequirement
     TODO InlineJavascriptRequirement: Include initial code if needed
@@ -14,6 +15,8 @@ CommandLineTool AND Workflow
     TODO Multiline valueFrom
     TODO Arrays as default (step) input valuevalue
     TODO runtime context variables
+
+TODO TODO TODO TODO
 """
 
 import argparse, os
@@ -197,6 +200,8 @@ class CWLType:
         """
         """
         if isinstance(type_, (CommandInputArraySchema, InputArraySchema, CommandOutputArraySchema)):
+            # TODO Optional arrays how?
+            print(type_.items)
             self.optional = False
             self.is_array = True
             type_ = type_.items
@@ -206,16 +211,19 @@ class CWLType:
             self.is_array = "[]" in type_
             self.types = T_MAPPING["".join([c.lower() for c in type_ if c not in ["?[]"]])]
         elif isinstance(type_, list):
-            # TODO Support optional and multitypes
+            # TODO Support multitypes
             # Union of types, can also be optional
             print(tab("Input binding has multiple types, which is not supported yet."))
             print(tab(f"Selecting the first found type as input type instead."))
+            self.optional = "null" in type_
+            if len(type_) > 1:
+                type_.remove("null")
             type_ = type_[0]
-            self.optional = "?" in type_
             self.is_array = "[]" in type_
             self.types = T_MAPPING["".join([c.lower() for c in type_ if c not in ["?[]"]])]
         else:
             raise NotImplementedError(f"Found unsupported type {type(type_)}")
+        print("Optional?", self.optional)
 
 
 def convert_to_CWLType(value) -> CWLType:
@@ -349,6 +357,7 @@ def parse_default(default, cwl_type: CWLType) -> str | list[str]:
 
 def parse_tool_input_parameter(input: CommandInputParameter) -> list[str]:
     """
+    TODO Support complex default types, handle in CWLType class?
     """
     id = input.id.split("/")[-1]
     cwl_type = CWLType(input.type_)
@@ -356,16 +365,32 @@ def parse_tool_input_parameter(input: CommandInputParameter) -> list[str]:
     if exists(input, "default"):
         default = parse_default(input.default, cwl_type)
     else:
-        return [tab(f'"{id}": None,', 2)]
+        if not exists(input, "inputBinding"):
+            # Unbound inputs should not be listed
+            return []
+        # Non-optional inputs should crash the Process if they are missing.
+        if cwl_type.optional:
+            return [tab(f'"{id}": None,', 2)]
+        else: 
+            return []
     
-    if isinstance(default, str):
-        return [tab(f'"{id}": {default},', 2)]
-    else:
+    if cwl_type.is_array:
         return [
             tab(f'"{id}": [', 2),
             *[tab(f'{d},', 3) for d in default],
             tab("],", 2)
         ]
+    else:
+        return [tab(f'"{id}": {default},', 2)]
+    
+    # if isinstance(default, str):
+    #     return [tab(f'"{id}": {default},', 2)]
+    # else:
+    #     return [
+    #         tab(f'"{id}": [', 2),
+    #         *[tab(f'{d},', 3) for d in default],
+    #         tab("],", 2)
+    #     ]
 
 
 def parse_commandline(
@@ -565,8 +590,8 @@ def parse_run(
 
     # Parse stdin, stdout, stderr
     if exists(tool, "stdin"):
-        if is_expr(stdin):
-            stdin = normalize(stdin)
+        if is_expr(tool.stdin):
+            stdin = normalize(tool.stdin)
             IM.add_from(SDK, "js_eval")
             exprs.append(tab("def stdin_handler(context):"))
             exprs.append(tab(f'return js_eval("{stdin[2:-1]}", context)', 2))
@@ -594,8 +619,8 @@ def parse_run(
         clean_up.append(tab(f'stdout.close()'))
 
     if exists(tool, "stderr"):
-        if is_expr(stderr):
-            stderr = normalize(stderr)
+        if is_expr(tool.stderr):
+            stderr = normalize(tool.stderr)
             IM.add_from(SDK, "js_eval")
             exprs.append(tab("def stderr_handler(context):"))
             exprs.append(tab(f'return js_eval("{stderr[2:-1]}", context)', 2))

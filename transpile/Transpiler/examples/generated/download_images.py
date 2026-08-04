@@ -13,7 +13,6 @@ def download_images(input_obj: dict, context: dict) -> dict:
 
 	# Gather inputs in their correct format
 	inputs = {
-		"url_list": None,
 	}
 	inputs.update(input_obj)
 	tool_context = {"inputs": inputs, **context}

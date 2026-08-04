@@ -16,8 +16,6 @@ def args(input_obj: dict, context: dict) -> dict:
 
 	# Gather inputs in their correct format
 	inputs = {
-		"beautiful": None,
-		"world": None,
 	}
 	inputs.update(input_obj)
 	tool_context = {"inputs": inputs, **context}

@@ -8,18 +8,28 @@ doc: |
   Separate phase solutions into Clock and TEC.
   The Clock and TEC values are stored in the specified output soltab with type 'clock', 'tec', 'tec3rd'.
 
-requirements:
-  InlineJavascriptRequirement:
-    expressionLib:
-      - { $include: utils.js}
-  InitialWorkDirRequirement:
-    listing:
-      - entryname: 'parset.config'
-        entry: $(get_losoto_config('CLOCKTEC').join('\n'))
-
-      - entryname: $(inputs.input_h5parm.basename)
-        entry: $(inputs.input_h5parm)
-        writable: true
+# requirements:
+#   - class: InlineJavascriptRequirement
+#     expressionLib:
+#       - { $include: utils.js }
+#       - |
+#         /**
+#          * A merely illustrative example function that uses a function
+#          * from the included custom-functions.js file to create a
+#          * Hello World message.
+#          *
+#          * @param {Object} message - CWL document input message
+#          */
+#         var createHelloWorldMessage = function (message) {
+#           return capitalizeWords(message);
+#         };
+#   - class: InitialWorkDirRequirement
+#     listing:
+#       - entryname: 'parset.config'
+#         entry: $(get_losoto_config('CLOCKTEC').join('\n'))
+#       - entryname: $(inputs.input_h5parm.basename)
+#         entry: $(inputs.input_h5parm)
+#         writable: true
 
 baseCommand: "losoto"
 

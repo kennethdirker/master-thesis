@@ -14,8 +14,6 @@ def noiseremover(input_obj: dict, context: dict) -> dict:
 
 	# Gather inputs in their correct format
 	inputs = {
-		"input": None,
-		"output_file_name": None,
 	}
 	inputs.update(input_obj)
 	tool_context = {"inputs": inputs, **context}

@@ -14,8 +14,6 @@ def noiseremover(input_obj: dict, context: dict) -> dict:
 
 	# Gather inputs in their correct format
 	inputs = {
-		"input": None,
-		"output_file_name": None,
 	}
 	inputs.update(input_obj)
 	tool_context = {"inputs": inputs, **context}
@@ -48,8 +46,6 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
 
 	# Gather inputs in their correct format
 	inputs = {
-		"input_fits": None,
-		"output_image": None,
 	}
 	inputs.update(input_obj)
 	tool_context = {"inputs": inputs, **context}
@@ -82,7 +78,6 @@ def process_images(input_obj: dict, context: dict) -> dict:
 
 	# Gather inputs in their correct format
 	inputs = {
-		"fit_list": None,
 	}
 	inputs.update(input_obj)
 	tool_context = {"inputs": inputs, **context}
@@ -140,7 +135,6 @@ def top_process_images(input_obj: dict, context: dict) -> dict:
 
 	# Gather inputs in their correct format
 	inputs = {
-		"list_of_fits": None,
 	}
 	inputs.update(input_obj)
 	tool_context = {"inputs": inputs, **context}

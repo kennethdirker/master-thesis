@@ -17,7 +17,6 @@ def print(input_obj: dict, context: dict) -> dict:
 
 	# Gather inputs in their correct format
 	inputs = {
-		"str": None,
 	}
 	inputs.update(input_obj)
 	tool_context = {"inputs": inputs, **context}

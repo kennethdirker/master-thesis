@@ -10,7 +10,6 @@ def InitialWorkDirRequirement(input_obj: dict, context: dict) -> dict:
 
 	# Gather inputs in their correct format
 	inputs = {
-		"message": None,
 		"stage": FileObject({"path":"InitialWorkDirRequirement.yaml"}),
 	}
 	inputs.update(input_obj)
