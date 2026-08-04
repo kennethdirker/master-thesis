@@ -1,3 +1,21 @@
+"""
+TODO TODO TODO TODO
+CommandLineTool
+Workflow
+    TODO PickValue
+    TODO LinkMerge
+    TODO steps.when
+CommandLineTool AND Workflow
+    TODO Optional arguments
+    TODO Mutlityping
+    TODO InitialWorkDirRequirement
+    TODO InlineJavascriptRequirement: Include initial code if needed
+    TODO Handle Enum complex input type
+    TODO Multiline valueFrom
+    TODO Arrays as default (step) input valuevalue
+
+"""
+
 import argparse, os
 
 from pathlib import Path
@@ -7,8 +25,6 @@ from typing import (
     Optional,
 )
 from uuid import uuid4
-
-# from scripting import FileObject, DirectoryObject
 
 from cwl_utils.parser import (
     load_document_by_uri,
@@ -32,6 +48,7 @@ from cwl_utils.parser.cwl_v1_2 import (
     WorkflowStepOutput,
 )
 
+# SDK Module name
 SDK = "CWL2DASK.scripting"
 
 # Whether to use the default Dask Client or jobqueue SLURM client
@@ -548,7 +565,19 @@ def parse_run(
 
     # Parse stdin, stdout, stderr
     if exists(tool, "stdin"):
-        raise NotImplementedError("Tool with stdin not supported")
+        if is_expr(stdin):
+            stdin = normalize(stdin)
+            IM.add_from(SDK, "js_eval")
+            exprs.append(tab("def stdin_handler(context):"))
+            exprs.append(tab(f'return js_eval("{stdin[2:-1]}", context)', 2))
+            stdin = "stdin_handler(tool_context)"
+        else:
+            stdin = f'"{stdin}"'
+
+        lines.append(tab(f'stdin = open({stdin}, "r")'))
+        run_lines.append("stdin=stdin")
+        clean_up.append(tab(f'stdin.close()'))
+
     stdout = uses_stdout()
     if stdout:
         if is_expr(stdout):
@@ -563,8 +592,20 @@ def parse_run(
         lines.append(tab(f'stdout = open({stdout}, "w")'))
         run_lines.append("stdout=stdout")
         clean_up.append(tab(f'stdout.close()'))
+
     if exists(tool, "stderr"):
-        raise NotImplementedError("Tool with stderr not supported")
+        if is_expr(stderr):
+            stderr = normalize(stderr)
+            IM.add_from(SDK, "js_eval")
+            exprs.append(tab("def stderr_handler(context):"))
+            exprs.append(tab(f'return js_eval("{stderr[2:-1]}", context)', 2))
+            stderr = "stderr_handler(tool_context)"
+        else:
+            stderr = f'"{stderr}"'
+
+        lines.append(tab(f'stderr = open({stderr}, "w")'))
+        run_lines.append("stderr=stderr")
+        clean_up.append(tab(f'stderr.close()'))
 
     # Parse EnvVarRequirement
     if "EnvVarRequirement" in requirements:
