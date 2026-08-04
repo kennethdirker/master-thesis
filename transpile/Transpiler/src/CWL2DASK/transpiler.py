@@ -63,7 +63,59 @@ def exists(o: object, key: str) -> bool:
     return hasattr(o, key) and getattr(o, key) is not None
 
 def is_expr(s: str) -> bool:
-    return s.startswith("$(") and s.endswith(")")
+    """
+    Return whether a string contains an expression.
+    """
+    if not isinstance(s, str):
+        return False
+    start = s.find("$(")
+    end = s.find(")")
+    return start > -1 and end > start
+
+
+def normalize(string: str) -> str:
+    """
+    Normalize expressions by creating a single enclosed expression string.
+    If the string does not contain expressions, the plain string is returned.
+    Example:
+        example_$(inputs.input).txt -> $('example_' + inputs.input + '.txt')
+    Returns:
+        The normalized expression string.
+    """
+    if not isinstance(string, str):
+        raise TypeError("Should be string, but found", type(string))
+
+    parts = []
+    
+    start = string.find("$(")
+    if start < 0 or ")" not in string[start + 2:]:
+        # String does not have an expression or not contain a
+        # matching closing parenthesis
+        return string
+
+    for sub in string.split("$("):
+        if sub != "" and sub.find(")") < 0:
+            # not a matching ) in this substring
+            parts.append(f"'{sub}'")
+
+        # For each split
+        pos = 0
+        opened = 0
+        for pos, char in enumerate(sub):
+            # check characters for matching )
+            if char == ")":
+                if opened == 0:
+                    split_point = pos
+                    parts.append(sub[:split_point])
+                    rest = sub[split_point + 1:]
+                    if len(rest) > 0:
+                        parts.append(f"'{rest}'")
+                    break
+                else:
+                    opened -= 1
+            elif char == "(":
+                opened += 1    
+    return "$(" + " + ".join(parts) + ")"
 
 
 class ImportManager:
@@ -368,6 +420,7 @@ def parse_commandline(
         for i, arg in enumerate(tool.arguments):
             var_cast = False
             if isinstance(arg, str):
+                arg = normalize(arg)
                 if is_expr(arg):
                     var_cast = True
                     arg = add_expression_function(arg[2:-1], n_func)
@@ -376,7 +429,7 @@ def parse_commandline(
                     arg = f'"{arg}"'
                 ordered_items.append((0, i, arg, False, None, var_cast))
             elif isinstance(arg, CommandLineBinding):
-                value_or_expr = arg.valueFrom
+                value_or_expr = normalize(arg.valueFrom)
                 if is_expr(value_or_expr):
                     var_cast = True
                     value_or_expr = add_expression_function(value_or_expr[2:-1], n_func)
@@ -409,6 +462,7 @@ def parse_commandline(
         if exists(binding, "valueFrom"):
             value_or_expr = binding.valueFrom
             if is_expr(value_or_expr):
+                value_or_expr = normalize(value_or_expr)
                 value_or_expr = add_expression_function(value_or_expr[2:-1])
             else:
                 var_cast = False
@@ -485,6 +539,7 @@ def parse_run(
     def envVar_handler(var) -> str:
         envValue = var.envValue
         if is_expr(envValue):
+            envValue = normalize(envValue)
             IM.add_from(SDK, "js_eval")
             exprs.append(tab(f'def env_{var.envName}(context):'))
             exprs.append(tab(f'return js_eval({envValue[2:-1]}, context)', 2))
@@ -497,6 +552,7 @@ def parse_run(
     stdout = uses_stdout()
     if stdout:
         if is_expr(stdout):
+            stdout = normalize(stdout)
             IM.add_from(SDK, "js_eval")
             exprs.append(tab("def stdout_handler(context):"))
             exprs.append(tab(f'return js_eval("{stdout[2:-1]}", context)', 2))
@@ -564,6 +620,7 @@ def parse_tool_output_binding(
         IM.add_from(SDK, "glob")
         if isinstance(g, str):
             if is_expr(g):
+                g = normalize(g)
                 # Expression
                 IM.add_from(SDK, "js_eval")
                 exprs.append(tab(f'pattern = js_eval("{g[2:-1]}", context)', 2))
@@ -604,7 +661,6 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
     requirements: dict[str, Any] = {}
     if exists(tool, "requirements"):
         requirements = {str(req.class_): req for req in tool.requirements}
-    # print(requirements)
 
     # header
     tool_id = tool.id.split("#")[-1]
@@ -714,7 +770,7 @@ def parse_workflow_step(step: WorkflowStep, exprs: list[str]) -> list[str]:
                 valueFrom = input.valueFrom
                 input_id = input.id.split("/")[-1]
                 if is_expr(input.valueFrom):
-                    expr = input.valueFrom[2:-1]
+                    expr = normalize(input.valueFrom)[2:-1]
                     IM.add_from(SDK, "js_eval")
                     if exists(input, "source") or exists(input, "default"):
                         exprs.append(tab(f"def {step_id}_{input_id}(context, self):"))
@@ -761,7 +817,7 @@ def parse_workflow_step(step: WorkflowStep, exprs: list[str]) -> list[str]:
 def parse_workflow_output(output: WorkflowOutputParameter):
     outputSource = output.outputSource
     if len(outputSource) > 1:
-        raise NotImplementedError()
+        raise NotImplementedError("Output multisourcing is currently not supported")
     
     step_id, input_id = output.outputSource[0].split("/")[-2:]
     output_id = output.id.split("/")[-1]
