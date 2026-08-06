@@ -1,36 +1,38 @@
 import dask, subprocess, sys
-from CWL2DASK.scripting import FileObject, glob, load_input_object
+from CWL2DASK.scripting import FileObject, glob, js_eval, load_input_object
 from dask.distributed import Client
 
 @dask.delayed
-def stdout(input_obj: dict, context: dict) -> dict:
+def imageplotter(input_obj: dict, context: dict) -> dict:
 	"""
 	class: CommandLineTool
+	label: imageplotter
 	"""
-	def outputs_example_out(context):
-		return FileObject(glob("output.txt")[0])
+	def outputs_output(context):
+		pattern = js_eval("inputs.output_image", context)
+		return FileObject(glob(pattern)[0])
 
 	# Gather inputs in their correct format
-	inputs = {}
+	inputs = {
+		"output_image": None,
+	}
 	inputs.update(input_obj)
 	tool_context = {"inputs": inputs, **context}
 
 	# Ready the commandline and execute the tool
 	cmd = [
-		'echo',
-		str(inputs["message"]),
+		'python',
+		'scripts/imageplotter.py',
+		*[str(v) for v in inputs["input_fits"]],
+		str(inputs["output_image"]),
 	]
-	stdout = open("output.txt", "w")
+	cmd = [x for x in cmd if x]
 	print("Running:",  *cmd)
-	subprocess.run(
-		args=cmd,
-		stdout=stdout,
-	)
-	stdout.close()
+	subprocess.run(cmd)
 
 	# Collect and generate outputs
 	return {
-		"example_out": outputs_example_out(tool_context),
+		"output": outputs_output(tool_context),
 	}
 
 
@@ -45,7 +47,7 @@ def main():
 	context = {}
 
 	# Submit to DASK
-	result = client.compute(stdout(input_obj, context)).result()
+	result = client.compute(imageplotter(input_obj, context)).result()
 	print(*[f'{k}: {v}' for k, v in result.items()])
 
 if __name__ == "__main__":

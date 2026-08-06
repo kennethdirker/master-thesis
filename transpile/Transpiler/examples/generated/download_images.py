@@ -12,8 +12,7 @@ def download_images(input_obj: dict, context: dict) -> dict:
 		return FileObject(glob("*.fits"))
 
 	# Gather inputs in their correct format
-	inputs = {
-	}
+	inputs = {}
 	inputs.update(input_obj)
 	tool_context = {"inputs": inputs, **context}
 

@@ -7,7 +7,6 @@ Workflow
     TODO LinkMerge
 
 CommandLineTool AND Workflow
-    # TODO Optional arguments
     TODO Mutlityping
     TODO InitialWorkDirRequirement
     TODO InlineJavascriptRequirement: Include initial code if needed
@@ -201,7 +200,6 @@ class CWLType:
         """
         if isinstance(type_, (CommandInputArraySchema, InputArraySchema, CommandOutputArraySchema)):
             # TODO Optional arrays how?
-            print(type_.items)
             self.optional = False
             self.is_array = True
             type_ = type_.items
@@ -211,11 +209,13 @@ class CWLType:
             self.is_array = "[]" in type_
             self.types = T_MAPPING["".join([c.lower() for c in type_ if c not in ["?[]"]])]
         elif isinstance(type_, list):
+            type_ = type_.copy()
             # TODO Support multitypes
             # Union of types, can also be optional
             print(tab("Input binding has multiple types, which is not supported yet."))
             print(tab(f"Selecting the first found type as input type instead."))
-            self.optional = "null" in type_
+            self.optional = "null" in type_ or any(["?" in t for t in type_])
+
             if len(type_) > 1:
                 type_.remove("null")
             type_ = type_[0]
@@ -223,7 +223,6 @@ class CWLType:
             self.types = T_MAPPING["".join([c.lower() for c in type_ if c not in ["?[]"]])]
         else:
             raise NotImplementedError(f"Found unsupported type {type(type_)}")
-        print("Optional?", self.optional)
 
 
 def convert_to_CWLType(value) -> CWLType:
@@ -645,7 +644,11 @@ def parse_run(
             envValue = envVar_handler(var)
             lines.append(tab(f'env = {{"{var.envName}": {envValue}}}'))
         run_lines.append("env=env")
-    
+
+    # If there are optional command-line arguments, we need to filter for None
+    if any([CWLType(i.type_).optional for i in tool.inputs]):
+        lines.append(tab('cmd = [x for x in cmd if x]'))
+
     lines.append(tab('print("Running:",  *cmd)'))
     if len(run_lines) == 0:
         return lines + [tab("subprocess.run(cmd)")] + clean_up
@@ -745,11 +748,17 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
 
     # Input object to inputs
     inputs.extend(comment(tab("# Gather inputs in their correct format")))
-    # Parse default values
-    inputs.append(tab("inputs = {"))
+    # Parse default values or None for optionals
+    input_params = []
     for i in tool.inputs:
-        inputs.extend(parse_tool_input_parameter(i))
-    inputs.append(tab("}"))
+        input_params.extend(parse_tool_input_parameter(i))
+    if len(input_params) > 0:
+        inputs.append(tab("inputs = {"))
+        inputs.extend(input_params)
+        inputs.append(tab("}"))
+    else:
+        inputs.append(tab("inputs = {}"))
+
     inputs.append(tab("inputs.update(input_obj)"))
     inputs.append(tab('tool_context = {"inputs": inputs, **context}'))
     context_pos = len(inputs)

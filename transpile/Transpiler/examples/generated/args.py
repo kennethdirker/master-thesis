@@ -15,8 +15,7 @@ def args(input_obj: dict, context: dict) -> dict:
 		return FileObject(glob("output.txt")[0])
 
 	# Gather inputs in their correct format
-	inputs = {
-	}
+	inputs = {}
 	inputs.update(input_obj)
 	tool_context = {"inputs": inputs, **context}
 

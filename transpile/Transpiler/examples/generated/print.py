@@ -16,8 +16,7 @@ def print(input_obj: dict, context: dict) -> dict:
 		return js_eval("self[0].contents.trim()", context)
 
 	# Gather inputs in their correct format
-	inputs = {
-	}
+	inputs = {}
 	inputs.update(input_obj)
 	tool_context = {"inputs": inputs, **context}
 
