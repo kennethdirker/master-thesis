@@ -3,8 +3,10 @@ TODO TODO TODO TODO
 CommandLineTool
 
 Workflow
-    TODO PickValue
-    TODO LinkMerge
+    TODO pickValue
+    TODO linkMerge
+    TODO Step pickValue
+    TODO Step linkMerge
 
 CommandLineTool AND Workflow
     TODO Mutlityping
@@ -354,7 +356,7 @@ def parse_default(default, cwl_type: CWLType) -> str | list[str]:
         return parse_item(default)
 
 
-def parse_tool_input_parameter(input: CommandInputParameter) -> list[str]:
+def parse_process_input_parameter(input: CommandInputParameter) -> list[str]:
     """
     TODO Support complex default types, handle in CWLType class?
     """
@@ -751,7 +753,7 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
     # Parse default values or None for optionals
     input_params = []
     for i in tool.inputs:
-        input_params.extend(parse_tool_input_parameter(i))
+        input_params.extend(parse_process_input_parameter(i))
     if len(input_params) > 0:
         inputs.append(tab("inputs = {"))
         inputs.extend(input_params)
@@ -785,7 +787,20 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
     return header + exprs + inputs + command + outputs
 
 
-def parse_workflow_step_inputs(step, step_id) -> list[str]:
+def parse_workflow_step_inputs(step: WorkflowStep, step_id: str) -> list[str]:
+    """
+    
+    """
+
+    def extract_source(source: str):
+        keys = source.split("#")[-1].split("/")
+        if len(keys) == 2:
+            # Source is a workflow input: process_id/input_id
+            return f'inputs["{keys[1]}"]'
+        else: # Source is other step input: process_id/step_id/input_id
+            return f'{keys[1]}_out["{keys[2]}"]'
+
+    global IM
     lines: list[str] = [tab(f'{step_id}_in = {{')]
     for input in step.in_:
         input_id = input.id.split("/")[-1]
@@ -793,19 +808,42 @@ def parse_workflow_step_inputs(step, step_id) -> list[str]:
         if exists(input, "default"):
             default = parse_default(input.default, convert_to_CWLType(input.default))
         
+        use_linkMerge = False
+        use_pickValue = False
+        linkMerge = "merge_nested"
+        if exists(input, "linkMerge"):
+            if input.linkMerge not in ("merge_nested", "merge_flattened"):
+                raise ValueError("Expected 'merge_nested' or merge_flattened, but got", input.linkMerge)
+            use_linkMerge = True
+            linkMerge = input.linkMerge
+            IM.add_from(SDK, linkMerge)
+        if exists(input, "pickValue"):
+            if input.pickValue not in ('first_non_null', 'the_first_non_null', 'all_non_null'):
+                raise ValueError("Expected 'first_non_null', 'the_first_non_null', or 'all_non_null', but got", input.pickValue)
+            use_pickValue = True
+            pickValue = input.pickValue
+            IM.add_from(SDK, pickValue)
+
         if exists(input, "source"):
             source = input.source
             if isinstance(source, list):
-                if len(source) > 1:
-                    raise Exception("Multisourcing not supported")
-                source = source[0]
-
-            keys = source.split("#")[-1].split("/")
-            if len(keys) == 2:
-                # Source is a workflow input: process_id/input_id
-                source = f'inputs["{keys[1]}"]'
-            else: # Source is other step input: process_id/step_id/input_id
-                source = f'{keys[1]}_out["{keys[2]}"]'
+                n_sources = len(source)
+                if n_sources == 1:
+                    # Single source
+                    source = extract_source(source[0])
+                    if use_linkMerge:
+                        source = f'[{source}]'
+                elif n_sources > 1:
+                    # Multiple sources
+                    sources = [extract_source(s) for s in source]
+                    source = ", ".join(sources)
+                    if use_linkMerge:
+                        source = f'{linkMerge}({source})'
+                    if use_pickValue:
+                        source = f'{pickValue}({source})'
+            else:
+                # Single source
+                source = extract_source(source)                        
 
         if exists(input, "default") and exists(input, "source"):
             # Default+source: Add if statement that selects right input
@@ -817,7 +855,6 @@ def parse_workflow_step_inputs(step, step_id) -> list[str]:
                     *[tab(f'{d},', 3) for d in default],
                     tab("],", 2)
                 ])
-
         elif exists(input, "default"):
             if isinstance(default, str):
                 lines.append(tab(f'"{input_id}": {default},', 2))
@@ -835,6 +872,9 @@ def parse_workflow_step_inputs(step, step_id) -> list[str]:
 
 
 def parse_workflow_step(step: WorkflowStep, exprs: list[str]) -> list[str]:
+    """
+    TODO
+    """
     global IM
     step_id = step.id.split("/")[-1]
 
@@ -853,7 +893,7 @@ def parse_workflow_step(step: WorkflowStep, exprs: list[str]) -> list[str]:
                         lines.append(tab(f'scattered_inputs["{input_id}"] = {step_id}_{input_id}(tool_context, {step_id}_in[{"{input_id}"}])', tabs))
                     else:
                         exprs.append(tab(f"def {step_id}_{input_id}(context):"))
-                        exprs.append(tab('context["self"] = None', 2))
+                        # exprs.append(tab('context["self"] = None', 2))
                         lines.append(tab(f'scattered_inputs["{input_id}"] = {step_id}_{input_id}(tool_context)', tabs))
                     exprs.append(tab(f'return js_eval("{expr}", context)', 2))
                         
@@ -910,8 +950,17 @@ def parse_workflow_step(step: WorkflowStep, exprs: list[str]) -> list[str]:
 
 
 def parse_workflow_output(output: WorkflowOutputParameter) -> str:
+    """
+    # TODO
+    """
     outputSource = output.outputSource
     if len(outputSource) > 1:
+        linkMerge = "merge_nested"
+        if exists(output, "linkMerge"):
+            linkMerge = output.linkMerge
+            # TODO
+        # TODO
+           
         raise NotImplementedError("Output multisourcing is currently not supported")
     
     step_id, input_id = output.outputSource[0].split("/")[-2:]
@@ -920,6 +969,9 @@ def parse_workflow_output(output: WorkflowOutputParameter) -> str:
 
 
 def parse_workflow(wf: Workflow):
+    """
+    TODO
+    """
     header:  list[str] = []
     exprs:   list[str] = []
     inputs:  list[str] = []
@@ -940,11 +992,18 @@ def parse_workflow(wf: Workflow):
 
     # Input object to inputs
     inputs.extend(comment(tab("# Gather inputs in their correct format")))
-    # Parse default values
-    inputs.append(tab("inputs = {"))
+    # Parse default/optional values
+    input_params = []
     for i in wf.inputs:
-        inputs.extend(parse_tool_input_parameter(i))
-    inputs.append(tab("}"))
+        input_params.extend(parse_process_input_parameter(i))
+    if len(input_params) > 0:
+        inputs.append(tab("inputs = {"))
+        inputs.extend(input_params)
+        inputs.append(tab("}"))
+    else:
+        inputs.append(tab("inputs = {}"))
+
+
     inputs.append(tab("inputs.update(input_obj)"))
     inputs.append(tab('tool_context = {"inputs": inputs, **context}'))
     # context_pos = len(inputs)

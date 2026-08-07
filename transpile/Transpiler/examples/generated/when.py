@@ -75,12 +75,10 @@ def process_images(input_obj: dict, context: dict) -> dict:
 	def noiseremover_when(context):
 		return js_eval("true", context)
 	def noiseremover_output_file_name(context):
-		context["self"] = None
 		return js_eval("'no_noise_' + inputs.input.basename", context)
 
 	# Gather inputs in their correct format
-	inputs = {
-	}
+	inputs = {}
 	inputs.update(input_obj)
 	tool_context = {"inputs": inputs, **context}
 

@@ -31,6 +31,88 @@ from cwl_utils.parser.cwl_v1_2 import File as CWLFile
 from cwl_utils.parser.cwl_v1_2 import Directory as CWLDirectory
 
 
+def first_non_null(sources: list):
+    """
+    For the first level of a list input, pick the first non-null element. The
+    result is a scalar. It is an error if there is no non-null element.
+
+    # Examples:
+    [null, x, null, y] -> x \n
+    [null, [null], null, y] -> [null] \n
+    [null, null, null] -> Runtime Error
+    """
+    for s in sources:
+        if isinstance(s, list):
+            if len(s) != 0 and s[0] is not None:
+                return s
+        elif s is not None:
+            return s
+    raise Exception("Sources contain no non-null element: ", sources)
+
+
+def the_only_non_null(sources: list):
+    """
+    For the first level of a list input, pick the single non-null element. The
+    result is a scalar. It is an error if there is more than one non-null 
+    element.
+
+    # Examples:
+    [null, x, null] -> x \n
+    [null, x, null, y] -> Runtime Error \n
+    [null, [null], null] -> [null] \n
+    [null, null, null] -> Runtime Error
+    """
+    none_count = sources.count(None)
+    n_sources = len(sources)
+    if none_count == n_sources:
+        raise Exception("Sources only contain null elements: ", sources)
+    if none_count < n_sources - 1:
+        raise Exception("Sources contain more than 1 non-null element: ", sources)
+    
+    for s in sources: 
+        if s: 
+            return s
+
+
+def all_non_null(sources: list):
+    """
+    For the first level of a list input, pick all non-null values. The result
+    is a list, which may be empty.
+
+    # Examples:
+    [null, x, null] -> [x] \n
+    [x, null, y] -> [x, y] \n
+    [null, [x], [null]] -> [[x], [null]] \n
+    [null, null, null] -> []
+    """
+    return [s for s in sources if s]
+
+
+def merge_nested(*sources):
+    """
+    The input must be an array consisting of exactly one entry for each input 
+    link. If "merge_nested" is specified with a single link, the value from the
+    link must be wrapped in a single-item list.
+    """
+    return [*sources]
+
+def merge_flattened(*sources):
+    """
+    The source and sink parameters must be compatible types, or the source type
+    must be compatible with single element from the "items" type of the
+    destination array parameter.
+    Source parameters which are arrays are concatenated. Source parameters 
+    which are single element types are appended as single elements.
+    """
+    ret = []
+    for s in sources:
+        if isinstance(s, list):
+            ret.extend(s)
+        else:
+            ret.append(s)
+    return ret
+
+
 def js_eval(
         expression: str,
         context: Optional[dict[str, Any]] = None,

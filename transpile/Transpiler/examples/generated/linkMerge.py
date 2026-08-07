@@ -1,5 +1,5 @@
 import dask, subprocess, sys
-from CWL2DASK.scripting import FileObject, glob, js_eval, load_input_object, scatterizer, transpose
+from CWL2DASK.scripting import FileObject, glob, js_eval, load_input_object, merge_flattened, scatterizer, transpose
 from dask.distributed import Client
 
 @dask.delayed
@@ -101,7 +101,7 @@ def process_images(input_obj: dict, context: dict) -> dict:
 	# Step ID:    after_plot_inspect
 	# Step label: imageplotter
 	after_plot_inspect_in = {
-		"input_fits": noiseremover_out["output"],
+		"input_fits": merge_flattened(noiseremover_out["output"], inputs["fit_list"]),
 		"output_image": "after_noise_remover.png",
 	}
 	after_plot_inspect_out = imageplotter(after_plot_inspect_in, context)

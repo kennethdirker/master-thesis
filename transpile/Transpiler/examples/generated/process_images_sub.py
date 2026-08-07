@@ -71,12 +71,10 @@ def process_images(input_obj: dict, context: dict) -> dict:
 	label: process_images
 	"""
 	def noiseremover_output_file_name(context):
-		context["self"] = None
 		return js_eval("'no_noise_' + inputs.input.basename", context)
 
 	# Gather inputs in their correct format
-	inputs = {
-	}
+	inputs = {}
 	inputs.update(input_obj)
 	tool_context = {"inputs": inputs, **context}
 
@@ -125,15 +123,13 @@ def top_process_images(input_obj: dict, context: dict) -> dict:
 		context["self"] = self
 		return js_eval("self[0]", context)
 	def noiseremover_output_file_name(context):
-		context["self"] = None
 		return js_eval("'top_no_noise_' + inputs.input[0].basename", context)
 	def after_plot_inspect_input_fits(context, self):
 		context["self"] = self
 		return js_eval("[self]", context)
 
 	# Gather inputs in their correct format
-	inputs = {
-	}
+	inputs = {}
 	inputs.update(input_obj)
 	tool_context = {"inputs": inputs, **context}
 
