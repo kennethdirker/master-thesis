@@ -17,3 +17,5 @@ python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/optional.cwl -o example
 python src/CWL2DASK/transpiler.py -ci examples/cwl/workflows/process_images.cwl -o examples/generated/process_images.py
 python src/CWL2DASK/transpiler.py -ci examples/cwl/workflows/process_images_sub.cwl -o examples/generated/process_images_sub.py
 python src/CWL2DASK/transpiler.py -ci examples/cwl/workflows/when.cwl -o examples/generated/when.py
+python src/CWL2DASK/transpiler.py -ci examples/cwl/workflows/pickValue.cwl -o examples/generated/pickValue.py
+python src/CWL2DASK/transpiler.py -ci examples/cwl/workflows/linkMerge.cwl -o examples/generated/linkMerge.py
