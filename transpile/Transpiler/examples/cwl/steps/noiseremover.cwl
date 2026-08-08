@@ -3,7 +3,8 @@ cwlVersion: v1.2
 id: noiseremover
 baseCommand:
   - python
-  - noiseremover.py
+  - /home/kennethdirker/Leiden/2024-2025/Thesis/transpile/Transpiler/examples/cwl/scripts/noiseremover.py
+  # - noiseremover.py
 inputs:
   - id: input
     type: File
@@ -21,7 +22,7 @@ outputs:
 label: noiseremover
 requirements:
   - class: InlineJavascriptRequirement
-  - class: InitialWorkDirRequirement
-    listing:
-      - class: File
-        location: ../scripts/noiseremover.py
+  # - class: InitialWorkDirRequirement
+  #   listing:
+  #     - class: File
+  #       location: ../scripts/noiseremover.py

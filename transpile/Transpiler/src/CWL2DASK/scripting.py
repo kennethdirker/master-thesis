@@ -11,6 +11,7 @@ import os
 import shutil
 import yaml
 
+from dask import delayed
 from glob import glob as globglob
 from itertools import product
 from pathlib import Path
@@ -31,6 +32,7 @@ from cwl_utils.parser.cwl_v1_2 import File as CWLFile
 from cwl_utils.parser.cwl_v1_2 import Directory as CWLDirectory
 
 
+@delayed
 def first_non_null(sources: list):
     """
     For the first level of a list input, pick the first non-null element. The
@@ -50,6 +52,7 @@ def first_non_null(sources: list):
     raise Exception("Sources contain no non-null element: ", sources)
 
 
+@delayed
 def the_only_non_null(sources: list):
     """
     For the first level of a list input, pick the single non-null element. The
@@ -74,6 +77,7 @@ def the_only_non_null(sources: list):
             return s
 
 
+@delayed
 def all_non_null(sources: list):
     """
     For the first level of a list input, pick all non-null values. The result
@@ -88,6 +92,7 @@ def all_non_null(sources: list):
     return [s for s in sources if s]
 
 
+@delayed
 def merge_nested(*sources):
     """
     The input must be an array consisting of exactly one entry for each input 
@@ -96,6 +101,7 @@ def merge_nested(*sources):
     """
     return [*sources]
 
+@delayed
 def merge_flattened(*sources):
     """
     The source and sink parameters must be compatible types, or the source type

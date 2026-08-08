@@ -20,7 +20,7 @@ def noiseremover(input_obj: dict, context: dict) -> dict:
 	# Ready the commandline and execute the tool
 	cmd = [
 		'python',
-		'noiseremover.py',
+		'/home/kennethdirker/Leiden/2024-2025/Thesis/transpile/Transpiler/examples/cwl/scripts/noiseremover.py',
 		str(inputs["input"]),
 		str(inputs["output_file_name"]),
 	]
@@ -51,7 +51,7 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
 	# Ready the commandline and execute the tool
 	cmd = [
 		'python',
-		'scripts/imageplotter.py',
+		'/home/kennethdirker/Leiden/2024-2025/Thesis/transpile/Transpiler/examples/cwl/scripts/imageplotter.py',
 		*[str(v) for v in inputs["input_fits"]],
 		str(inputs["output_image"]),
 	]

@@ -3,7 +3,8 @@ cwlVersion: v1.2
 id: imageplotter
 baseCommand:
   - python
-  - scripts/imageplotter.py
+  - /home/kennethdirker/Leiden/2024-2025/Thesis/transpile/Transpiler/examples/cwl/scripts/imageplotter.py
+  # - imageplotter.py
 inputs:
   - id: input_fits
     type: File[]
@@ -21,3 +22,7 @@ outputs:
 label: imageplotter
 requirements:
   - class: InlineJavascriptRequirement
+  # - class: InitialWorkDirRequirement
+  #   listing:
+  #     - class: File
+  #       location: ../scripts/imageplotter.py

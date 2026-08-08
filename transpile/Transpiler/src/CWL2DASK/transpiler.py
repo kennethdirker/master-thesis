@@ -5,16 +5,16 @@ CommandLineTool
 Workflow
     TODO pickValue
     TODO linkMerge
-    TODO Step pickValue
-    TODO Step linkMerge
+    # TODO Step pickValue
+    # TODO Step linkMerge
 
 CommandLineTool AND Workflow
-    TODO Mutlityping
+    # TODO Mutlityping
     TODO InitialWorkDirRequirement
     TODO InlineJavascriptRequirement: Include initial code if needed
     TODO Handle Enum complex input type
     TODO Multiline valueFrom
-    TODO Arrays as default (step) input valuevalue
+    TODO Arrays as default (step) input value
     TODO runtime context variables
 
 TODO TODO TODO TODO
@@ -787,7 +787,10 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
     return header + exprs + inputs + command + outputs
 
 
-def parse_workflow_step_inputs(step: WorkflowStep, step_id: str) -> list[str]:
+def parse_workflow_step_inputs(
+        step: WorkflowStep, 
+        step_id: str
+    ) -> list[str]:
     """
     
     """
