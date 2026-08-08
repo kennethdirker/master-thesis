@@ -290,14 +290,18 @@ def create_arg_parser() -> argparse.ArgumentParser:
 def gather_processes(
         path: Path, 
         processes: dict[str, Process], 
+        ids: set,
         parent_step: Optional[WorkflowStep] = None,
-        cache: bool = True
+        cache: bool = True,
     ) -> None:
     """
     Load the Process (and its subprocesses) from the file pointed to by `path`.
     If `cache` is `True`, the processes are cached in `processes`, indexed by
-    the absolute path to the process file. Duplicate subprocesses are cached a
-    single time.
+    the absolute path to the process file. Subprocesses with multiple 
+    references are cached once.
+
+    Additionally, adds the "subprocess" attribute to every `WorkflowStep`: A
+    reference to the related Process object.
     """
     # Index by the absolute file path to prevent duplicates
     path = path.resolve()
@@ -306,6 +310,10 @@ def gather_processes(
     
     if cache:
         process = load_document_by_uri(path)
+        process_id = process.id.split("#")[-1]
+        if process_id in ids:
+            raise Exception("Found duplicate process ID ", process_id)
+        ids.add(process_id)
         processes[path] = process
     else:
         process = processes[path]
@@ -318,7 +326,7 @@ def gather_processes(
             step_path = Path(step.run[step.run.find(":") + 1:])
             if not step_path.is_absolute():
                 step_path = path / step_path
-            gather_processes(step_path, processes, step, cache)
+            gather_processes(step_path, processes, ids, step, cache)
         return
 
     if not isinstance(process, CommandLineTool):
@@ -1078,9 +1086,10 @@ def parse_cwl(cwl_path):
     global IM
     body_lines: list[str] = []
     processes: dict[str, Process] = {}
+    ids = set()
 
     # Gather all unique procesess in preorder fashion
-    gather_processes(cwl_path, processes)
+    gather_processes(cwl_path, processes, ids)
 
     # Parse tools and workflow functions inorder
     for process in reversed(processes.values()):
@@ -1123,8 +1132,8 @@ def main():
     # if isinstance(cwl, ExpressionTool):
     #     raise NotImplementedError("ExpressionTool transpilation is not supported")
     print("Transpiling", str(cwl_path), "to", str(output_path), "...")
+    lines = parse_cwl(cwl_path)
     with open(output_path, "w") as output_file:
-        lines = parse_cwl(cwl_path)
         output_file.writelines([f'{l}\n' for l in lines])
 
 
