@@ -889,7 +889,10 @@ def parse_workflow_step(step: WorkflowStep, exprs: list[str]) -> list[str]:
     global IM
     step_id = step.id.split("/")[-1]
 
-    def parse_valueFrom(tabs: int = 1) -> list[str]:
+    def parse_valueFrom(scattered: bool, tabs: int = 1) -> list[str]:
+        input_dict = "scattered_inputs" if scattered else step_id + "_in"
+
+
         lines: list[str] = []
         for input in step.in_:
             if exists(input, "valueFrom"):
@@ -901,15 +904,15 @@ def parse_workflow_step(step: WorkflowStep, exprs: list[str]) -> list[str]:
                     if exists(input, "source") or exists(input, "default"):
                         exprs.append(tab(f"def {step_id}_{input_id}(context, self):"))
                         exprs.append(tab('context["self"] = self', 2))
-                        lines.append(tab(f'scattered_inputs["{input_id}"] = {step_id}_{input_id}(tool_context, {step_id}_in[{"{input_id}"}])', tabs))
+                        lines.append(tab(f'{input_dict}["{input_id}"] = {step_id}_{input_id}(tool_context, {step_id}_in["{input_id}"])', tabs))
                     else:
                         exprs.append(tab(f"def {step_id}_{input_id}(context):"))
                         # exprs.append(tab('context["self"] = None', 2))
-                        lines.append(tab(f'scattered_inputs["{input_id}"] = {step_id}_{input_id}(tool_context)', tabs))
+                        lines.append(tab(f'{input_dict}["{input_id}"] = {step_id}_{input_id}(tool_context)', tabs))
                     exprs.append(tab(f'return js_eval("{expr}", context)', 2))
                         
                 else:
-                    lines.append(tab(f'scattered_inputs["{input_id}"] = "{valueFrom}"', tabs))
+                    lines.append(tab(f'{input_dict}["{input_id}"] = "{valueFrom}"', tabs))
         return lines
     
     # Parse step metadata
@@ -940,12 +943,12 @@ def parse_workflow_step(step: WorkflowStep, exprs: list[str]) -> list[str]:
         lines.append(tab(f'{step_id}_scattered_out = []', 1 + x))
         lines.append(tab(f'for scattered_inputs in scatterizer({step_id}_in, "input"):', 1 + x))
         lines.append(tab(f'tool_context["inputs"] = {{**inputs, **scattered_inputs}}', 2 + x))
-        lines.extend(parse_valueFrom(2 + x))
+        lines.extend(parse_valueFrom(True, 2 + x))
         lines.append(tab(f'{step_id}_scattered_out.append({subprocess_id}(scattered_inputs, context))', 2 + x))
         lines.append(tab(f"{step_id}_out = dask.delayed(transpose)({step_id}_scattered_out)", 1 + x))
     else:
+        lines.extend(parse_valueFrom(False, 1 + x))
         lines.append(tab(f'{step_id}_out = {subprocess_id}({step_id}_in, context)', 1 + x))
-        lines.extend(parse_valueFrom(1 + x))
 
     # Parse when null results
     if x == 1:
