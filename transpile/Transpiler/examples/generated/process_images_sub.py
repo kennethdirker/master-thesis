@@ -20,7 +20,7 @@ def noiseremover(input_obj: dict, context: dict) -> dict:
 	# Ready the commandline and execute the tool
 	cmd = [
 		'python',
-		'noiseremover.py',
+		'/home/kennethdirker/Leiden/2024-2025/Thesis/transpile/Transpiler/examples/cwl/scripts/noiseremover.py',
 		str(inputs["input"]),
 		str(inputs["output_file_name"]),
 	]
@@ -51,7 +51,7 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
 	# Ready the commandline and execute the tool
 	cmd = [
 		'python',
-		'scripts/imageplotter.py',
+		'/home/kennethdirker/Leiden/2024-2025/Thesis/transpile/Transpiler/examples/cwl/scripts/imageplotter.py',
 		*[str(v) for v in inputs["input_fits"]],
 		str(inputs["output_image"]),
 	]
@@ -93,7 +93,7 @@ def process_images(input_obj: dict, context: dict) -> dict:
 	}
 	noiseremover_scattered_out = []
 	for scattered_inputs in scatterizer(noiseremover_in, "input"):
-		tool_context["inputs"] = {**inputs, **scattered_inputs}
+		tool_context["inputs"] = inputs | scattered_inputs
 		scattered_inputs["output_file_name"] = noiseremover_output_file_name(tool_context)
 		noiseremover_scattered_out.append(noiseremover(scattered_inputs, context))
 	noiseremover_out = dask.delayed(transpose)(noiseremover_scattered_out)
@@ -119,13 +119,11 @@ def top_process_images(input_obj: dict, context: dict) -> dict:
 	class: Workflow
 	label: process_images
 	"""
-	def noiseremover_input(context, self):
-		context["self"] = self
+	def noiseremover_input(context):
 		return js_eval("self[0]", context)
 	def noiseremover_output_file_name(context):
 		return js_eval("'top_no_noise_' + inputs.input[0].basename", context)
-	def after_plot_inspect_input_fits(context, self):
-		context["self"] = self
+	def after_plot_inspect_input_fits(context):
 		return js_eval("[self]", context)
 
 	# Gather inputs in their correct format
@@ -153,9 +151,10 @@ def top_process_images(input_obj: dict, context: dict) -> dict:
 	noiseremover_in = {
 		"input": inputs["list_of_fits"],
 	}
+	step_context = {**tool_context, "inputs": tool_context["inputs"] | noiseremover_in}
+	noiseremover_in["input"] = noiseremover_input({**step_context, "self":noiseremover_in["input"]})
+	noiseremover_in["output_file_name"] = noiseremover_output_file_name(step_context)
 	noiseremover_out = noiseremover(noiseremover_in, context)
-	scattered_inputs["input"] = noiseremover_input(tool_context, noiseremover_in[{input_id}])
-	scattered_inputs["output_file_name"] = noiseremover_output_file_name(tool_context)
 
 	# Step ID:    after_plot_inspect
 	# Step label: imageplotter
@@ -163,8 +162,9 @@ def top_process_images(input_obj: dict, context: dict) -> dict:
 		"input_fits": noiseremover_out["output"],
 		"output_image": "top_after_noise_remover.png",
 	}
+	step_context = {**tool_context, "inputs": tool_context["inputs"] | after_plot_inspect_in}
+	after_plot_inspect_in["input_fits"] = after_plot_inspect_input_fits({**step_context, "self": after_plot_inspect_in["input_fits"]})
 	after_plot_inspect_out = imageplotter(after_plot_inspect_in, context)
-	scattered_inputs["input_fits"] = after_plot_inspect_input_fits(tool_context, after_plot_inspect_in[{input_id}])
 
 	# Compute outputs
 	return {
