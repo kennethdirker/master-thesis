@@ -17,7 +17,7 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
 		"output_image": None,
 	}
 	inputs.update(input_obj)
-	tool_context = {"inputs": inputs, **context}
+	tool_context = {"inputs": inputs} | context
 
 	# Ready the commandline and execute the tool
 	cmd = [

@@ -15,7 +15,7 @@ def noiseremover(input_obj: dict, context: dict) -> dict:
 	# Gather inputs in their correct format
 	inputs = {}
 	inputs.update(input_obj)
-	tool_context = {"inputs": inputs, **context}
+	tool_context = {"inputs": inputs} | context
 
 	# Ready the commandline and execute the tool
 	cmd = [
@@ -46,7 +46,7 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
 	# Gather inputs in their correct format
 	inputs = {}
 	inputs.update(input_obj)
-	tool_context = {"inputs": inputs, **context}
+	tool_context = {"inputs": inputs} | context
 
 	# Ready the commandline and execute the tool
 	cmd = [
@@ -76,7 +76,7 @@ def process_images(input_obj: dict, context: dict) -> dict:
 	# Gather inputs in their correct format
 	inputs = {}
 	inputs.update(input_obj)
-	tool_context = {"inputs": inputs, **context}
+	tool_context = {"inputs": inputs} | context
 
 	# Step ID:    imageplotter
 	# Step label: imageplotter
@@ -129,7 +129,7 @@ def top_process_images(input_obj: dict, context: dict) -> dict:
 	# Gather inputs in their correct format
 	inputs = {}
 	inputs.update(input_obj)
-	tool_context = {"inputs": inputs, **context}
+	tool_context = {"inputs": inputs} | context
 
 	# Step ID:    subworkflow
 	# Step label: subworkflow
@@ -151,9 +151,9 @@ def top_process_images(input_obj: dict, context: dict) -> dict:
 	noiseremover_in = {
 		"input": inputs["list_of_fits"],
 	}
-	step_context = {**tool_context, "inputs": tool_context["inputs"] | noiseremover_in}
-	noiseremover_in["input"] = noiseremover_input({**step_context, "self":noiseremover_in["input"]})
-	noiseremover_in["output_file_name"] = noiseremover_output_file_name(step_context)
+	tool_context["inputs"] = inputs | noiseremover_in
+	noiseremover_in["input"] = noiseremover_input(tool_context | {"self": noiseremover_in["input"]})
+	noiseremover_in["output_file_name"] = noiseremover_output_file_name(tool_context)
 	noiseremover_out = noiseremover(noiseremover_in, context)
 
 	# Step ID:    after_plot_inspect
@@ -162,8 +162,8 @@ def top_process_images(input_obj: dict, context: dict) -> dict:
 		"input_fits": noiseremover_out["output"],
 		"output_image": "top_after_noise_remover.png",
 	}
-	step_context = {**tool_context, "inputs": tool_context["inputs"] | after_plot_inspect_in}
-	after_plot_inspect_in["input_fits"] = after_plot_inspect_input_fits({**step_context, "self": after_plot_inspect_in["input_fits"]})
+	tool_context["inputs"] = inputs | after_plot_inspect_in
+	after_plot_inspect_in["input_fits"] = after_plot_inspect_input_fits(tool_context | {"self": after_plot_inspect_in["input_fits"]})
 	after_plot_inspect_out = imageplotter(after_plot_inspect_in, context)
 
 	# Compute outputs

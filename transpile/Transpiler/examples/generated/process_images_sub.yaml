@@ -1,0 +1,2 @@
+list_of_fits:
+  - {class: File, path: image_mf_02.fits}

@@ -1,5 +1,10 @@
 """
 TODO TODO TODO TODO
+
+NOTE Should workflow outputs return a delayed dict instead of dict 
+FIXME process_images_sub.py executes subworkflow twice. Double compute call?
+    Solution: See note above
+
 CommandLineTool
 
 Workflow
@@ -215,7 +220,7 @@ class CWLType:
             # TODO Support multitypes
             # Union of types, can also be optional
             print(tab("Input binding has multiple types, which is not supported yet."))
-            print(tab(f"Selecting the first found type as input type instead."))
+            print(tab(f"Selecting the first non-null type found as input type instead."))
             self.optional = "null" in type_ or any(["?" in t for t in type_])
 
             if len(type_) > 1:
@@ -770,7 +775,7 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
         inputs.append(tab("inputs = {}"))
 
     inputs.append(tab("inputs.update(input_obj)"))
-    inputs.append(tab('tool_context = {"inputs": inputs, **context}'))
+    inputs.append(tab('tool_context = {"inputs": inputs} | context'))
     context_pos = len(inputs)
     inputs.append("")
 
@@ -902,9 +907,10 @@ def parse_workflow_step(step: WorkflowStep, exprs: list[str]) -> list[str]:
                     expr = normalize(input.valueFrom)[2:-1]
                     IM.add_from(SDK, "js_eval")
                     if exists(input, "source") or exists(input, "default"):
-                        exprs.append(tab(f"def {step_id}_{input_id}(context, self):"))
-                        exprs.append(tab('context["self"] = self', 2))
-                        lines.append(tab(f'{input_dict}["{input_id}"] = {step_id}_{input_id}(tool_context, {step_id}_in["{input_id}"])', tabs))
+                        # exprs.append(tab(f"def {step_id}_{input_id}(context, self):"))
+                        exprs.append(tab(f"def {step_id}_{input_id}(context):"))
+                        # exprs.append(tab('context["self"] = self', 2))
+                        lines.append(tab(f'{input_dict}["{input_id}"] = {step_id}_{input_id}(tool_context | {{"self": {step_id}_in["{input_id}"]}})', tabs))
                     else:
                         exprs.append(tab(f"def {step_id}_{input_id}(context):"))
                         # exprs.append(tab('context["self"] = None', 2))
@@ -937,16 +943,19 @@ def parse_workflow_step(step: WorkflowStep, exprs: list[str]) -> list[str]:
 
     # Parse step context and execution
     subprocess_id = step.subprocess.id.split("#")[-1]
+    use_valueFrom = any(exists(i, "valueFrom") for i in step.in_)
     if exists(step, "scatter"):
         IM.add_from(SDK, "scatterizer")
         IM.add_from(SDK, "transpose")
         lines.append(tab(f'{step_id}_scattered_out = []', 1 + x))
         lines.append(tab(f'for scattered_inputs in scatterizer({step_id}_in, "input"):', 1 + x))
-        lines.append(tab(f'tool_context["inputs"] = {{**inputs, **scattered_inputs}}', 2 + x))
+        lines.append(tab(f'tool_context["inputs"] = inputs | scattered_inputs', 2 + x))
         lines.extend(parse_valueFrom(True, 2 + x))
         lines.append(tab(f'{step_id}_scattered_out.append({subprocess_id}(scattered_inputs, context))', 2 + x))
         lines.append(tab(f"{step_id}_out = dask.delayed(transpose)({step_id}_scattered_out)", 1 + x))
     else:
+        if use_valueFrom:
+            lines.append(tab(f'tool_context["inputs"] = inputs | {step_id}_in'))
         lines.extend(parse_valueFrom(False, 1 + x))
         lines.append(tab(f'{step_id}_out = {subprocess_id}({step_id}_in, context)', 1 + x))
 
@@ -1019,7 +1028,7 @@ def parse_workflow(wf: Workflow):
 
 
     inputs.append(tab("inputs.update(input_obj)"))
-    inputs.append(tab('tool_context = {"inputs": inputs, **context}'))
+    inputs.append(tab('tool_context = {"inputs": inputs} | context'))
     # context_pos = len(inputs)
     inputs.append("")
 

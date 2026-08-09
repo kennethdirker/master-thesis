@@ -15,7 +15,7 @@ def noiseremover(input_obj: dict, context: dict) -> dict:
 	# Gather inputs in their correct format
 	inputs = {}
 	inputs.update(input_obj)
-	tool_context = {"inputs": inputs, **context}
+	tool_context = {"inputs": inputs} | context
 
 	# Ready the commandline and execute the tool
 	cmd = [
@@ -46,7 +46,7 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
 	# Gather inputs in their correct format
 	inputs = {}
 	inputs.update(input_obj)
-	tool_context = {"inputs": inputs, **context}
+	tool_context = {"inputs": inputs} | context
 
 	# Ready the commandline and execute the tool
 	cmd = [
@@ -80,7 +80,7 @@ def process_images(input_obj: dict, context: dict) -> dict:
 	# Gather inputs in their correct format
 	inputs = {}
 	inputs.update(input_obj)
-	tool_context = {"inputs": inputs, **context}
+	tool_context = {"inputs": inputs} | context
 
 	# Step ID:    imageplotter
 	# Step label: imageplotter
@@ -97,7 +97,7 @@ def process_images(input_obj: dict, context: dict) -> dict:
 	}
 	noiseremover_scattered_out = []
 	for scattered_inputs in scatterizer(noiseremover_in, "input"):
-		tool_context["inputs"] = {**inputs, **scattered_inputs}
+		tool_context["inputs"] = inputs | scattered_inputs
 		scattered_inputs["output_file_name"] = noiseremover_output_file_name(tool_context)
 		noiseremover_scattered_out.append(noiseremover(scattered_inputs, context))
 	noiseremover_out = dask.delayed(transpose)(noiseremover_scattered_out)
@@ -111,7 +111,7 @@ def process_images(input_obj: dict, context: dict) -> dict:
 	if mockup_when(tool_context):
 		mockup_scattered_out = []
 		for scattered_inputs in scatterizer(mockup_in, "input"):
-			tool_context["inputs"] = {**inputs, **scattered_inputs}
+			tool_context["inputs"] = inputs | scattered_inputs
 			scattered_inputs["output_file_name"] = mockup_output_file_name(tool_context)
 			mockup_scattered_out.append(noiseremover(scattered_inputs, context))
 		mockup_out = dask.delayed(transpose)(mockup_scattered_out)

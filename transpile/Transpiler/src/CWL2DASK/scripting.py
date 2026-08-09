@@ -199,7 +199,7 @@ def scatterizer(
         inputs: dict, 
         keys: str | list[str],
         scatter_method: str = "dotproduct"
-    ) -> Iterator:
+    ) -> Iterator[dict]:
     """
     Return a generator that creates copies of the inputs where
     the iterable scatter input arrays are replaced with scattered input items.

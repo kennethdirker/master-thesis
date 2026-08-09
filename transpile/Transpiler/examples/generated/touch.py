@@ -21,7 +21,7 @@ def touch(input_obj: dict, context: dict) -> dict:
 	# Gather inputs in their correct format
 	inputs = {}
 	inputs.update(input_obj)
-	tool_context = {"inputs": inputs, **context}
+	tool_context = {"inputs": inputs} | context
 
 	# Ready the commandline and execute the tool
 	cmd = [
