@@ -9,10 +9,6 @@ BUG: load_document_by_url fails when InlineJavascriptRequirement.expressionLib
 CommandLineTool
 
 Workflow
-    TODO pickValue
-    TODO linkMerge
-    # TODO Step pickValue
-    # TODO Step linkMerge
 
 CommandLineTool AND Workflow
     TODO InitialWorkDirRequirement
@@ -849,6 +845,15 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
     return header + exprs + inputs + command + outputs
 
 
+def extract_source(source: str):
+    keys = source.split("#")[-1].split("/")
+    if len(keys) == 2:
+        # Source is a workflow input: process_id/input_id
+        return f'inputs["{keys[1]}"]'
+    else: # Source is other step input: process_id/step_id/input_id
+        return f'{keys[1]}_out["{keys[2]}"]'
+
+        
 def parse_workflow_step_inputs(
         step: WorkflowStep, 
         step_id: str
@@ -856,15 +861,6 @@ def parse_workflow_step_inputs(
     """
     
     """
-
-    def extract_source(source: str):
-        keys = source.split("#")[-1].split("/")
-        if len(keys) == 2:
-            # Source is a workflow input: process_id/input_id
-            return f'inputs["{keys[1]}"]'
-        else: # Source is other step input: process_id/step_id/input_id
-            return f'{keys[1]}_out["{keys[2]}"]'
-
     global IM
     lines: list[str] = [tab(f'{step_id}_in = {{')]
     for input in step.in_:
@@ -1032,19 +1028,47 @@ def parse_workflow_output(output: WorkflowOutputParameter) -> str:
     """
     # TODO
     """
-    outputSource = output.outputSource
-    if len(outputSource) > 1:
-        linkMerge = "merge_nested"
-        if exists(output, "linkMerge"):
-            linkMerge = output.linkMerge
-            # TODO
-        # TODO
-           
-        raise NotImplementedError("Output multisourcing is currently not supported")
-    
-    step_id, input_id = output.outputSource[0].split("/")[-2:]
+    use_linkMerge = False
+    use_pickValue = False
+    linkMerge = "merge_nested"
+    if exists(output, "linkMerge"):
+        if output.linkMerge not in ("merge_nested", "merge_flattened"):
+            raise ValueError("Expected 'merge_nested' or merge_flattened, but got", output.linkMerge)
+        use_linkMerge = True
+        linkMerge = output.linkMerge
+        IM.add_from(SDK, linkMerge)
+    if exists(output, "pickValue"):
+        if output.pickValue not in ('first_non_null', 'the_first_non_null', 'all_non_null'):
+            raise ValueError("Expected 'first_non_null', 'the_first_non_null', or 'all_non_null', but got", output.pickValue)
+        use_pickValue = True
+        pickValue = output.pickValue
+        IM.add_from(SDK, pickValue)
+
+    source = output.outputSource
+    if isinstance(source, list):
+        n_sources = len(source)
+        if n_sources == 1:
+            # Single source
+            source = extract_source(source[0])
+            if use_linkMerge:
+                source = f'[{source}]'
+        elif n_sources > 1:
+            # Multiple sources
+            sources = [extract_source(s) for s in source]
+            source = ", ".join(sources)
+            if use_linkMerge:
+                source = f'{linkMerge}({source})'
+            if use_pickValue:
+                if not use_linkMerge:
+                    source = f'{pickValue}([{source}])'
+                else:
+                    source = f'{pickValue}({source})'
+    else:
+        # Single source
+        source = extract_source(source) 
+
     output_id = output.id.split("/")[-1]
-    return tab(f'"{output_id}": {step_id}_out["{input_id}"],', 2)
+    return tab(f'"{output_id}": {source},', 2)
     # return tab(f'"{output_id}": {step_id}_out["{input_id}"].compute(),', 2)
 
 
@@ -1176,7 +1200,7 @@ def parse_main(main_id: str) -> list[str]:
     ls.append("")
     ls.extend(comment(tab("# Submit to DASK")))
     ls.append(tab(f"result = client.compute({main_id}(input_obj, context)).result()"))
-    ls.append(tab("print(*[f'{k}: {v}' for k, v in result.items()])"))
+    ls.append(tab('print(*[f"{k}: {v}" for k, v in result.items()], sep="\\n")'))
     ls.append("")
     ls.append('if __name__ == "__main__":')
     ls.append(tab("main()"))

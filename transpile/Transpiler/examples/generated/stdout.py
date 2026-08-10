@@ -46,7 +46,7 @@ def main():
 
 	# Submit to DASK
 	result = client.compute(stdout(input_obj, context)).result()
-	print(*[f'{k}: {v}' for k, v in result.items()])
+	print(*[f"{k}: {v}" for k, v in result.items()], sep="\n")
 
 if __name__ == "__main__":
 	main()

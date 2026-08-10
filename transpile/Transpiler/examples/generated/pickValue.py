@@ -1,5 +1,5 @@
 import dask, subprocess, sys
-from CWL2DASK.scripting import FileObject, all_non_null, glob, js_eval, load_input_object, merge_flattened, scatterizer, transpose
+from CWL2DASK.scripting import FileObject, all_non_null, glob, js_eval, load_input_object, merge_flattened, merge_nested, scatterizer, transpose
 from dask.distributed import Client
 
 @dask.delayed
@@ -131,6 +131,7 @@ def process_images(input_obj: dict, context: dict) -> dict:
 	return {
 		"before_noise_remover": imageplotter_out["output"],
 		"after_noise_remover_plot": after_plot_inspect_out["output"],
+		"merged": all_non_null(merge_nested(imageplotter_out["output"], after_plot_inspect_out["output"])),
 	}
 
 
@@ -146,7 +147,7 @@ def main():
 
 	# Submit to DASK
 	result = client.compute(process_images(input_obj, context)).result()
-	print(*[f'{k}: {v}' for k, v in result.items()])
+	print(*[f"{k}: {v}" for k, v in result.items()], sep="\n")
 
 if __name__ == "__main__":
 	main()

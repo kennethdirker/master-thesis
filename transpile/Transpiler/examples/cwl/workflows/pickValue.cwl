@@ -14,6 +14,13 @@ outputs:
     outputSource:
       - after_plot_inspect/output
     type: File
+  - id: merged
+    outputSource:
+      - imageplotter/output
+      - after_plot_inspect/output
+    linkMerge: merge_nested
+    pickValue: all_non_null
+    type: File[]
 steps:
   - id: imageplotter
     in:
