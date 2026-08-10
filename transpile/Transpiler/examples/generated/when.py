@@ -64,7 +64,6 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
 	}
 
 
-@dask.delayed
 def process_images(input_obj: dict, context: dict) -> dict:
 	"""
 	class: Workflow
@@ -124,8 +123,8 @@ def process_images(input_obj: dict, context: dict) -> dict:
 
 	# Compute outputs
 	return {
-		"before_noise_remover": imageplotter_out["output"].compute(),
-		"after_noise_remover_plot": after_plot_inspect_out["output"].compute(),
+		"before_noise_remover": imageplotter_out["output"],
+		"after_noise_remover_plot": after_plot_inspect_out["output"],
 	}
 
 

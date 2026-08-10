@@ -64,7 +64,6 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
 	}
 
 
-@dask.delayed
 def process_images(input_obj: dict, context: dict) -> dict:
 	"""
 	class: Workflow
@@ -108,12 +107,11 @@ def process_images(input_obj: dict, context: dict) -> dict:
 
 	# Compute outputs
 	return {
-		"before_noise_remover": imageplotter_out["output"].compute(),
-		"after_noise_remover_plot": after_plot_inspect_out["output"].compute(),
+		"before_noise_remover": imageplotter_out["output"],
+		"after_noise_remover_plot": after_plot_inspect_out["output"],
 	}
 
 
-@dask.delayed
 def top_process_images(input_obj: dict, context: dict) -> dict:
 	"""
 	class: Workflow
@@ -168,10 +166,10 @@ def top_process_images(input_obj: dict, context: dict) -> dict:
 
 	# Compute outputs
 	return {
-		"before_noise_remover": subworkflow_out["before_noise_remover"].compute(),
-		"after_noise_remover": subworkflow_out["after_noise_remover_plot"].compute(),
-		"top_before_noise_remover_plot": imageplotter_out["output"].compute(),
-		"top_after_noise_remover_plot": after_plot_inspect_out["output"].compute(),
+		"before_noise_remover": subworkflow_out["before_noise_remover"],
+		"after_noise_remover": subworkflow_out["after_noise_remover_plot"],
+		"top_before_noise_remover_plot": imageplotter_out["output"],
+		"top_after_noise_remover_plot": after_plot_inspect_out["output"],
 	}
 
 

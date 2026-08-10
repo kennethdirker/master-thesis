@@ -4,6 +4,8 @@ TODO TODO TODO TODO
 NOTE Should workflow outputs return a delayed dict instead of dict 
 FIXME process_images_sub.py executes subworkflow twice. Double compute call?
     Solution: See note above
+    NOTE For now, removed @dask.delayed and .compute() calls from workflow 
+         function definition.
 
 CommandLineTool
 
@@ -988,7 +990,8 @@ def parse_workflow_output(output: WorkflowOutputParameter) -> str:
     
     step_id, input_id = output.outputSource[0].split("/")[-2:]
     output_id = output.id.split("/")[-1]
-    return tab(f'"{output_id}": {step_id}_out["{input_id}"].compute(),', 2)
+    return tab(f'"{output_id}": {step_id}_out["{input_id}"],', 2)
+    # return tab(f'"{output_id}": {step_id}_out["{input_id}"].compute(),', 2)
 
 
 def parse_workflow(wf: Workflow):
@@ -1003,7 +1006,7 @@ def parse_workflow(wf: Workflow):
 
     # header
     wf_id = wf.id.split("#")[-1]
-    header.append('@dask.delayed')
+    # header.append('@dask.delayed')
     header.append(f'def {wf_id}(input_obj: dict, context: dict) -> dict:')
     
     # Metadata
