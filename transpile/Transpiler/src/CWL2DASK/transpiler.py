@@ -15,13 +15,13 @@ Workflow
     # TODO Step linkMerge
 
 CommandLineTool AND Workflow
-    # TODO Mutlityping
     TODO InitialWorkDirRequirement
-    # TODO InlineJavascriptRequirement: Include initial code if needed
     TODO Handle Enum complex input type
     TODO Multiline valueFrom
+    TODO? Mutlityping
     TODO? Arrays as default (step) input value
     TODO runtime context variables for expression evaluation
+    # TODO InlineJavascriptRequirement: Include initial code if needed
 
 TODO TODO TODO TODO
 """
@@ -905,7 +905,10 @@ def parse_workflow_step_inputs(
                     if use_linkMerge:
                         source = f'{linkMerge}({source})'
                     if use_pickValue:
-                        source = f'{pickValue}({source})'
+                        if not use_linkMerge:
+                            source = f'{pickValue}([{source}])'
+                        else:
+                            source = f'{pickValue}({source})'
             else:
                 # Single source
                 source = extract_source(source)                        
