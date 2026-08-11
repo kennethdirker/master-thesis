@@ -534,7 +534,8 @@ def parse_commandline(
             value_or_expr = binding.valueFrom
             if is_expr(value_or_expr):
                 value_or_expr = normalize(value_or_expr)
-                value_or_expr = add_expression_function(value_or_expr[2:-1])
+                value_or_expr = add_expression_function(value_or_expr[2:-1], n_func)
+                n_func += 1
             else:
                 var_cast = False
                 value_or_expr = f'"{value_or_expr}"'
