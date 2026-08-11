@@ -424,7 +424,7 @@ def parse_process_input_parameter(input: CommandInputParameter) -> list[str]:
 def parse_commandline(
         tool: CommandLineTool, 
         exprs: list[str],
-        js_context: str
+        js: str
     ) -> list[str]:
     """
     Generate a Python list that holds the commandline-building statements for 
@@ -438,7 +438,7 @@ def parse_commandline(
         IM.add_from(SDK, "js_eval")
         func_name = f"expr_handler_{n_func}"
         exprs.append(tab(f"def {func_name}(context: dict) -> str:"))
-        exprs.append(tab(f'return js_eval("{expression}", context{js_context})', 2))
+        exprs.append(tab(f'return js_eval("{expression}", context{js})', 2))
         return f"{func_name}(tool_context)"
 
     def compose_cmd_arg(
@@ -571,7 +571,7 @@ def parse_run(
         tool: CommandLineTool,
         requirements,
         exprs: list[str],
-        js_context: str
+        js: str
     ) -> list[str]:
     global IM
     lines = []
@@ -614,7 +614,7 @@ def parse_run(
             envValue = normalize(envValue)
             IM.add_from(SDK, "js_eval")
             exprs.append(tab(f'def env_{var.envName}(context):'))
-            exprs.append(tab(f'return js_eval({envValue[2:-1]}, context{js_context})', 2))
+            exprs.append(tab(f'return js_eval({envValue[2:-1]}, context{js})', 2))
             return f'env_{var.envName}(tool_context)'
         return f'"{envValue}"'
 
@@ -624,7 +624,7 @@ def parse_run(
             stdin = normalize(tool.stdin)
             IM.add_from(SDK, "js_eval")
             exprs.append(tab("def stdin_handler(context):"))
-            exprs.append(tab(f'return js_eval("{stdin[2:-1]}", context{js_context})', 2))
+            exprs.append(tab(f'return js_eval("{stdin[2:-1]}", context{js})', 2))
             stdin = "stdin_handler(tool_context)"
         else:
             stdin = f'"{stdin}"'
@@ -639,7 +639,7 @@ def parse_run(
             stdout = normalize(stdout)
             IM.add_from(SDK, "js_eval")
             exprs.append(tab("def stdout_handler(context):"))
-            exprs.append(tab(f'return js_eval("{stdout[2:-1]}", context{js_context})', 2))
+            exprs.append(tab(f'return js_eval("{stdout[2:-1]}", context{js})', 2))
             stdout = "stdout_handler(tool_context)"
         else:
             stdout = f'"{stdout}"'
@@ -653,7 +653,7 @@ def parse_run(
             stderr = normalize(tool.stderr)
             IM.add_from(SDK, "js_eval")
             exprs.append(tab("def stderr_handler(context):"))
-            exprs.append(tab(f'return js_eval("{stderr[2:-1]}", context{js_context})', 2))
+            exprs.append(tab(f'return js_eval("{stderr[2:-1]}", context{js})', 2))
             stderr = "stderr_handler(tool_context)"
         else:
             stderr = f'"{stderr}"'
@@ -695,7 +695,7 @@ def parse_run(
 def parse_tool_output_binding(
         output: CommandOutputParameter, 
         exprs: list[str],
-        js_context: str
+        js: str
     ) -> str:
     """
     Return an output assignment for a CWL output.
@@ -724,7 +724,7 @@ def parse_tool_output_binding(
                 g = normalize(g)
                 # Expression
                 IM.add_from(SDK, "js_eval")
-                exprs.append(tab(f'pattern = js_eval("{g[2:-1]}", context{js_context})', 2))
+                exprs.append(tab(f'pattern = js_eval("{g[2:-1]}", context{js})', 2))
                 x = "glob(pattern)"
             else:
                 # Simple string
@@ -744,7 +744,7 @@ def parse_tool_output_binding(
             if exists(binding, "loadContents"):
                 loadContents = ", loadContents = True"
             exprs.append(tab(f'context["self"] = [FileObject(m{loadContents}) for m in matches]', 2))
-        exprs.append(tab(f'return js_eval("{binding.outputEval[2:-1]}", context{js_context})', 2))
+        exprs.append(tab(f'return js_eval("{binding.outputEval[2:-1]}", context{js})', 2))
     else:
         p = "" if t.is_array else "[0]"
         exprs.append(tab(f"return {t.types}({x}{p})", 2))
@@ -762,7 +762,7 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
     # Get requirements
     requirements: dict[str, Any] = {}
     expressionLib = None
-    js_context = ""
+    js = ""
     if exists(tool, "requirements"):
         requirements = {str(req.class_): req for req in tool.requirements}
         if ("InlineJavascriptRequirement" in requirements and
@@ -789,7 +789,7 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
     # omit access the code without providing it via function parameters.
     if  expressionLib:
         # TODO Somehow parse ($include: ...) statements, currently bugged.
-        js_context = ", js_context"
+        js = ", js_context"
         concat: str = ""
         for expr in expressionLib:
             if concat == "":
@@ -826,15 +826,15 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
 
     # Parse command
     command.extend(comment(tab("# Ready the commandline and execute the tool")))
-    command.extend(parse_commandline(tool, exprs, js_context))
-    command.extend(parse_run(tool, requirements, exprs, js_context))
+    command.extend(parse_commandline(tool, exprs, js))
+    command.extend(parse_run(tool, requirements, exprs, js))
     command.append("")
 
     # Parse outputs
     outputs.extend(comment(tab("# Collect and generate outputs")))
     outputs.append(tab("return {"))
     for o in tool.outputs:
-        outputs.append(parse_tool_output_binding(o, exprs, js_context))
+        outputs.append(parse_tool_output_binding(o, exprs, js))
     outputs.append(tab("}"))
 
     # Remove tool_context statement if no expressions are used
@@ -938,7 +938,7 @@ def parse_workflow_step_inputs(
 def parse_workflow_step(
         step: WorkflowStep, 
         exprs: list[str],
-        js_context: str
+        js: str
     ) -> list[str]:
     """
     TODO
@@ -967,7 +967,7 @@ def parse_workflow_step(
                         exprs.append(tab(f"def {step_id}_{input_id}(context):"))
                         # exprs.append(tab('context["self"] = None', 2))
                         lines.append(tab(f'{input_dict}["{input_id}"] = {step_id}_{input_id}(tool_context)', tabs))
-                    exprs.append(tab(f'return js_eval("{expr}", context{js_context})', 2))
+                    exprs.append(tab(f'return js_eval("{expr}", context{js})', 2))
                         
                 else:
                     lines.append(tab(f'{input_dict}["{input_id}"] = "{valueFrom}"', tabs))
@@ -989,7 +989,7 @@ def parse_workflow_step(
         IM.add_from(SDK, "js_eval")
         when = normalize(step.when)[2:-1]
         exprs.append(tab(f'def {step_id}_when(context):'))
-        exprs.append(tab(f'return js_eval("{when}", context{js_context})', 2))
+        exprs.append(tab(f'return js_eval("{when}", context{js})', 2))
         lines.append(tab(f'tool_context["inputs"] = {step_id}_in'))
         lines.append(tab(f'if {step_id}_when(tool_context):'))
 
@@ -1083,7 +1083,7 @@ def parse_workflow(wf: Workflow):
     outputs: list[str] = []
 
     # Get requirements
-    js_context = ""
+    js = ""
     expressionLib = None
     if exists(wf, "requirements"):
         requirements = {str(req.class_): req for req in wf.requirements}
@@ -1109,7 +1109,7 @@ def parse_workflow(wf: Workflow):
     # omit access the code without providing it via function parameters.
     if  expressionLib:
         # TODO Somehow parse ($include: ...) statements, currently bugged.
-        js_context = ", js_context"
+        js = ", js_context"
         concat: str = ""
         for expr in expressionLib:
             if concat == "":
@@ -1147,7 +1147,7 @@ def parse_workflow(wf: Workflow):
 
     # Parse steps
     for step in wf.steps:
-        steps.extend(parse_workflow_step(step, exprs, js_context))
+        steps.extend(parse_workflow_step(step, exprs, js))
 
     # Parse outputs
     outputs.extend(comment(tab("# Compute outputs")))

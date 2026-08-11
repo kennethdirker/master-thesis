@@ -7,26 +7,39 @@ def losoto_clocktec(input_obj: dict, context: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
+	js_context = [
+		"/**",
+		" * A merely illustrative example function that uses a function",
+		" * from the included custom-functions.js file to create a",
+		" * Hello World message.",
+		" *",
+		" * @param {Object} message - CWL document input message",
+		" */",
+		"var createHelloWorldMessage = function (message) {",
+		"  return capitalizeWords(message);",
+		"};",
+		"",
+	]
+
 	def expr_handler_0(context: dict) -> str:
-		return js_eval("inputs.input_h5parm.basename", context)
+		return js_eval("inputs.input_h5parm.basename", context, js_context)
 	def stdout_handler(context):
-		return js_eval("inputs.input_h5parm.basename + '-losoto.log'", context)
+		return js_eval("inputs.input_h5parm.basename + '-losoto.log'", context, js_context)
 	def stderr_handler(context):
-		return js_eval("inputs.input_h5parm.basename + '-losoto_err.log'", context)
+		return js_eval("inputs.input_h5parm.basename + '-losoto_err.log'", context, js_context)
 	def outputs_output_h5parm(context):
-		pattern = js_eval("inputs.input_h5parm.basename", context)
+		pattern = js_eval("inputs.input_h5parm.basename", context, js_context)
 		return FileObject(glob(pattern)[0])
 	def outputs_parset(context):
 		return FileObject(glob("parset.config")[0])
 	def outputs_log(context):
-		pattern = js_eval("inputs.input_h5parm.basename + '-losoto*.log'", context)
+		pattern = js_eval("inputs.input_h5parm.basename + '-losoto*.log'", context, js_context)
 		return FileObject(glob(pattern))
 
 	# Gather inputs in their correct format
-	inputs = {
-	}
+	inputs = {}
 	inputs.update(input_obj)
-	tool_context = {"inputs": inputs, **context}
+	tool_context = {"inputs": inputs} | context
 
 	# Ready the commandline and execute the tool
 	cmd = [
@@ -37,6 +50,7 @@ def losoto_clocktec(input_obj: dict, context: dict) -> dict:
 	]
 	stdout = open(stdout_handler(tool_context), "w")
 	stderr = open(stderr_handler(tool_context), "w")
+	cmd = [x for x in cmd if x]
 	print("Running:",  *cmd)
 	subprocess.run(
 		args=cmd,
@@ -66,7 +80,7 @@ def main():
 
 	# Submit to DASK
 	result = client.compute(losoto_clocktec(input_obj, context)).result()
-	print(*[f'{k}: {v}' for k, v in result.items()])
+	print(*[f"{k}: {v}" for k, v in result.items()], sep="\n")
 
 if __name__ == "__main__":
 	main()
