@@ -244,6 +244,10 @@ def glob(pattern: str | list[str]) -> list:
     raise TypeError("'pattern' must be 'str' or 'list[str]', but found", type(pattern))
 
 
+def stage(listing: str | Any):
+    """TODO"""
+
+
 class FileObject:
     """
     Object that stores path properties as strings.
@@ -417,7 +421,7 @@ class FileObject:
         pairs = [f'"{k}":"{getattr(self, k)}"' 
                  for k in self.attrs 
                  if hasattr(self, k) and getattr(self, k) is not None]
-        return f"FileObject({', '.join(pairs)})"
+        return f"FileObject({{{', '.join(pairs)}}})"
     
     
 class DirectoryObject:

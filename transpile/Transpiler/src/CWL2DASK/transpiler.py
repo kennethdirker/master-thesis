@@ -17,7 +17,6 @@ CommandLineTool AND Workflow
     TODO? Mutlityping
     TODO? Arrays as default (step) input value
     TODO runtime context variables for expression evaluation
-    # TODO InlineJavascriptRequirement: Include initial code if needed
 
 TODO TODO TODO TODO
 """
@@ -35,7 +34,9 @@ from uuid import uuid4
 from cwl_utils.parser import (
     load_document_by_uri,
     CommandLineTool,
-    ExpressionTool,    
+    Directory as CWLDirectory,
+    ExpressionTool,
+    File as CWLFile,    
     Process,
     Workflow,
 )
@@ -56,6 +57,7 @@ from cwl_utils.parser.cwl_v1_2 import (
 
 # SDK Module name
 SDK = "CWL2DASK.scripting"
+from CWL2DASK.scripting import FileObject, DirectoryObject
 
 # Whether to use the default Dask Client or jobqueue SLURM client
 SLURM = False
@@ -321,6 +323,10 @@ def gather_processes(
 
     Additionally, adds the "subprocess" attribute to every `WorkflowStep`: A
     reference to the related Process object.
+
+    # BUG 
+    $include statement in `expressionLib` causes exception in `load_document_by_uri`\n
+    TODO Somehow parse/replace ($include: ...) statements.
     """
     # Index by the absolute file path to prevent duplicates
     path = path.resolve()
@@ -381,6 +387,81 @@ def parse_default(default, cwl_type: CWLType) -> str | list[str]:
         return [parse_item(d) for d in default]
     else:
         return parse_item(default)
+
+
+def parse_init_workdir_req(
+        req,
+        exprs: list[str],
+        js: list[str]
+    ) -> list[str]:
+    global IM
+    IM.add_from(SDK, "stage")
+    lines: list[str] = []
+    listing = req.listing
+    if isinstance(listing, str):
+        # File/Dir(s) come from expression
+        expr = normalize(listing)
+        lines.append(tab(f'stage({expr[2:-1]}, "tool_context", "js_context")'))
+    else:
+        lines.append(tab("stage(["))
+        for e in listing:
+            if isinstance(e, str):
+                # File/Dir(s) come from expression
+                expr = normalize(e)
+            elif isinstance(e, Dirent):
+                lines.append(tab('{', 2))
+                if exists(e, "entryname"):
+                    lines.append(tab(f'"entryname": "{e.entryname}",', 3))
+                if exists(e, "entry"):
+                    # Multiline entry scripts are put into lists of
+                    # lines to keep it simple.
+                    entry_lines = multiline_to_list(e.entry)
+                    if len(entry_lines) > 1:
+                        lines.append(tab('"entry": [', 3))
+                        lines.extend([tab(f'"{l}",', 4) for l in entry_lines])
+                        lines.append(tab('],', 3))
+                    elif len(entry_lines) == 1:
+                        lines.append(tab(f'"entry": "{entry_lines[0]}",', 3))
+                if exists(e, "writable"):
+                    lines.append(tab(f'"writable": "{e.writable}",', 3))
+                lines.append(tab('},', 2))
+            elif isinstance(e, CWLFile):
+                IM.add_from(SDK, "FileObject")
+                lines.append(tab(f'{repr(FileObject(e))}', 2))
+            elif isinstance(e, CWLDirectory):
+                IM.add_from(SDK, "DirectoryObject")
+                lines.append(tab(f'{repr(DirectoryObject(e))}', 2))
+        lines.append(tab('], "tool_context", "js_context")'))
+
+    return lines
+
+
+def parse_js_req(expressionLib):
+        """
+        Parse InlineJavascriptRequirement.expressionLib and return all lines of
+        Javascript code as a list of strings.
+
+        # BUG 
+        $include statement in `expressionLib` causes exception in `load_document_by_uri`\n
+        TODO Somehow parse/replace ($include: ...) statements.
+        """
+        concat: str = ""
+        for expr in expressionLib:
+            if concat == "":
+                concat = expr
+            else:
+                concat += "\n" + expr
+
+        lines = []
+        js_context = multiline_to_list(concat)
+        if len(js_context) == 1:
+            lines.append(tab(f'js_context = ["{js_context[0]}"]\n'))
+        elif len(js_context) > 1:
+            lines.append(tab("js_context = ["))
+            for l in js_context:
+                lines.append(tab(f'"{l}",', 2))
+            lines.append(tab("]\n"))
+        return lines
 
 
 def parse_process_input_parameter(input: CommandInputParameter) -> list[str]:
@@ -757,19 +838,14 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
     header:  list[str] = []
     exprs:   list[str] = []
     inputs:  list[str] = []
+    iwr:     list[str] = [] # InitialWorkdirRequirement 
     command: list[str] = []
     outputs: list[str] = []
 
     # Get requirements
     requirements: dict[str, Any] = {}
-    expressionLib = None
-    js = ""
     if exists(tool, "requirements"):
         requirements = {str(req.class_): req for req in tool.requirements}
-        if ("InlineJavascriptRequirement" in requirements and
-            exists(requirements["InlineJavascriptRequirement"], "expressionLib")
-            ):
-            expressionLib = requirements["InlineJavascriptRequirement"].expressionLib
 
     # header
     tool_id = tool.id.split("#")[-1]
@@ -788,24 +864,14 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
 
     # Insert InlineJavascriptRequirement before expression functions so we can
     # omit access the code without providing it via function parameters.
-    if  expressionLib:
-        # TODO Somehow parse ($include: ...) statements, currently bugged.
+    # BUG FIXME Somehow parse ($include: ...) statements, currently bugged.
+    js = ""
+    if ("InlineJavascriptRequirement" in requirements and
+        exists(requirements["InlineJavascriptRequirement"], "expressionLib")
+        ):
         js = ", js_context"
-        concat: str = ""
-        for expr in expressionLib:
-            if concat == "":
-                concat = expr
-            else:
-                concat += "\n" + expr
-
-        js_context = multiline_to_list(concat)
-        if len(js_context) == 1:
-            header.append(tab(f'js_context = ["{js_context[0]}"]\n'))
-        elif len(js_context) > 1:
-            header.append(tab("js_context = ["))
-            for l in js_context:
-                header.append(tab(f'"{l}",', 2))
-            header.append(tab("]\n"))
+        expressionLib = requirements["InlineJavascriptRequirement"].expressionLib
+        header.extend(parse_js_req(expressionLib))
 
     # Input object to inputs
     inputs.extend(comment(tab("# Gather inputs in their correct format")))
@@ -825,6 +891,13 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
     context_pos = len(inputs)
     inputs.append("")
 
+    # Insert InitialWorkdirRequirment
+    if "InitialWorkdirRequirment" in requirements:
+        iwr.extend(comment(tab("# Stage files/directories from InitialWorkdirRequirement")))
+        iwr.extend(parse_init_workdir_req(
+                        requirements["InitialWorkdirRequirement"],
+                        exprs, js))
+
     # Parse command
     command.extend(comment(tab("# Ready the commandline and execute the tool")))
     command.extend(parse_commandline(tool, exprs, js))
@@ -843,7 +916,7 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
         inputs.pop(context_pos - 1)
     exprs.append("")
 
-    return header + exprs + inputs + command + outputs
+    return header + exprs + inputs + iwr + command + outputs
 
 
 def extract_source(source: str):
@@ -1084,14 +1157,9 @@ def parse_workflow(wf: Workflow):
     outputs: list[str] = []
 
     # Get requirements
-    js = ""
-    expressionLib = None
+    requirements: dict[str, Any] = {}
     if exists(wf, "requirements"):
         requirements = {str(req.class_): req for req in wf.requirements}
-        if ("InlineJavascriptRequirement" in requirements and
-            exists(requirements["InlineJavascriptRequirement"], "expressionLib")
-            ):
-            expressionLib = requirements["InlineJavascriptRequirement"].expressionLib
 
     # header
     wf_id = wf.id.split("#")[-1]
@@ -1104,28 +1172,17 @@ def parse_workflow(wf: Workflow):
     if exists(wf, "label"):
         header.append(tab('label: ' + wf.label))
     header.append(tab('"""'))
-    requirements: dict[str, Any] = {}
 
     # Insert InlineJavascriptRequirement before expression functions so we can
     # omit access the code without providing it via function parameters.
-    if  expressionLib:
-        # TODO Somehow parse ($include: ...) statements, currently bugged.
+    # BUG FIXME Somehow parse ($include: ...) statements, currently bugged.
+    js = ""
+    if ("InlineJavascriptRequirement" in requirements and
+        exists(requirements["InlineJavascriptRequirement"], "expressionLib")
+        ):
         js = ", js_context"
-        concat: str = ""
-        for expr in expressionLib:
-            if concat == "":
-                concat = expr
-            else:
-                concat += "\n" + expr
-
-        js_context = multiline_to_list(concat)
-        if len(js_context) == 1:
-            header.append(tab(f'js_context = ["{js_context[0]}"]\n'))
-        elif len(js_context) > 1:
-            header.append(tab("js_context = ["))
-            for l in js_context:
-                header.append(tab(f'"{l}",', 2))
-            header.append(tab("]\n"))
+        expressionLib = requirements["InlineJavascriptRequirement"].expressionLib
+        header.extend(parse_js_req(expressionLib))
 
     # Input object to inputs
     inputs.extend(comment(tab("# Gather inputs in their correct format")))
