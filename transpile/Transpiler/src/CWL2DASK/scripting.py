@@ -19,6 +19,7 @@ from pathlib import Path
 
 from typing import (
     Any,
+    Callable,
     Iterator,
     Mapping,
     MutableMapping,
@@ -244,8 +245,14 @@ def glob(pattern: str | list[str]) -> list:
     raise TypeError("'pattern' must be 'str' or 'list[str]', but found", type(pattern))
 
 
-def stage(listing: str | Any):
-    """TODO"""
+# def stage_path(fd: CWLFile | CWLDirectory):
+#     """TODO"""
+
+
+# def stage(
+#         listing: str | list[str],
+#     ) -> None:
+#     """TODO"""
 
 
 class FileObject:

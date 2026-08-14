@@ -394,6 +394,8 @@ def parse_init_workdir_req(
         exprs: list[str],
         js: list[str]
     ) -> list[str]:
+    print(tab("InitialWorkdirRequirement is not yet supported, aborting..."))
+    exit()
     global IM
     IM.add_from(SDK, "stage")
     lines: list[str] = []
@@ -401,37 +403,43 @@ def parse_init_workdir_req(
     if isinstance(listing, str):
         # File/Dir(s) come from expression
         expr = normalize(listing)
-        lines.append(tab(f'stage({expr[2:-1]}, "tool_context", "js_context")'))
+        exprs.append(tab("def stage_eval(context)"))
+        exprs.append(tab(f'return js_eval({expr}, context, js_context)', 2))
+        lines.etend(comment(tab("Create or copy/link files/directories from expression to the working directory")))
+        lines.append(tab(f'stage(stage_eval())'))
     else:
-        lines.append(tab("stage(["))
-        for e in listing:
+        listing_exprs: list[str] = []
+        for i, e in enumerate(listing):
             if isinstance(e, str):
-                # File/Dir(s) come from expression
-                expr = normalize(e)
+                # File/Dir(s) come from expression, handle later
+                listing_exprs.append(normalize(e))
+
             elif isinstance(e, Dirent):
-                lines.append(tab('{', 2))
-                if exists(e, "entryname"):
-                    lines.append(tab(f'"entryname": "{e.entryname}",', 3))
-                if exists(e, "entry"):
+                ...
+                # lines.append(tab('{', 2))
+                # if exists(e, "entryname"):
+                    # lines.append(tab(f'"entryname": "{e.entryname}",', 3))
+                # if exists(e, "entry"):
                     # Multiline entry scripts are put into lists of
                     # lines to keep it simple.
-                    entry_lines = multiline_to_list(e.entry)
-                    if len(entry_lines) > 1:
-                        lines.append(tab('"entry": [', 3))
-                        lines.extend([tab(f'"{l}",', 4) for l in entry_lines])
-                        lines.append(tab('],', 3))
-                    elif len(entry_lines) == 1:
-                        lines.append(tab(f'"entry": "{entry_lines[0]}",', 3))
-                if exists(e, "writable"):
-                    lines.append(tab(f'"writable": "{e.writable}",', 3))
-                lines.append(tab('},', 2))
+                    # entry_lines = multiline_to_list(e.entry)
+                    # if len(entry_lines) > 1:
+                    #     lines.append(tab('"entry": [', 3))
+                    #     lines.extend([tab(f'"{l}",', 4) for l in entry_lines])
+                    #     lines.append(tab('],', 3))
+                    # elif len(entry_lines) == 1:
+                    #     lines.append(tab(f'"entry": "{entry_lines[0]}",', 3))
+                # if exists(e, "writable"):
+                    # lines.append(tab(f'"writable": "{e.writable}",', 3))
+                # lines.append(tab('},', 2))
             elif isinstance(e, CWLFile):
-                IM.add_from(SDK, "FileObject")
-                lines.append(tab(f'{repr(FileObject(e))}', 2))
+                ...
+                # IM.add_from(SDK, "FileObject")
+                # lines.append(tab(f'{repr(FileObject(e))}', 2))
             elif isinstance(e, CWLDirectory):
-                IM.add_from(SDK, "DirectoryObject")
-                lines.append(tab(f'{repr(DirectoryObject(e))}', 2))
-        lines.append(tab('], "tool_context", "js_context")'))
+                ...
+                # IM.add_from(SDK, "DirectoryObject")
+                # lines.append(tab(f'{repr(DirectoryObject(e))}', 2))
 
     return lines
 
@@ -891,12 +899,13 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
     context_pos = len(inputs)
     inputs.append("")
 
-    # Insert InitialWorkdirRequirment
+    # Insert InitialWorkdirRequirment #TODO activate
     if "InitialWorkdirRequirment" in requirements:
-        iwr.extend(comment(tab("# Stage files/directories from InitialWorkdirRequirement")))
-        iwr.extend(parse_init_workdir_req(
-                        requirements["InitialWorkdirRequirement"],
-                        exprs, js))
+        print(tab("InitialWorkdirRequirement parsing is not yet supported!"))
+        # iwr.extend(comment(tab("# Stage files/directories from InitialWorkdirRequirement")))
+        # iwr.extend(parse_init_workdir_req(
+        #                 requirements["InitialWorkdirRequirement"],
+        #                 exprs, js))
 
     # Parse command
     command.extend(comment(tab("# Ready the commandline and execute the tool")))
