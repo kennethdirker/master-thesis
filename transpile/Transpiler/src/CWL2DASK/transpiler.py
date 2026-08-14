@@ -12,11 +12,9 @@ Workflow
 
 CommandLineTool AND Workflow
     TODO InitialWorkDirRequirement
-    TODO Handle Enum complex input type
     TODO Multiline valueFrom
     TODO? Mutlityping
-    TODO? Arrays as default (step) input value
-    TODO runtime context variables for expression evaluation
+    TODO ResourceRequirement
 
 TODO TODO TODO TODO
 """
@@ -28,6 +26,7 @@ from types import NoneType
 from typing import (
     Any,
     Optional,
+    Mapping,
 )
 from uuid import uuid4
 
@@ -42,14 +41,17 @@ from cwl_utils.parser import (
 )
 from cwl_utils.parser.cwl_v1_2 import (
     CommandInputArraySchema,
+    CommandInputEnumSchema,
     CommandInputParameter,
     CommandLineBinding,
     CommandOutputArraySchema, 
     CommandOutputBinding,
+    CommandOutputEnumSchema, 
     CommandOutputParameter,
     Dirent,
     InputArraySchema,
     OutputArraySchema,
+    InputEnumSchema,
     WorkflowOutputParameter,
     WorkflowStep,
     WorkflowStepOutput,
@@ -221,16 +223,30 @@ class CWLType:
     def __init__(self, type_):
         """
         """
-        if isinstance(type_, (CommandInputArraySchema, InputArraySchema, CommandOutputArraySchema)):
+        def filter(string, chars):
+            return "".join([c.lower() for c in str(string) if c not in chars])
+        
+        if isinstance(type_, (CommandInputArraySchema, 
+                              InputArraySchema, 
+                              CommandOutputArraySchema)):
             # TODO Optional arrays how?
             self.optional = False
             self.is_array = True
             type_ = type_.items
-            self.types = T_MAPPING["".join([c.lower() for c in str(type_) if c not in ["?[]"]])]
+            self.types = T_MAPPING[filter(type_, "?[]")]
         elif isinstance(type_, str):
             self.optional = "?" in type_
             self.is_array = "[]" in type_
-            self.types = T_MAPPING["".join([c.lower() for c in type_ if c not in ["?[]"]])]
+            self.types = T_MAPPING[filter(type_, "?[]")]
+        elif (isinstance(type_, list) and
+              isinstance(type_[0], (CommandInputEnumSchema,
+                                    CommandOutputEnumSchema,
+                                    InputEnumSchema))):
+                # Enums are actually just special strings
+                # TODO Optional enum how?
+                self.optional = False
+                self.is_array = False
+                self.types = "str"
         elif isinstance(type_, list):
             type_ = type_.copy()
             # TODO Support multitypes
@@ -243,7 +259,7 @@ class CWLType:
                 type_.remove("null")
             type_ = type_[0]
             self.is_array = "[]" in type_
-            self.types = T_MAPPING["".join([c.lower() for c in type_ if c not in ["?[]"]])]
+            self.types = T_MAPPING[filter(type_, "?[]")]
         else:
             raise NotImplementedError(f"Found unsupported type {type(type_)}")
 
@@ -260,6 +276,10 @@ def convert_to_CWLType(value) -> CWLType:
             t = "float"
         elif isinstance(value, str):
             t = "string"
+        elif isinstance(value, CWLFile):
+            t = "file"
+        elif isinstance(value, CWLDirectory):
+            t = "directory"
         elif isinstance(value, dict):
             if exists(value, "type"):
                 if value.type in "File":
@@ -374,12 +394,26 @@ def parse_default(default, cwl_type: CWLType) -> str | list[str]:
                 value = f'"{default}"'
             case "FileObject":
                 IM.add_from(SDK, "FileObject")
-                value = [f'"{k}":"{v}"' for k, v in default.items() if k in FILE_KEYS]
+                if isinstance(default, CWLFile):
+                    value = [f'"{a}":"{getattr(default, a)}"' 
+                             for a in FILE_KEYS 
+                             if getattr(default, a) != "" and 
+                                getattr(default, a) is not None]
+                elif isinstance(default, Mapping):
+                    value = [f'"{k}":"{v}"' for k, v in default.items() 
+                                            if k in FILE_KEYS]
                 value = f'FileObject({{{", ".join(value)}}})'
                 
             case "DirectoryObject":
                 IM.add_from(SDK, "DirectoryObject")
-                value = [f'"{k}":"{v}"' for k, v in default.items() if k in DIR_KEYS]
+                if isinstance(default, CWLDirectory):
+                    value = [f'"{a}":"{getattr(default, a)}"' 
+                             for a in DIR_KEYS 
+                             if getattr(default, a) != "" and 
+                                getattr(default, a) is not None]
+                elif isinstance(default, Mapping):
+                    value = [f'"{k}":"{v}"' for k, v in default.items() 
+                                            if k in DIR_KEYS]
                 value = f'DirectoryObject({{{", ".join(value)}}})'
         return value
 

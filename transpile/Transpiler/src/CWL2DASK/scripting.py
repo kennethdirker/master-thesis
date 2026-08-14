@@ -425,9 +425,7 @@ class FileObject:
     
 
     def __repr__(self) -> str:
-        pairs = [f'"{k}":"{getattr(self, k)}"' 
-                 for k in self.attrs 
-                 if hasattr(self, k) and getattr(self, k) is not None]
+        pairs = [f'"{k}":"{v}"' for k, v in self.to_dict().items()]
         return f"FileObject({{{', '.join(pairs)}}})"
     
     
