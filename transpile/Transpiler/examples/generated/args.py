@@ -8,8 +8,16 @@ def args(input_obj: dict, context: dict) -> dict:
 	class: CommandLineTool
 	"""
 	def expr_handler_0(context: dict) -> str:
-		return js_eval("inputs.world", context)
+		expr = [
+			"This is some",
+			"Lorem Ipsum",
+			"'type ' + inputs.food + \"digestion\" + ' stuff'",
+			"Peace out!",
+		]
+		return js_eval(expr, context)
 	def expr_handler_1(context: dict) -> str:
+		return js_eval("inputs.world", context)
+	def expr_handler_2(context: dict) -> str:
 		return js_eval("inputs.beautiful", context)
 	def outputs_output(context):
 		return FileObject(glob("output.txt")[0])
@@ -23,9 +31,9 @@ def args(input_obj: dict, context: dict) -> dict:
 	cmd = [
 		'echo',
 		"Hello",
-		"there",
-		"#" + expr_handler_1(tool_context),
 		str(expr_handler_0(tool_context)),
+		"#" + expr_handler_2(tool_context),
+		str(expr_handler_1(tool_context)),
 		"Bazinga",
 	]
 	stdout = open("output.txt", "w")

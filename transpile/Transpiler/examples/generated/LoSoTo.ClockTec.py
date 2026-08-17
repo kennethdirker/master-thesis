@@ -18,7 +18,6 @@ def losoto_clocktec(input_obj: dict, context: dict) -> dict:
 		"var createHelloWorldMessage = function (message) {",
 		"  return capitalizeWords(message);",
 		"};",
-		"",
 	]
 
 	def expr_handler_0(context: dict) -> str:

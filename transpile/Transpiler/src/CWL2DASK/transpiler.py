@@ -14,7 +14,7 @@ CommandLineTool AND Workflow
     TODO InitialWorkDirRequirement
     TODO Multiline valueFrom
     TODO? Mutlityping
-    TODO ResourceRequirement
+    TODO? ResourceRequirement
 
 TODO TODO TODO TODO
 """
@@ -102,8 +102,8 @@ def is_expr(s: str) -> bool:
 
 def normalize(string: str) -> str:
     """
-    Normalize expressions by creating a single enclosed expression string.
-    If the string does not contain expressions, the plain string is returned.
+    Normalize expressions by creating a single enclosed expression string. Leading and trailing whitespaces are removed. 
+    If the string does not contain expressions, the stripped string is returned.
     Example:
         example_$(inputs.input).txt -> $('example_' + inputs.input + '.txt')
     Returns:
@@ -113,7 +113,7 @@ def normalize(string: str) -> str:
         raise TypeError("Should be string, but found", type(string))
 
     parts = []
-    
+    string = string.strip()
     start = string.find("$(")
     if start < 0 or ")" not in string[start + 2:]:
         # String does not have an expression or not contain a
@@ -150,17 +150,26 @@ def multiline_to_list(string: str, normalize_js_expr: bool = True):
     Convert multi-line YAML strings (indicated by '- |') to a list of normal
     strings.
     """
-    # YAML uses some character escaping that doesnt work in python strings.
-    # They must be removed from the literal string.
-    lines = bytes(string.replace(r"\$", "$"), "utf-8").decode("unicode_escape")
+    # # YAML uses some character escaping that doesnt work in python strings.
+    # # They must be removed from the literal string.
+    # lines = bytes(string.replace(r"\$", "$"), "utf-8").decode("unicode_escape")
+
+    if not isinstance(string, str):
+        raise TypeError("Expected 'str', but got", type(string))
 
     # Because we need to encase strings in double quotation marks, we need to
     # add escapes.
-    lines = lines.replace('"', r'\"').split("\n")
+    lines = string.strip().replace('"', r'\"').split("\n")
     if normalize_js_expr:
-        lines = [normalize(l) for l in lines]
-    return lines
-
+        ret = []
+        for l in lines:
+            if is_expr(l):
+                ret.append(normalize(l)[2:-1])
+            else:
+                ret.append(l)
+        return ret
+    else:
+        return lines
 
 class ImportManager:
     imports: set
@@ -556,12 +565,21 @@ def parse_commandline(
     NOTE: Only accept an integer as inputBinding.position value
     """
     n_func = 0
-    def add_expression_function(expression: str, n_func: int) -> str:
+    def add_expr_function( expr: str | list, n_func: int) -> str:
         global IM
         IM.add_from(SDK, "js_eval")
         func_name = f"expr_handler_{n_func}"
         exprs.append(tab(f"def {func_name}(context: dict) -> str:"))
-        exprs.append(tab(f'return js_eval("{expression}", context{js})', 2))
+        if isinstance(expr, list) and len(expr) == 1:
+            expr = expr[0]
+        if isinstance(expr, str):
+            exprs.append(tab(f'return js_eval("{expr}", context{js})', 2))
+        else:
+            exprs.append(tab("expr = [", 2))
+            for line in expr:
+                exprs.append(tab(f'"{line}",', 3))
+            exprs.append(tab("]", 2))
+            exprs.append(tab(f'return js_eval(expr, context{js})', 2))
         return f"{func_name}(tool_context)"
 
     def compose_cmd_arg(
@@ -614,28 +632,27 @@ def parse_commandline(
         for i, arg in enumerate(tool.arguments):
             var_cast = False
             if isinstance(arg, str):
-                arg = normalize(arg)
                 if is_expr(arg):
                     var_cast = True
-                    arg = add_expression_function(arg[2:-1], n_func)
+                    arg = add_expr_function(multiline_to_list(arg), n_func)
                     n_func += 1
                 else:
                     arg = f'"{arg}"'
                 ordered_items.append((0, i, arg, False, None, var_cast))
             elif isinstance(arg, CommandLineBinding):
-                value_or_expr = normalize(arg.valueFrom)
-                if is_expr(value_or_expr):
+                # valueFrom = normalize(arg.valueFrom)
+                if is_expr(arg.valueFrom):
                     var_cast = True
-                    value_or_expr = add_expression_function(value_or_expr[2:-1], n_func)
+                    valueFrom = add_expr_function(multiline_to_list(arg), n_func)
                     n_func += 1
                 else:
-                    value_or_expr = f'"{value_or_expr}"'
+                    valueFrom = f'"{normalize(arg.valueFrom)}"'
 
                 # Read the position attribute. If 'None' is found, set default
                 pos = getattr(arg, "position", 0)
                 if pos is None: 
                     pos = 0
-                ordered_items.append((pos, i, value_or_expr, False, arg, var_cast))
+                ordered_items.append((pos, i, valueFrom, False, arg, var_cast))
             else:
                 raise TypeError(f"Unsupported argument type: {type(arg)}")
  
@@ -657,7 +674,7 @@ def parse_commandline(
             value_or_expr = binding.valueFrom
             if is_expr(value_or_expr):
                 value_or_expr = normalize(value_or_expr)
-                value_or_expr = add_expression_function(value_or_expr[2:-1], n_func)
+                value_or_expr = add_expr_function(value_or_expr[2:-1], n_func)
                 n_func += 1
             else:
                 var_cast = False
