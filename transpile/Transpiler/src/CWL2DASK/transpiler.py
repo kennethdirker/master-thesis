@@ -145,7 +145,7 @@ def normalize(string: str) -> str:
     return "$(" + " + ".join(parts) + ")"
 
 
-def multiline_to_list(string: str, normalize_js_expr: bool = True):
+def multiline_to_list(string: str, normalize_js_expr: bool = True) -> list[str]:
     """
     Convert multi-line YAML strings (indicated by '- |') to a list of normal
     strings.
@@ -517,7 +517,6 @@ def parse_js_req(expressionLib):
 
 def parse_process_input_parameter(input: CommandInputParameter) -> list[str]:
     """
-    TODO Support complex default types, handle in CWLType class?
     """
     id = input.id.split("/")[-1]
     cwl_type = CWLType(input.type_)
@@ -542,15 +541,6 @@ def parse_process_input_parameter(input: CommandInputParameter) -> list[str]:
         ]
     else:
         return [tab(f'"{id}": {default},', 2)]
-    
-    # if isinstance(default, str):
-    #     return [tab(f'"{id}": {default},', 2)]
-    # else:
-    #     return [
-    #         tab(f'"{id}": [', 2),
-    #         *[tab(f'{d},', 3) for d in default],
-    #         tab("],", 2)
-    #     ]
 
 
 def parse_commandline(
@@ -565,15 +555,13 @@ def parse_commandline(
     NOTE: Only accept an integer as inputBinding.position value
     """
     n_func = 0
-    def add_expr_function( expr: str | list, n_func: int) -> str:
+    def add_expr_function( expr: list[str], n_func: int) -> str:
         global IM
         IM.add_from(SDK, "js_eval")
         func_name = f"expr_handler_{n_func}"
         exprs.append(tab(f"def {func_name}(context: dict) -> str:"))
-        if isinstance(expr, list) and len(expr) == 1:
-            expr = expr[0]
-        if isinstance(expr, str):
-            exprs.append(tab(f'return js_eval("{expr}", context{js})', 2))
+        if len(expr) == 1:
+            exprs.append(tab(f'return js_eval("{expr[0]}", context{js})', 2))
         else:
             exprs.append(tab("expr = [", 2))
             for line in expr:
@@ -643,7 +631,7 @@ def parse_commandline(
                 # valueFrom = normalize(arg.valueFrom)
                 if is_expr(arg.valueFrom):
                     var_cast = True
-                    valueFrom = add_expr_function(multiline_to_list(arg), n_func)
+                    valueFrom = add_expr_function(multiline_to_list(arg.valueFrom), n_func)
                     n_func += 1
                 else:
                     valueFrom = f'"{normalize(arg.valueFrom)}"'
@@ -671,14 +659,13 @@ def parse_commandline(
 
         # If the binding has valueFrom, add a expression handler if needed
         if exists(binding, "valueFrom"):
-            value_or_expr = binding.valueFrom
-            if is_expr(value_or_expr):
-                value_or_expr = normalize(value_or_expr)
-                value_or_expr = add_expr_function(value_or_expr[2:-1], n_func)
+            valueFrom = binding.valueFrom
+            if is_expr(valueFrom):
+                value_or_expr = add_expr_function(multiline_to_list(valueFrom), n_func)
                 n_func += 1
             else:
                 var_cast = False
-                value_or_expr = f'"{value_or_expr}"'
+                value_or_expr = f'"{valueFrom}"'
         ordered_items.append((pos, len(ordered_items), value_or_expr, t.is_array, binding, var_cast))
 
     # Both the inputs with an inputBinding as well as the tool arguments are
@@ -752,20 +739,34 @@ def parse_run(
     def envVar_handler(var) -> str:
         envValue = var.envValue
         if is_expr(envValue):
-            envValue = normalize(envValue)
             IM.add_from(SDK, "js_eval")
+            envValue = multiline_to_list(envValue)
             exprs.append(tab(f'def env_{var.envName}(context):'))
-            exprs.append(tab(f'return js_eval({envValue[2:-1]}, context{js})', 2))
+            if len(envValue) == 1:
+                exprs.append(tab(f'return js_eval({envValue[0]}, context{js})', 2))
+            else:
+                exprs.append(tab("expr = [", 2))
+                for line in envValue:
+                    exprs.append(tab(f'"{line}",', 3))
+                exprs.append(tab("]", 2))
+                exprs.append(tab(f'return js_eval(expr, context{js})', 2))
             return f'env_{var.envName}(tool_context)'
         return f'"{envValue}"'
 
     # Parse stdin, stdout, stderr
     if exists(tool, "stdin"):
         if is_expr(tool.stdin):
-            stdin = normalize(tool.stdin)
             IM.add_from(SDK, "js_eval")
+            stdin = multiline_to_list(tool.stdin)
             exprs.append(tab("def stdin_handler(context):"))
-            exprs.append(tab(f'return js_eval("{stdin[2:-1]}", context{js})', 2))
+            if len(stdin) == 1:
+                exprs.append(tab(f'return js_eval("{stdin[0]}", context{js})', 2))
+            else:
+                exprs.append(tab("expr = [", 2))
+                for line in stdin:
+                    exprs.append(tab(f'"{line}",', 3))
+                exprs.append(tab("]", 2))
+                exprs.append(tab(f'return js_eval(expr, context{js})', 2))
             stdin = "stdin_handler(tool_context)"
         else:
             stdin = f'"{stdin}"'
@@ -777,10 +778,17 @@ def parse_run(
     stdout = uses_stdout()
     if stdout:
         if is_expr(stdout):
-            stdout = normalize(stdout)
             IM.add_from(SDK, "js_eval")
+            stdout = multiline_to_list(tool.stdout)
             exprs.append(tab("def stdout_handler(context):"))
-            exprs.append(tab(f'return js_eval("{stdout[2:-1]}", context{js})', 2))
+            if len(stdout) == 1:
+                exprs.append(tab(f'return js_eval("{stdout[0]}", context{js})', 2))
+            else:
+                exprs.append(tab("expr = [", 2))
+                for line in stdout:
+                    exprs.append(tab(f'"{line}",', 3))
+                exprs.append(tab("]", 2))
+                exprs.append(tab(f'return js_eval(expr, context{js})', 2))
             stdout = "stdout_handler(tool_context)"
         else:
             stdout = f'"{stdout}"'
@@ -791,10 +799,17 @@ def parse_run(
 
     if exists(tool, "stderr"):
         if is_expr(tool.stderr):
-            stderr = normalize(tool.stderr)
             IM.add_from(SDK, "js_eval")
+            stderr = multiline_to_list(tool.stderr)
             exprs.append(tab("def stderr_handler(context):"))
-            exprs.append(tab(f'return js_eval("{stderr[2:-1]}", context{js})', 2))
+            if len(stderr) == 1:
+                exprs.append(tab(f'return js_eval("{stderr[0]}", context{js})', 2))
+            else:
+                exprs.append(tab("expr = [", 2))
+                for line in stderr:
+                    exprs.append(tab(f'"{line}",', 3))
+                exprs.append(tab("]", 2))
+                exprs.append(tab(f'return js_eval(expr, context{js})', 2))
             stderr = "stderr_handler(tool_context)"
         else:
             stderr = f'"{stderr}"'
@@ -862,10 +877,17 @@ def parse_tool_output_binding(
         IM.add_from(SDK, "glob")
         if isinstance(g, str):
             if is_expr(g):
-                g = normalize(g)
                 # Expression
                 IM.add_from(SDK, "js_eval")
-                exprs.append(tab(f'pattern = js_eval("{g[2:-1]}", context{js})', 2))
+                g = multiline_to_list(g)
+                if len(g) == 1:
+                    exprs.append(tab(f'pattern = js_eval("{g[0]}", context{js})', 2))
+                else:
+                    exprs.append(tab("expr = [", 2))
+                    for line in g:
+                        exprs.append(tab(f'"{line}",', 3))
+                    exprs.append(tab("]", 2))
+                    exprs.append(tab(f'pattern = js_eval(expr, context{js})', 2))
                 x = "glob(pattern)"
             else:
                 # Simple string
@@ -885,7 +907,17 @@ def parse_tool_output_binding(
             if exists(binding, "loadContents"):
                 loadContents = ", loadContents = True"
             exprs.append(tab(f'context["self"] = [FileObject(m{loadContents}) for m in matches]', 2))
-        exprs.append(tab(f'return js_eval("{binding.outputEval[2:-1]}", context{js})', 2))
+            
+        outputEval = multiline_to_list(binding.outputEval)
+        if len(outputEval) == 1:
+            exprs.append(tab(f'return js_eval("{outputEval[0]}", context{js})', 2))
+        else:
+            exprs.append(tab("expr = [", 2))
+            for line in outputEval:
+                exprs.append(tab(f'"{line}",', 3))
+            exprs.append(tab("]", 2))
+            exprs.append(tab(f'return js_eval(expr, context{js})', 2))
+
     else:
         p = "" if t.is_array else "[0]"
         exprs.append(tab(f"return {t.types}({x}{p})", 2))
@@ -1083,26 +1115,30 @@ def parse_workflow_step(
     def parse_valueFrom(scattered: bool, tabs: int = 1) -> list[str]:
         input_dict = "scattered_inputs" if scattered else step_id + "_in"
 
-
         lines: list[str] = []
         for input in step.in_:
             if exists(input, "valueFrom"):
                 valueFrom = input.valueFrom
                 input_id = input.id.split("/")[-1]
                 if is_expr(input.valueFrom):
-                    expr = normalize(input.valueFrom)[2:-1]
                     IM.add_from(SDK, "js_eval")
+
                     if exists(input, "source") or exists(input, "default"):
-                        # exprs.append(tab(f"def {step_id}_{input_id}(context, self):"))
                         exprs.append(tab(f"def {step_id}_{input_id}(context):"))
-                        # exprs.append(tab('context["self"] = self', 2))
                         lines.append(tab(f'{input_dict}["{input_id}"] = {step_id}_{input_id}(tool_context | {{"self": {step_id}_in["{input_id}"]}})', tabs))
                     else:
                         exprs.append(tab(f"def {step_id}_{input_id}(context):"))
-                        # exprs.append(tab('context["self"] = None', 2))
                         lines.append(tab(f'{input_dict}["{input_id}"] = {step_id}_{input_id}(tool_context)', tabs))
-                    exprs.append(tab(f'return js_eval("{expr}", context{js})', 2))
-                        
+                    
+                    expr = multiline_to_list(input.valueFrom)
+                    if len(expr) == 1:
+                        exprs.append(tab(f'return js_eval("{expr[0]}", context{js})', 2))
+                    else:
+                        exprs.append(tab("expr = [", 2))
+                        for line in expr:
+                            exprs.append(tab(f'"{line}",', 3))
+                        exprs.append(tab("]", 2))
+                        exprs.append(tab(f'return js_eval(expr, context{js})', 2))
                 else:
                     lines.append(tab(f'{input_dict}["{input_id}"] = "{valueFrom}"', tabs))
         return lines
@@ -1119,11 +1155,19 @@ def parse_workflow_step(
     # Parse when
     x = 0   # Extra tabs to be inserted resulting from the when conditional
     if exists(step, "when"):
-        x = 1
         IM.add_from(SDK, "js_eval")
-        when = normalize(step.when)[2:-1]
+        x = 1
+        when = multiline_to_list(step.when)
         exprs.append(tab(f'def {step_id}_when(context):'))
-        exprs.append(tab(f'return js_eval("{when}", context{js})', 2))
+        if len(when) == 1:
+            exprs.append(tab(f'return js_eval("{when[0]}", context{js})', 2))
+        else:
+            exprs.append(tab("expr = [", 2))
+            for line in when:
+                exprs.append(tab(f'"{line}",', 3))
+            exprs.append(tab("]", 2))
+            exprs.append(tab(f'return js_eval(expr, context{js})', 2))
+
         lines.append(tab(f'tool_context["inputs"] = {step_id}_in'))
         lines.append(tab(f'if {step_id}_when(tool_context):'))
 

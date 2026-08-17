@@ -11,7 +11,11 @@ inputs:
 
 arguments:
   - valueFrom: Hello
-  - there
+  - |
+    This is some
+    Lorem Ipsum
+    type $(inputs.food + "digestion") stuff
+    Peace out!
   - valueFrom: $(inputs.world)
     position: 2
   - valueFrom: $(inputs.beautiful)
