@@ -11,8 +11,8 @@ CommandLineTool
 Workflow
 
 CommandLineTool AND Workflow
+    TODO work directory
     TODO InitialWorkDirRequirement
-    TODO Multiline valueFrom
     TODO? Mutlityping
     TODO? ResourceRequirement
 
@@ -437,53 +437,72 @@ def parse_init_workdir_req(
         exprs: list[str],
         js: list[str]
     ) -> list[str]:
-    print(tab("InitialWorkdirRequirement is not yet supported, aborting..."))
-    exit()
+    # print(tab("InitialWorkdirRequirement is not yet supported, aborting..."))
+    # exit()
     global IM
-    IM.add_from(SDK, "stage")
+    IM.add_from(SDK, "initial_workdir_requirement")
+
+    num_exprs = 0
+    def add_expr(expr: list[str]) -> str:
+        IM.add_from(SDK, "js_eval")
+        exprs.append(tab(f"def stage_expr_{num_exprs}(context):"))
+        if len(expr) == 1:
+            exprs.append(tab(f'return js_eval({expr[0]}, context{js})', 2))
+        else:
+            exprs.append(tab("expr = [", 2))
+            for line in expr:
+                exprs.append(tab(f'"{line}"', 3))
+            exprs.append(tab("]", 2))
+            exprs.append(tab(f'return js_eval(expr, context{js})', 2))
+        return f"stage_expr_{num_exprs}(tool_context)"
+
     lines: list[str] = []
+    lines.extend(comment(tab("# Stage files and directories to the temporary working directory")))
     listing = req.listing
     if isinstance(listing, str):
         # File/Dir(s) come from expression
-        expr = normalize(listing)
-        exprs.append(tab("def stage_eval(context)"))
-        exprs.append(tab(f'return js_eval({expr}, context, js_context)', 2))
-        lines.etend(comment(tab("Create or copy/link files/directories from expression to the working directory")))
-        lines.append(tab(f'stage(stage_eval())'))
+        lines.append(tab(f'initial_workdir_requirement({add_expr(listing)}'))
     else:
-        listing_exprs: list[str] = []
-        for i, e in enumerate(listing):
+        # listing = sorted(req.listing, key=lambda i: str(type(i)))
+        lines.append(tab(f'initial_workdir_requirement(['))
+        for e in listing:
             if isinstance(e, str):
-                # File/Dir(s) come from expression, handle later
-                listing_exprs.append(normalize(e))
-
+                # File/Dir(s) come from expression
+                lines.append(tab(f'{multiline_to_list(e)},', 2))
             elif isinstance(e, Dirent):
-                ...
-                # lines.append(tab('{', 2))
-                # if exists(e, "entryname"):
-                    # lines.append(tab(f'"entryname": "{e.entryname}",', 3))
-                # if exists(e, "entry"):
+                lines.append(tab('{', 2))
+                if exists(e, "entryname"):
+                    lines.append(tab(f'"entryname": "{e.entryname}",', 3))
+                if exists(e, "entry"):
                     # Multiline entry scripts are put into lists of
                     # lines to keep it simple.
-                    # entry_lines = multiline_to_list(e.entry)
-                    # if len(entry_lines) > 1:
-                    #     lines.append(tab('"entry": [', 3))
-                    #     lines.extend([tab(f'"{l}",', 4) for l in entry_lines])
-                    #     lines.append(tab('],', 3))
-                    # elif len(entry_lines) == 1:
-                    #     lines.append(tab(f'"entry": "{entry_lines[0]}",', 3))
-                # if exists(e, "writable"):
-                    # lines.append(tab(f'"writable": "{e.writable}",', 3))
-                # lines.append(tab('},', 2))
+                    entry_lines = multiline_to_list(e.entry)
+                    if len(entry_lines) == 1:
+                        lines.append(tab(f'"entry": "{entry_lines[0]}",', 3))
+                    else:
+                        lines.append(tab('"entry": [', 3))
+                        lines.extend([tab(f'"{l}",', 4) for l in entry_lines])
+                        lines.append(tab('],', 3))
+                if exists(e, "writable"):
+                    lines.append(tab(f'"writable": "{e.writable}",', 3))
+                lines.append(tab('},', 2))
             elif isinstance(e, CWLFile):
-                ...
-                # IM.add_from(SDK, "FileObject")
-                # lines.append(tab(f'{repr(FileObject(e))}', 2))
+                IM.add_from(SDK, "FileObject")
+                file_dict = e.save()
+                lines.append(tab("FileObject({", 2))
+                for k, v in file_dict.items():
+                    lines.append(tab(f'"{k}": "{v}",', 3))
+                lines.append(tab(f'"{k}": "{v}",', 3))
+                lines.append(tab("}),", 2))
             elif isinstance(e, CWLDirectory):
-                ...
-                # IM.add_from(SDK, "DirectoryObject")
-                # lines.append(tab(f'{repr(DirectoryObject(e))}', 2))
-
+                IM.add_from(SDK, "DirectoryObject")
+                dir_dict = e.save()
+                lines.append(tab("DirectoryObject({", 2))
+                for k, v in dir_dict.items():
+                    lines.append(tab(f'"{k}": "{v}",', 3))
+                lines.append(tab(f'"{k}": "{v}",', 3))
+                lines.append(tab("}),", 2))
+        lines.append(tab("])"))
     return lines
 
 
@@ -1125,10 +1144,10 @@ def parse_workflow_step(
 
                     if exists(input, "source") or exists(input, "default"):
                         exprs.append(tab(f"def {step_id}_{input_id}(context):"))
-                        lines.append(tab(f'{input_dict}["{input_id}"] = {step_id}_{input_id}(tool_context | {{"self": {step_id}_in["{input_id}"]}})', tabs))
+                        lines.append(tab(f'{input_dict}["{input_id}"] = {step_id}_{input_id}(wf_context | {{"self": {step_id}_in["{input_id}"]}})', tabs))
                     else:
                         exprs.append(tab(f"def {step_id}_{input_id}(context):"))
-                        lines.append(tab(f'{input_dict}["{input_id}"] = {step_id}_{input_id}(tool_context)', tabs))
+                        lines.append(tab(f'{input_dict}["{input_id}"] = {step_id}_{input_id}(wf_context)', tabs))
                     
                     expr = multiline_to_list(input.valueFrom)
                     if len(expr) == 1:
@@ -1168,8 +1187,8 @@ def parse_workflow_step(
             exprs.append(tab("]", 2))
             exprs.append(tab(f'return js_eval(expr, context{js})', 2))
 
-        lines.append(tab(f'tool_context["inputs"] = {step_id}_in'))
-        lines.append(tab(f'if {step_id}_when(tool_context):'))
+        lines.append(tab(f'wf_context["inputs"] = {step_id}_in'))
+        lines.append(tab(f'if {step_id}_when(wf_context):'))
 
     # Parse step context and execution
     subprocess_id = step.subprocess.id.split("#")[-1]
@@ -1179,13 +1198,13 @@ def parse_workflow_step(
         IM.add_from(SDK, "transpose")
         lines.append(tab(f'{step_id}_scattered_out = []', 1 + x))
         lines.append(tab(f'for scattered_inputs in scatterizer({step_id}_in, "input"):', 1 + x))
-        lines.append(tab(f'tool_context["inputs"] = inputs | scattered_inputs', 2 + x))
+        lines.append(tab(f'wf_context["inputs"] = inputs | scattered_inputs', 2 + x))
         lines.extend(parse_valueFrom(True, 2 + x))
         lines.append(tab(f'{step_id}_scattered_out.append({subprocess_id}(scattered_inputs, context))', 2 + x))
         lines.append(tab(f"{step_id}_out = dask.delayed(transpose)({step_id}_scattered_out)", 1 + x))
     else:
         if use_valueFrom:
-            lines.append(tab(f'tool_context["inputs"] = inputs | {step_id}_in'))
+            lines.append(tab(f'wf_context["inputs"] = inputs | {step_id}_in'))
         lines.extend(parse_valueFrom(False, 1 + x))
         lines.append(tab(f'{step_id}_out = {subprocess_id}({step_id}_in, context)', 1 + x))
 
@@ -1303,7 +1322,7 @@ def parse_workflow(wf: Workflow):
 
 
     inputs.append(tab("inputs.update(input_obj)"))
-    inputs.append(tab('tool_context = {"inputs": inputs} | context'))
+    inputs.append(tab('wf_context = {"inputs": inputs} | context'))
     # context_pos = len(inputs)
     inputs.append("")
 
@@ -1319,7 +1338,7 @@ def parse_workflow(wf: Workflow):
     outputs.append(tab("}"))
 
 
-    # # Remove tool_context statement if no expressions are used
+    # # Remove wf_context statement if no expressions are used
     # if len(exprs) == 0:
     #     inputs.pop(context_pos - 1)
     if len(exprs) > 0:

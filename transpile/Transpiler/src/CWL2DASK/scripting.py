@@ -10,10 +10,12 @@ import os
 import shutil
 import yaml
 
+from argparse import ArgumentParser, Namespace
 from dask import delayed
 from glob import glob as globglob
 from itertools import product
 from pathlib import Path
+from uuid import uuid4
 
 from typing import (
     Any,
@@ -28,7 +30,7 @@ from typing import (
 from cwl_utils.parser.cwl_v1_2 import File as CWLFile
 from cwl_utils.parser.cwl_v1_2 import Directory as CWLDirectory
 
-
+    
 @delayed
 def first_non_null(sources: list):
     """
@@ -239,16 +241,6 @@ def glob(pattern: str | list[str]) -> list:
         for p in pattern:
             matches.extend(globglob(p))
     raise TypeError("'pattern' must be 'str' or 'list[str]', but found", type(pattern))
-
-
-# def stage_path(fd: CWLFile | CWLDirectory):
-#     """TODO"""
-
-
-# def stage(
-#         listing: str | list[str],
-#     ) -> None:
-#     """TODO"""
 
 
 class FileObject:
@@ -547,4 +539,85 @@ class DirectoryObject:
                  for k in self.attrs 
                  if hasattr(self, k) and getattr(self, k) is not None]
         return f"DirectoryObject({', '.join(pairs)})"
+
     
+
+def process_cli_args() -> tuple[dict, Namespace]:
+    """
+    
+    """
+    parser = ArgumentParser()
+    parser.add_argument(
+        "input_object",
+        type=str,
+        help="Path to the YAML file that contains the input object to this process."
+    )
+    parser.add_argument(
+        "--outdir",
+        default = os.getcwd(),
+        type = str,
+        help = "Directory to store output files in."
+    )
+    parser.add_argument(
+        "--tmpdir",
+        type = str,
+        default = "/tmp/" + str(uuid4()),
+        help="Directory to store temporary files in."
+    )
+    parser.add_argument(
+        "--leave_tmpdir",
+        action="store_true",
+        default = False,
+        help="Preserve temporary files and directories created for tool execution instead of deleting them."
+    )
+
+    env = {}
+    args = parser.parse_args()
+
+    # Check input object path validity
+    if Path(args.input_object).resolve().is_file():
+            raise FileNotFoundError(f"{args.input_object} does not exist or is not a file")
+
+    # Configure designated output directory
+    out_dir_path = Path(args.outdir).resolve()
+    if out_dir_path.exists() and not out_dir_path.is_dir():
+        raise Exception(f"{out_dir_path} is not a directory")
+    out_dir_path.mkdir(parents=True, exist_ok=True)  # Create out dir if needed
+    env["HOME"] = out_dir_path
+
+    # Configure designated temporary directory
+    tmp_dir_path = Path(args.tmpdir).resolve()
+    if tmp_dir_path.exists() and  not tmp_dir_path.is_dir():
+        raise Exception(f"{tmp_dir_path} is not a directory")
+    if any(tmp_dir_path.iterdir()):
+        raise Exception(f'{tmp_dir_path} must be empty!')
+    tmp_dir_path.mkdir(parents=True, exist_ok=True)  # Create tmp dir if needed
+    env["TMPDIR"] = tmp_dir_path
+    env["LEAVE-TMPDIR"] = args.leave_tmpdir
+
+    env["PATH"] = os.getenv("PATH")
+
+    return load_input_object(args.input_object), env
+
+
+def checkout(env: dict) -> Path:
+    """
+    Create a new temporary directory and set it as the current working 
+    directory. The new directory is created by taking `env["TMPDIR"]` and appending a
+    random uuid generated with `uuid.uuid4()`.
+
+    Returns:
+        `Path` to the new current working directory.
+    """
+    tmp_path = env["TMPDIR"] / uuid4()
+    os.chdir(tmp_path)
+    return tmp_path
+
+
+def initial_workdir_requirement(
+        listing: list[str|FileObject|DirectoryObject|list[FileObject|DirectoryObject]]
+    ) -> None:
+    if not isinstance(listing, list):
+        raise TypeError("Expected 'list' but got", type(listing))
+    cwd = os.getcwd()
+    ...
