@@ -1,5 +1,5 @@
 import dask, subprocess, sys
-from CWL2DASK.scripting import FileObject, glob, js_eval, load_input_object
+from CWL2DASK.scripting import FileObject, glob, initial_work_dir_requirement, js_eval, load_input_object
 from dask.distributed import Client
 
 @dask.delayed
@@ -20,6 +20,12 @@ def losoto_clocktec(input_obj: dict, context: dict) -> dict:
 		"};",
 	]
 
+	def stage_expr_0(context):
+		return js_eval("get_losoto_config('CLOCKTEC').join('\n')", context, js_context)
+	def stage_expr_1(context):
+		return js_eval("inputs.input_h5parm.basename", context, js_context)
+	def stage_expr_2(context):
+		return js_eval("inputs.input_h5parm", context, js_context)
 	def expr_handler_0(context: dict) -> str:
 		return js_eval("inputs.input_h5parm.basename", context, js_context)
 	def stdout_handler(context):
@@ -39,6 +45,19 @@ def losoto_clocktec(input_obj: dict, context: dict) -> dict:
 	inputs = {}
 	inputs.update(input_obj)
 	tool_context = {"inputs": inputs} | context
+
+	# Stage files and directories to the temporary working directory
+	initial_work_dir_requirement([
+		{
+			"entryname": "parset.config",
+			"entry": stage_expr_0(tool_context),
+		},
+		{
+			"entryname": stage_expr_1(tool_context),
+			"entry": stage_expr_2(tool_context),
+			"writable": "True",
+		},
+	])
 
 	# Ready the commandline and execute the tool
 	cmd = [

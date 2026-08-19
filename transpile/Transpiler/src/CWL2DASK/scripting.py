@@ -614,10 +614,151 @@ def checkout(env: dict) -> Path:
     return tmp_path
 
 
-def initial_workdir_requirement(
-        listing: list[str|FileObject|DirectoryObject|list[FileObject|DirectoryObject]]
-    ) -> None:
-    if not isinstance(listing, list):
-        raise TypeError("Expected 'list' but got", type(listing))
-    cwd = os.getcwd()
-    ...
+def initial_work_dir_requirement(listing: list | Mapping | FileObject | DirectoryObject | CWLFile | CWLDirectory | None) -> None:
+    """
+    Stage files and directories from a CWL InitialWorkDirRequirement listing
+    into the current working directory.
+
+    The listing may be either:
+      - a dirent in the form of a dict with keys 'entry' and optional
+        'entryname'
+      - a FileObject or CWLFile
+      - a DirectoryObject or CWLDirectory
+      - None
+      - or a list containing any of the above
+
+    This function normalizes non-list inputs to a list and then proceeds to
+    stage entries into Path.cwd(). Expressions are assumed to have been
+    evaluated by the caller, and iteration proceeds in-order (no reversed
+    popping).
+    """
+    import json
+
+    cwd = Path.cwd()
+
+    # Normalize input to a list
+    if listing is None:
+        return
+    if isinstance(listing, (FileObject, DirectoryObject, CWLFile, CWLDirectory)):
+        listing = [listing]
+    elif isinstance(listing, Mapping):
+        # Single dirent mapping or single File/Directory map
+        listing = [listing]
+    elif not isinstance(listing, list):
+        raise TypeError("'listing' must be a dirent dict, FileObject, DirectoryObject, CWLFile, CWLDirectory, None, or a list of these")
+
+    # Flatten nested lists
+    while any(isinstance(x, list) for x in listing):
+        for idx, item in enumerate(listing.copy()):
+            if isinstance(item, list):
+                # replace the list element with its contents
+                listing[idx:idx+1] = item
+                break
+
+    # Process entries in order. Build a list of items to stage.
+    staged: list = []
+    for l in listing:
+        # Handle dirent mappings (with 'entry')
+        if isinstance(l, Mapping) and "entry" in l:
+            entry = l["entry"]
+            entryname = l.get("entryname", None)
+
+            # null entries do nothing
+            if entry is None:
+                continue
+
+            # If the entry is a list, it may be file literal lines or a list
+            # of files/directories.
+            if isinstance(entry, list) and len(entry) > 0:
+                first = entry[0]
+                if isinstance(first, str):
+                    # file literal: join lines
+                    if entryname is None:
+                        raise Exception("Dirent with file literal must have an entryname")
+                    contents = "\n".join(entry)
+                    entry_path = (cwd / Path(entryname)).resolve()
+                    if os.path.commonpath([str(cwd.resolve()), str(entry_path)]) != str(cwd.resolve()):
+                        raise Exception("Must create file/directory within working folder")
+                    FileObject(entry_path).create(contents)
+                    continue
+                else:
+                    # list of files/directories: add them to staged list
+                    staged.extend(entry)
+                    continue
+
+            # If entry is a mapping describing a File/Directory, or an SDK/CWL
+            # File/Directory object, stage it.
+            if isinstance(entry, Mapping) and "class" in entry:
+                staged.append(entry)
+                continue
+            if isinstance(entry, (FileObject, DirectoryObject, CWLFile, CWLDirectory)):
+                staged.append(entry)
+                continue
+
+            # If entry is a string, treat it as a file literal with single
+            # line content
+            if isinstance(entry, str):
+                if entryname is None:
+                    raise Exception("Dirent with file literal must have an entryname")
+                contents = entry
+                entry_path = (cwd / Path(entryname)).resolve()
+                if os.path.commonpath([str(cwd.resolve()), str(entry_path)]) != str(cwd.resolve()):
+                    raise Exception("Must create file/directory within working folder")
+                FileObject(entry_path).create(contents)
+                continue
+
+            # Otherwise, serialize to JSON and create the file
+            if entryname is None:
+                raise Exception("Dirent with file literal must have an entryname")
+            contents = json.dumps(entry, indent=4)
+            entry_path = (cwd / Path(entryname)).resolve()
+            if os.path.commonpath([str(cwd.resolve()), str(entry_path)]) != str(cwd.resolve()):
+                raise Exception("Must create file/directory within working folder")
+            FileObject(entry_path).create(contents)
+            continue
+
+        # Non-dirent entries are appended for staging
+        staged.append(l)
+
+    # Convert any remaining map-form File/Directory entries to objects
+    for idx, item in enumerate(staged):
+        if isinstance(item, Mapping) and "class" in item:
+            if "File" in item["class"]:
+                staged[idx] = FileObject(item)
+            elif "Directory" in item["class"]:
+                staged[idx] = DirectoryObject(item)
+
+    # Also convert any remaining CWLFile / CWLDirectory entries to SDK objects
+    for idx, item in enumerate(staged):
+        if isinstance(item, CWLFile):
+            staged[idx] = FileObject(item)
+        elif isinstance(item, CWLDirectory):
+            staged[idx] = DirectoryObject(item)
+
+    # Stage remaining FileObject and DirectoryObject entries into cwd
+    for obj in staged:
+        if obj is None:
+            continue
+        if isinstance(obj, FileObject):
+            target = cwd / obj.basename
+            # If source exists, either copy (writable) or link (read-only)
+            if obj.exists():
+                if getattr(obj, "writable", False):
+                    obj.copy(target)
+                else:
+                    obj.link(target)
+            else:
+                # Create a new file at the target path using the object's
+                # contents/attributes
+                obj.rebase(target)
+                obj.create()
+        elif isinstance(obj, DirectoryObject):
+            target = cwd / obj.basename
+            if obj.exists():
+                obj.copy(target)
+            else:
+                obj.rebase(target)
+                obj.create()
+            # Note: DirectoryObject.listing staging is not implemented
+        else:
+            raise Exception(f"Expected 'dict', 'FileObject' or 'DirectoryObject', but found '{type(obj)}'")

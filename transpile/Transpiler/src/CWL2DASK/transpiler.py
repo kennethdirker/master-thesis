@@ -432,18 +432,16 @@ def parse_default(default, cwl_type: CWLType) -> str | list[str]:
         return parse_item(default)
 
 
-def parse_init_workdir_req(
+def parse_init_work_dir_req(
         req,
         exprs: list[str],
         js: list[str]
     ) -> list[str]:
-    # print(tab("InitialWorkdirRequirement is not yet supported, aborting..."))
-    # exit()
     global IM
-    IM.add_from(SDK, "initial_workdir_requirement")
+    IM.add_from(SDK, "initial_work_dir_requirement")
 
     num_exprs = 0
-    def add_expr(expr: list[str]) -> str:
+    def add_expr(expr: list[str], num_exprs) -> str:
         IM.add_from(SDK, "js_eval")
         exprs.append(tab(f"def stage_expr_{num_exprs}(context):"))
         if len(expr) == 1:
@@ -454,34 +452,50 @@ def parse_init_workdir_req(
                 exprs.append(tab(f'"{line}"', 3))
             exprs.append(tab("]", 2))
             exprs.append(tab(f'return js_eval(expr, context{js})', 2))
-        return f"stage_expr_{num_exprs}(tool_context)"
+        func = f"stage_expr_{num_exprs}(tool_context)"
+        return func
 
     lines: list[str] = []
-    lines.extend(comment(tab("# Stage files and directories to the temporary working directory")))
     listing = req.listing
     if isinstance(listing, str):
         # File/Dir(s) come from expression
-        lines.append(tab(f'initial_workdir_requirement({add_expr(listing)}'))
+        lines.append(tab(f'initial_work_dir_requirement({add_expr(listing, num_exprs)}'))
     else:
-        # listing = sorted(req.listing, key=lambda i: str(type(i)))
-        lines.append(tab(f'initial_workdir_requirement(['))
+        lines.append(tab(f'initial_work_dir_requirement(['))
         for e in listing:
             if isinstance(e, str):
                 # File/Dir(s) come from expression
-                lines.append(tab(f'{multiline_to_list(e)},', 2))
+                lines.append(tab(f'{add_expr(e, num_exprs)},', 2))
             elif isinstance(e, Dirent):
                 lines.append(tab('{', 2))
                 if exists(e, "entryname"):
-                    lines.append(tab(f'"entryname": "{e.entryname}",', 3))
+                    if is_expr(e.entryname):
+                        expr = normalize(e.entryname)[2:-1]
+                        expr = [f'"{expr}"']
+                        lines.append(tab(f'"entryname": {add_expr(expr, num_exprs)},', 3))
+                        num_exprs += 1
+                    else:
+                        lines.append(tab(f'"entryname": "{e.entryname}",', 3))
                 if exists(e, "entry"):
                     # Multiline entry scripts are put into lists of
                     # lines to keep it simple.
-                    entry_lines = multiline_to_list(e.entry)
+                    entry_lines = multiline_to_list(e.entry, False)
                     if len(entry_lines) == 1:
-                        lines.append(tab(f'"entry": "{entry_lines[0]}",', 3))
+                        if is_expr(entry_lines[0]):
+                            expr = [f'"{entry_lines[0][2:-1]}"']
+                            lines.append(tab(f'"entry": {add_expr(expr, num_exprs)},', 3))
+                            num_exprs += 1
+                        else:
+                            lines.append(tab(f'"entry": "{entry_lines[0]}",', 3))
                     else:
                         lines.append(tab('"entry": [', 3))
-                        lines.extend([tab(f'"{l}",', 4) for l in entry_lines])
+                        for l in entry_lines:
+                            if is_expr(l):
+                                l = [f'"{normalize(l)[2:-1]}"']
+                                lines.append(tab(f'{add_expr(l, num_exprs)},', 4))
+                                num_exprs += 1
+                            else:
+                                lines.append(tab(f'"{l}",', 4))
                         lines.append(tab('],', 3))
                 if exists(e, "writable"):
                     lines.append(tab(f'"writable": "{e.writable}",', 3))
@@ -503,7 +517,7 @@ def parse_init_workdir_req(
                 lines.append(tab(f'"{k}": "{v}",', 3))
                 lines.append(tab("}),", 2))
         lines.append(tab("])"))
-    return lines
+    return lines  + [""]
 
 
 def parse_js_req(expressionLib):
@@ -1002,12 +1016,12 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
     inputs.append("")
 
     # Insert InitialWorkdirRequirment #TODO activate
-    if "InitialWorkdirRequirment" in requirements:
-        print(tab("InitialWorkdirRequirement parsing is not yet supported!"))
-        # iwr.extend(comment(tab("# Stage files/directories from InitialWorkdirRequirement")))
-        # iwr.extend(parse_init_workdir_req(
-        #                 requirements["InitialWorkdirRequirement"],
-        #                 exprs, js))
+    if "InitialWorkDirRequirement" in requirements:
+        # print(tab("InitialWorkdirRequirement parsing is not yet supported!"))
+        iwr.extend(comment(tab("# Stage files and directories to the temporary working directory")))
+        iwr.extend(parse_init_work_dir_req(
+                        requirements["InitialWorkDirRequirement"],
+                        exprs, js))
 
     # Parse command
     command.extend(comment(tab("# Ready the commandline and execute the tool")))
