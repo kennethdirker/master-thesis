@@ -75,7 +75,7 @@ def process_images(input_obj: dict, context: dict) -> dict:
 	# Gather inputs in their correct format
 	inputs = {}
 	inputs.update(input_obj)
-	tool_context = {"inputs": inputs} | context
+	wf_context = {"inputs": inputs} | context
 
 	# Step ID:    imageplotter
 	# Step label: imageplotter
@@ -92,8 +92,8 @@ def process_images(input_obj: dict, context: dict) -> dict:
 	}
 	noiseremover_scattered_out = []
 	for scattered_inputs in scatterizer(noiseremover_in, "input"):
-		tool_context["inputs"] = inputs | scattered_inputs
-		scattered_inputs["output_file_name"] = noiseremover_output_file_name(tool_context)
+		wf_context["inputs"] = inputs | scattered_inputs
+		scattered_inputs["output_file_name"] = noiseremover_output_file_name(wf_context)
 		noiseremover_scattered_out.append(noiseremover(scattered_inputs, context))
 	noiseremover_out = dask.delayed(transpose)(noiseremover_scattered_out)
 
@@ -127,7 +127,7 @@ def top_process_images(input_obj: dict, context: dict) -> dict:
 	# Gather inputs in their correct format
 	inputs = {}
 	inputs.update(input_obj)
-	tool_context = {"inputs": inputs} | context
+	wf_context = {"inputs": inputs} | context
 
 	# Step ID:    subworkflow
 	# Step label: subworkflow
@@ -149,9 +149,9 @@ def top_process_images(input_obj: dict, context: dict) -> dict:
 	noiseremover_in = {
 		"input": inputs["list_of_fits"],
 	}
-	tool_context["inputs"] = inputs | noiseremover_in
-	noiseremover_in["input"] = noiseremover_input(tool_context | {"self": noiseremover_in["input"]})
-	noiseremover_in["output_file_name"] = noiseremover_output_file_name(tool_context)
+	wf_context["inputs"] = inputs | noiseremover_in
+	noiseremover_in["input"] = noiseremover_input(wf_context | {"self": noiseremover_in["input"]})
+	noiseremover_in["output_file_name"] = noiseremover_output_file_name(wf_context)
 	noiseremover_out = noiseremover(noiseremover_in, context)
 
 	# Step ID:    after_plot_inspect
@@ -160,8 +160,8 @@ def top_process_images(input_obj: dict, context: dict) -> dict:
 		"input_fits": noiseremover_out["output"],
 		"output_image": "top_after_noise_remover.png",
 	}
-	tool_context["inputs"] = inputs | after_plot_inspect_in
-	after_plot_inspect_in["input_fits"] = after_plot_inspect_input_fits(tool_context | {"self": after_plot_inspect_in["input_fits"]})
+	wf_context["inputs"] = inputs | after_plot_inspect_in
+	after_plot_inspect_in["input_fits"] = after_plot_inspect_input_fits(wf_context | {"self": after_plot_inspect_in["input_fits"]})
 	after_plot_inspect_out = imageplotter(after_plot_inspect_in, context)
 
 	# Compute outputs

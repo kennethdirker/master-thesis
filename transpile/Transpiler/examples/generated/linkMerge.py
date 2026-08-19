@@ -75,7 +75,7 @@ def process_images(input_obj: dict, context: dict) -> dict:
 	# Gather inputs in their correct format
 	inputs = {}
 	inputs.update(input_obj)
-	tool_context = {"inputs": inputs} | context
+	wf_context = {"inputs": inputs} | context
 
 	# Step ID:    imageplotter
 	# Step label: imageplotter
@@ -92,8 +92,8 @@ def process_images(input_obj: dict, context: dict) -> dict:
 	}
 	noiseremover_scattered_out = []
 	for scattered_inputs in scatterizer(noiseremover_in, "input"):
-		tool_context["inputs"] = inputs | scattered_inputs
-		scattered_inputs["output_file_name"] = noiseremover_output_file_name(tool_context)
+		wf_context["inputs"] = inputs | scattered_inputs
+		scattered_inputs["output_file_name"] = noiseremover_output_file_name(wf_context)
 		noiseremover_scattered_out.append(noiseremover(scattered_inputs, context))
 	noiseremover_out = dask.delayed(transpose)(noiseremover_scattered_out)
 

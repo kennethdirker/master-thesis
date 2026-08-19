@@ -79,7 +79,7 @@ def process_images(input_obj: dict, context: dict) -> dict:
 	# Gather inputs in their correct format
 	inputs = {}
 	inputs.update(input_obj)
-	tool_context = {"inputs": inputs} | context
+	wf_context = {"inputs": inputs} | context
 
 	# Step ID:    imageplotter
 	# Step label: imageplotter
@@ -87,8 +87,8 @@ def process_images(input_obj: dict, context: dict) -> dict:
 		"input_fits": inputs["fit_list"],
 		"output_image": "before_noise_remover.png",
 	}
-	tool_context["inputs"] = imageplotter_in
-	if imageplotter_when(tool_context):
+	wf_context["inputs"] = imageplotter_in
+	if imageplotter_when(wf_context):
 		imageplotter_out = imageplotter(imageplotter_in, context)
 	else:
 		imageplotter_out = {
@@ -100,12 +100,12 @@ def process_images(input_obj: dict, context: dict) -> dict:
 	noiseremover_in = {
 		"input": inputs["fit_list"],
 	}
-	tool_context["inputs"] = noiseremover_in
-	if noiseremover_when(tool_context):
+	wf_context["inputs"] = noiseremover_in
+	if noiseremover_when(wf_context):
 		noiseremover_scattered_out = []
 		for scattered_inputs in scatterizer(noiseremover_in, "input"):
-			tool_context["inputs"] = inputs | scattered_inputs
-			scattered_inputs["output_file_name"] = noiseremover_output_file_name(tool_context)
+			wf_context["inputs"] = inputs | scattered_inputs
+			scattered_inputs["output_file_name"] = noiseremover_output_file_name(wf_context)
 			noiseremover_scattered_out.append(noiseremover(scattered_inputs, context))
 		noiseremover_out = dask.delayed(transpose)(noiseremover_scattered_out)
 	else:

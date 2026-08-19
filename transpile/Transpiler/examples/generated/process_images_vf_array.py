@@ -41,7 +41,7 @@ def process_images_vf_array(input_obj: dict, context: dict) -> dict:
 	# Gather inputs in their correct format
 	inputs = {}
 	inputs.update(input_obj)
-	tool_context = {"inputs": inputs} | context
+	wf_context = {"inputs": inputs} | context
 
 	# Step ID:    imageplotter
 	# Step label: imageplotter
