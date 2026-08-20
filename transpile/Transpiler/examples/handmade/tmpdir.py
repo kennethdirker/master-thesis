@@ -139,7 +139,8 @@ def main():
 
 	# Submit to DASK
 	result = client.compute(process_images(input_obj, {}, env)).result()
-	print(*[f"{k}: {v}" for k, v in result.items()], sep="\n")
+	# print(*[f"{k}: {v}" for k, v in result.items()], sep="\n")
+	print(publish_output(result))
 
 if __name__ == "__main__":
 	main()
