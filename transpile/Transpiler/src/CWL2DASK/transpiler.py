@@ -181,9 +181,10 @@ class ImportManager:
 
         self.add("dask")
         self.add("subprocess")
-        self.add("sys")
         self.add_from("dask.distributed", "Client")
-        self.add_from(SDK, "load_input_object")
+        self.add_from(SDK, "process_cli_args")
+        self.add_from(SDK, "checkout")
+        self.add_from(SDK, "publish_output")
 
     def add(self, module):
         self.imports.add(module)
@@ -197,8 +198,15 @@ class ImportManager:
     def get_lines(self) -> list[str]:
         # Generate and return the import statements
         ls = ["import " + ', '.join(sorted(self.imports))]
-        ls.extend([f"from {k} import {', '.join(sorted(v))}" 
-                    for k, v in sorted(self.from_imports.items())])
+        sorted_from_imports = sorted(self.from_imports.items())
+        for k, v in sorted_from_imports:
+            if len(v) < 4:
+                ls.append(f'from {k} import {", ".join(sorted(v))}')
+                ls.append("")
+            else:
+                ls.append(f"from {k} import (")
+                ls.append(',\n\t'.join(sorted(v)))
+                ls.append(")")
         ls.append("")
         return ls
     
@@ -661,7 +669,6 @@ def parse_commandline(
                     arg = f'"{arg}"'
                 ordered_items.append((0, i, arg, False, None, var_cast))
             elif isinstance(arg, CommandLineBinding):
-                # valueFrom = normalize(arg.valueFrom)
                 if is_expr(arg.valueFrom):
                     var_cast = True
                     valueFrom = add_expr_function(multiline_to_list(arg.valueFrom), n_func)
@@ -863,7 +870,7 @@ def parse_run(
             var = requirements["EnvVarRequirement"].envDef[0]
             envValue = envVar_handler(var)
             lines.append(tab(f'env = {{"{var.envName}": {envValue}}}'))
-        run_lines.append("env=env")
+        # run_lines.append("env=env")
 
     # If there are optional command-line arguments, we need to filter for None
     if any([CWLType(i.type_).optional for i in tool.inputs]):
@@ -871,11 +878,12 @@ def parse_run(
 
     lines.append(tab('print("Running:",  *cmd)'))
     if len(run_lines) == 0:
-        return lines + [tab("subprocess.run(cmd)")] + clean_up
+        return lines + [tab("subprocess.run(cmd, env=env)")] + clean_up
     else:
         return lines + [
             tab("subprocess.run("),
             tab("args=cmd,", 2),
+            tab("env=env,", 2),
             *[tab(f'{l},', 2) for l in run_lines],
             tab(")"),
         ] + clean_up
@@ -977,7 +985,7 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
         raise Exception(f"CWL file {tool_id} misses an ID, which is required!")
     
     header.append('@dask.delayed')
-    header.append(f'def {tool_id}(input_obj: dict, context: dict) -> dict:')
+    header.append(f'def {tool_id}(input_obj: dict, context: dict, env: dict) -> dict:')
     
     # Metadata
     header.append(tab('"""'))
@@ -985,6 +993,10 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
     if exists(tool, "label"):
         header.append(tab('label: ' + tool.label))
     header.append(tab('"""'))
+
+    header.extend(comment(tab("# Create a clean temporary working directory for this tool and switch to it")))
+    header.append(tab("checkout(env)"))
+    header.append("")
 
     # Insert InlineJavascriptRequirement before expression functions so we can
     # omit access the code without providing it via function parameters.
@@ -1214,13 +1226,13 @@ def parse_workflow_step(
         lines.append(tab(f'for scattered_inputs in scatterizer({step_id}_in, "input"):', 1 + x))
         lines.append(tab(f'wf_context["inputs"] = inputs | scattered_inputs', 2 + x))
         lines.extend(parse_valueFrom(True, 2 + x))
-        lines.append(tab(f'{step_id}_scattered_out.append({subprocess_id}(scattered_inputs, context))', 2 + x))
+        lines.append(tab(f'{step_id}_scattered_out.append({subprocess_id}(scattered_inputs, context, env))', 2 + x))
         lines.append(tab(f"{step_id}_out = dask.delayed(transpose)({step_id}_scattered_out)", 1 + x))
     else:
         if use_valueFrom:
             lines.append(tab(f'wf_context["inputs"] = inputs | {step_id}_in'))
         lines.extend(parse_valueFrom(False, 1 + x))
-        lines.append(tab(f'{step_id}_out = {subprocess_id}({step_id}_in, context)', 1 + x))
+        lines.append(tab(f'{step_id}_out = {subprocess_id}({step_id}_in, context, env)', 1 + x))
 
     # Parse when null results
     if x == 1:
@@ -1301,7 +1313,7 @@ def parse_workflow(wf: Workflow):
     # header
     wf_id = wf.id.split("#")[-1]
     # header.append('@dask.delayed')
-    header.append(f'def {wf_id}(input_obj: dict, context: dict) -> dict:')
+    header.append(f'def {wf_id}(input_obj: dict, context: dict, env: dict) -> dict:')
     
     # Metadata
     header.append(tab('"""'))
@@ -1367,6 +1379,10 @@ def parse_main(main_id: str) -> list[str]:
     """
     ls: list[str] = ["def main():"]
 
+    ls.extend(comment(tab("# Process program parameters")))
+    ls.append(tab('input_obj, env = process_cli_args()'))
+    ls.append("")
+
     # Write DASK client initialization
     ls.extend(comment(tab("# Initialize cluster")))
     if SLURM:
@@ -1387,15 +1403,16 @@ def parse_main(main_id: str) -> list[str]:
         ls.append(tab("client = Client()"))
 
     ls.append("")
-    ls.extend(comment(tab("# Convert input YAML to dict")))
-    ls.append(tab('input_obj = load_input_object(sys.argv[1])'))
-    ls.append("")
-    ls.extend(comment(tab("# Initialize CWL context")))
-    ls.append(tab("context = {}"))
-    ls.append("")
+    # ls.extend(comment(tab("# Convert input YAML to dict")))
+    # ls.append(tab('input_obj = load_input_object(sys.argv[1])'))
+    # ls.append("")
+    # ls.extend(comment(tab("# Initialize CWL context")))
+    # ls.append(tab("context = {}"))
+    # ls.append("")
     ls.extend(comment(tab("# Submit to DASK")))
-    ls.append(tab(f"result = client.compute({main_id}(input_obj, context)).result()"))
-    ls.append(tab('print(*[f"{k}: {v}" for k, v in result.items()], sep="\\n")'))
+    ls.append(tab(f"result = client.compute({main_id}(input_obj, {{}}, env)).result()"))
+    # ls.append(tab('print(*[f"{k}: {v}" for k, v in result.items()], sep="\\n")'))
+    ls.append(tab('print(publish_output(result))'))
     ls.append("")
     ls.append('if __name__ == "__main__":')
     ls.append(tab("main()"))

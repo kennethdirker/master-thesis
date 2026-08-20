@@ -1,12 +1,22 @@
-import dask, subprocess, sys
-from CWL2DASK.scripting import FileObject, glob, load_input_object
+import dask, subprocess
+from CWL2DASK.scripting import (
+FileObject,
+	checkout,
+	glob,
+	process_cli_args,
+	publish_output
+)
 from dask.distributed import Client
 
+
 @dask.delayed
-def hostname(input_obj: dict, context: dict) -> dict:
+def hostname(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
+	# Create a clean temporary working directory for this tool and switch to it
+	checkout(env)
+
 	def outputs_hostname(context):
 		return FileObject(glob("hostname.txt")[0])
 
@@ -21,6 +31,7 @@ def hostname(input_obj: dict, context: dict) -> dict:
 	print("Running:",  *cmd)
 	subprocess.run(
 		args=cmd,
+		env=env,
 		stdout=stdout,
 	)
 	stdout.close()
@@ -32,18 +43,15 @@ def hostname(input_obj: dict, context: dict) -> dict:
 
 
 def main():
+	# Process program parameters
+	input_obj, env = process_cli_args()
+
 	# Initialize cluster
 	client = Client()
 
-	# Convert input YAML to dict
-	input_obj = load_input_object(sys.argv[1])
-
-	# Initialize CWL context
-	context = {}
-
 	# Submit to DASK
-	result = client.compute(hostname(input_obj, context)).result()
-	print(*[f"{k}: {v}" for k, v in result.items()], sep="\n")
+	result = client.compute(hostname(input_obj, {}, env)).result()
+	print(publish_output(result))
 
 if __name__ == "__main__":
 	main()

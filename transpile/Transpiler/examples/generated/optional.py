@@ -1,13 +1,24 @@
-import dask, subprocess, sys
-from CWL2DASK.scripting import FileObject, glob, js_eval, load_input_object
+import dask, subprocess
+from CWL2DASK.scripting import (
+FileObject,
+	checkout,
+	glob,
+	js_eval,
+	process_cli_args,
+	publish_output
+)
 from dask.distributed import Client
 
+
 @dask.delayed
-def imageplotter(input_obj: dict, context: dict) -> dict:
+def imageplotter(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	label: imageplotter
 	"""
+	# Create a clean temporary working directory for this tool and switch to it
+	checkout(env)
+
 	def outputs_output(context):
 		pattern = js_eval("inputs.output_image", context)
 		return FileObject(glob(pattern)[0])
@@ -28,7 +39,7 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
 	]
 	cmd = [x for x in cmd if x]
 	print("Running:",  *cmd)
-	subprocess.run(cmd)
+	subprocess.run(cmd, env=env)
 
 	# Collect and generate outputs
 	return {
@@ -37,18 +48,15 @@ def imageplotter(input_obj: dict, context: dict) -> dict:
 
 
 def main():
+	# Process program parameters
+	input_obj, env = process_cli_args()
+
 	# Initialize cluster
 	client = Client()
 
-	# Convert input YAML to dict
-	input_obj = load_input_object(sys.argv[1])
-
-	# Initialize CWL context
-	context = {}
-
 	# Submit to DASK
-	result = client.compute(imageplotter(input_obj, context)).result()
-	print(*[f"{k}: {v}" for k, v in result.items()], sep="\n")
+	result = client.compute(imageplotter(input_obj, {}, env)).result()
+	print(publish_output(result))
 
 if __name__ == "__main__":
 	main()
