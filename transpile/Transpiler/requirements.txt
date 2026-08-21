@@ -4,6 +4,6 @@ dask
 distributed
 dask-jobqueue
 Js2Py==0.74
-matplotlib==3.11.0
+matplotlib==3.10.9
 numpy
 PyYAML==6.0.3

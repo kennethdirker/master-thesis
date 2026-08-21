@@ -59,7 +59,6 @@ from cwl_utils.parser.cwl_v1_2 import (
 
 # SDK Module name
 SDK = "CWL2DASK.scripting"
-from CWL2DASK.scripting import FileObject, DirectoryObject
 
 # Whether to use the default Dask Client or jobqueue SLURM client
 SLURM = False
@@ -184,7 +183,7 @@ class ImportManager:
         self.add_from("dask.distributed", "Client")
         self.add_from(SDK, "process_cli_args")
         self.add_from(SDK, "checkout")
-        self.add_from(SDK, "publish_output")
+        self.add_from(SDK, "finalize")
 
     def add(self, module):
         self.imports.add(module)
@@ -205,7 +204,8 @@ class ImportManager:
                 ls.append("")
             else:
                 ls.append(f"from {k} import (")
-                ls.append(',\n\t'.join(sorted(v)))
+                for i in sorted(v):
+                    ls.append(tab(f'{i},'))
                 ls.append(")")
         ls.append("")
         return ls
@@ -1380,7 +1380,7 @@ def parse_main(main_id: str) -> list[str]:
     ls: list[str] = ["def main():"]
 
     ls.extend(comment(tab("# Process program parameters")))
-    ls.append(tab('input_obj, env = process_cli_args()'))
+    ls.append(tab('input_obj, env, preserve_tmpdir = process_cli_args()'))
     ls.append("")
 
     # Write DASK client initialization
@@ -1412,7 +1412,7 @@ def parse_main(main_id: str) -> list[str]:
     ls.extend(comment(tab("# Submit to DASK")))
     ls.append(tab(f"result = client.compute({main_id}(input_obj, {{}}, env)).result()"))
     # ls.append(tab('print(*[f"{k}: {v}" for k, v in result.items()], sep="\\n")'))
-    ls.append(tab('print(publish_output(result))'))
+    ls.append(tab('print(finalize(result, env, preserve_tmpdir))'))
     ls.append("")
     ls.append('if __name__ == "__main__":')
     ls.append(tab("main()"))

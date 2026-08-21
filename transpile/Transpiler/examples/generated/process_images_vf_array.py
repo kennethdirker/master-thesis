@@ -1,11 +1,11 @@
 import dask, subprocess
 from CWL2DASK.scripting import (
-FileObject,
+	FileObject,
 	checkout,
+	finalize,
 	glob,
 	js_eval,
 	process_cli_args,
-	publish_output
 )
 from dask.distributed import Client
 
@@ -74,14 +74,14 @@ def process_images_vf_array(input_obj: dict, context: dict, env: dict) -> dict:
 
 def main():
 	# Process program parameters
-	input_obj, env = process_cli_args()
+	input_obj, env, preserve_tmpdir = process_cli_args()
 
 	# Initialize cluster
 	client = Client()
 
 	# Submit to DASK
 	result = client.compute(process_images_vf_array(input_obj, {}, env)).result()
-	print(publish_output(result))
+	print(finalize(result, env, preserve_tmpdir))
 
 if __name__ == "__main__":
 	main()

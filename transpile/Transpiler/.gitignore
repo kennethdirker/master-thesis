@@ -1,0 +1,5 @@
+*.fits
+test.py
+.astropy
+.config
+.cache

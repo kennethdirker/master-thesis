@@ -9,6 +9,7 @@ import js2py
 import json
 import os
 import shutil
+import sys
 import yaml
 
 from argparse import ArgumentParser, Namespace
@@ -543,7 +544,7 @@ class DirectoryObject:
 
     
 
-def process_cli_args() -> tuple[dict, Namespace]:
+def process_cli_args() -> tuple[dict, dict[str, str], bool]:
     """
     
     """
@@ -576,7 +577,7 @@ def process_cli_args() -> tuple[dict, Namespace]:
     args = parser.parse_args()
 
     # Check input object path validity
-    if Path(args.input_object).resolve().is_file():
+    if not Path(args.input_object).resolve().is_file():
             raise FileNotFoundError(f"{args.input_object} does not exist or is not a file")
 
     # Configure designated output directory
@@ -584,21 +585,26 @@ def process_cli_args() -> tuple[dict, Namespace]:
     if out_dir_path.exists() and not out_dir_path.is_dir():
         raise Exception(f"{out_dir_path} is not a directory")
     out_dir_path.mkdir(parents=True, exist_ok=True)  # Create out dir if needed
-    env["HOME"] = out_dir_path
+    env["HOME"] = str(out_dir_path)
+    # env["HOME"] = out_dir_path
 
     # Configure designated temporary directory
     tmp_dir_path = Path(args.tmpdir).resolve()
-    if tmp_dir_path.exists() and  not tmp_dir_path.is_dir():
+    if tmp_dir_path.exists() and not tmp_dir_path.is_dir():
         raise Exception(f"{tmp_dir_path} is not a directory")
-    if any(tmp_dir_path.iterdir()):
+    if tmp_dir_path.exists() and any(tmp_dir_path.iterdir()):
         raise Exception(f'{tmp_dir_path} must be empty!')
     tmp_dir_path.mkdir(parents=True, exist_ok=True)  # Create tmp dir if needed
-    env["TMPDIR"] = tmp_dir_path
-    env["LEAVE-TMPDIR"] = args.leave_tmpdir
+    env["TMPDIR"] = str(tmp_dir_path)
+    # env["TMPDIR"] = tmp_dir_path
 
-    env["PATH"] = os.getenv("PATH")
+    env["PATH"] = os.getenv("VIRTUAL_ENV") + "/bin:" + os.getenv("PATH")
+    # env["PYTHONPATH"] = sys.executable + ":" + env["PATH"]
+    env["VIRTUAL_ENV"] = os.getenv("VIRTUAL_ENV")
+    # print(os.getenv("VIRTUAL_ENV"))
+    # exit()
 
-    return load_input_object(args.input_object), env
+    return load_input_object(args.input_object), env, args.leave_tmpdir
 
 
 def checkout(env: dict) -> Path:
@@ -610,8 +616,12 @@ def checkout(env: dict) -> Path:
     Returns:
         `Path` to the new current working directory.
     """
-    tmp_path = env["TMPDIR"] / uuid4()
+    tmp_path: Path = Path(env["TMPDIR"]) / str(uuid4())
+    tmp_path.mkdir()
     os.chdir(tmp_path)
+
+    # TODO Adjust PATH and return env?
+
     return tmp_path
 
 
@@ -764,10 +774,10 @@ def initial_work_dir_requirement(listing: list | Mapping | FileObject | Director
         else:
             raise Exception(f"Expected 'dict', 'FileObject' or 'DirectoryObject', but found '{type(obj)}'")
 
-def publish_output(
-        self, 
+def finalize(
         outputs: dict[str, Any],
         env: dict,
+        preserve_tmpdir: bool,
         verbose: bool = False
     ) -> str:
     """
@@ -795,8 +805,10 @@ def publish_output(
                 if verbose:
                     print(f"[PROCESS]:\t- {id}: {old_path} >> {new_path}")
                 old_path = Path(o.path)
-                new_path = shutil.move(old_path, env["OUTDIR"])
+                new_path = shutil.move(old_path, env["HOME"])
                 o.rebase(new_path)
+                o = str(o)
             new_outputs[id] = o
-
+    if not preserve_tmpdir:
+        shutil.rmtree(env["TMPDIR"])
     return json.dumps(new_outputs, indent = 4)
