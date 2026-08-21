@@ -9,7 +9,7 @@ import js2py
 import json
 import os
 import shutil
-import sys
+import stat
 import yaml
 
 from argparse import ArgumentParser, Namespace
@@ -393,6 +393,7 @@ class FileObject:
                 #     self.contents = contents
             elif hasattr(self, "contents"):
                 f.write(self.contents)
+            os.chmod(self.path, os.stat(self.path).st_mode | stat.S_IEXEC)
 
     def load_contents(self):
         with open(self.path) as f:
@@ -610,17 +611,17 @@ def process_cli_args() -> tuple[dict, dict[str, str], bool]:
 def checkout(env: dict) -> Path:
     """
     Create a new temporary directory and set it as the current working 
-    directory. The new directory is created by taking `env["TMPDIR"]` and appending a
-    random uuid generated with `uuid.uuid4()`.
+    directory. The new directory is created by taking `env["TMPDIR"]` and 
+    appending a random uuid generated with `uuid.uuid4()`. `env["PATH"]` is
+    prepended with the new path.
 
     Returns:
         `Path` to the new current working directory.
     """
     tmp_path: Path = Path(env["TMPDIR"]) / str(uuid4())
+    env["PATH"] = str(tmp_path) + ":" + env["PATH"]
     tmp_path.mkdir()
     os.chdir(tmp_path)
-
-    # TODO Adjust PATH and return env?
 
     return tmp_path
 
