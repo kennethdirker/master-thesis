@@ -19,7 +19,7 @@ def InitialWorkDirRequirement(input_obj: dict, context: dict, env: dict) -> dict
 	checkout(env)
 
 	def stage_expr_0(context):
-		return js_eval("'MSG=\"\${PREFIX} ' + inputs.message + '\"'", context)
+		return js_eval("'MSG=\"${PREFIX} ' + inputs.message + '\"'", context)
 	def stage_expr_1(context):
 		return js_eval("inputs.stage", context)
 
@@ -37,7 +37,7 @@ def InitialWorkDirRequirement(input_obj: dict, context: dict, env: dict) -> dict
 			"entry": [
 				"PREFIX='Message is:'",
 				stage_expr_0(tool_context),
-				"echo \${MSG}",
+				"echo ${MSG}",
 			],
 		},
 		{
@@ -46,15 +46,18 @@ def InitialWorkDirRequirement(input_obj: dict, context: dict, env: dict) -> dict
 	])
 
 	# Ready the commandline and execute the tool
-	cmd = [
-		'sh',
-		'example.sh',
-		';',
-		'cat',
-		'InitialWorkDirRequirement.yaml',
-	]
+	cmd = [' \
+		"example.sh" \
+		";" \
+		"cat" \
+		"InitialWorkDirRequirement.yaml" \
+	']
 	print("Running:",  *cmd)
-	subprocess.run(cmd, env=env)
+	subprocess.run(
+		args=cmd,
+		env=env,
+		shell=True,
+	)
 
 	# Collect and generate outputs
 	return {

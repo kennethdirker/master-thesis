@@ -68,7 +68,7 @@ def imageplotter(input_obj: dict, context: dict, env: dict) -> dict:
 	cmd = [
 		'python',
 		'/home/kennethdirker/Leiden/2024-2025/Thesis/transpile/Transpiler/examples/cwl/scripts/imageplotter.py',
-		*[str(v) for v in inputs["input_fits"]],
+		*[str(x) for x in inputs["input_fits"]],
 		str(inputs["output_image"]),
 	]
 	print("Running:",  *cmd)

@@ -2,7 +2,16 @@
 cwlVersion: v1.2
 class: CommandLineTool
 id: InitialWorkDirRequirement
-baseCommand: ["sh", "example.sh", ";", "cat", "InitialWorkDirRequirement.yaml"]
+baseCommand: ["example.sh"]
+arguments:
+  - valueFrom: ;
+    shellQuote: false
+  - cat
+  - InitialWorkDirRequirement.yaml
+
+  # CWL needs to cover special characters, we dont
+  # MSG="\${PREFIX} $(inputs.message)"
+  # echo \${MSG}
 
 requirements:
   ShellCommandRequirement: {}
@@ -11,8 +20,8 @@ requirements:
       - entryname: example.sh
         entry: |-
           PREFIX='Message is:'
-          MSG="\${PREFIX} $(inputs.message)"
-          echo \${MSG}
+          MSG="${PREFIX} $(inputs.message)"
+          echo ${MSG}
       - entry: $(inputs.stage)
 
 inputs:

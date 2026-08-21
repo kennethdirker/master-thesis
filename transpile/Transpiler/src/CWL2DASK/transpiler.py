@@ -587,7 +587,8 @@ def parse_process_input_parameter(input: CommandInputParameter) -> list[str]:
 def parse_commandline(
         tool: CommandLineTool, 
         exprs: list[str],
-        js: str
+        js: str,
+        requirements: dict
     ) -> list[str]:
     """
     Generate a Python list that holds the commandline-building statements for 
@@ -614,41 +615,52 @@ def parse_commandline(
     def compose_cmd_arg(
             value_or_expr: str,
             is_array: bool,
-            binding: Optional[CommandLineBinding] = None,
-            var_cast: bool = False,
-        ) -> str:
+            binding: Optional[CommandLineBinding],
+            var_cast: bool,
+            shell: bool
+        ) -> list[str]:
         prefix = getattr(binding, "prefix", "")
         separate = getattr(binding, "separate", True)
         itemSeparator = getattr(binding, "itemSeparator", None)
+
+        # All args need to be quoted if ShellCommandRequirment is used and the
+        # inputBinding contains shellQuote = False.
+        quote = shell and getattr(binding, "shellQuote", True)
+
+        # arg = []
+        arg: list[tuple[str, bool]]
         if is_array:
             if itemSeparator:
                 if prefix and separate:         # -i= A,B,C
-                    arg = f'"{prefix}", '
-                    arg += f'{itemSeparator}.join(str(x) for x in {value_or_expr})'
+                    arg = [(prefix, quote)]
+                    arg.append((f'{itemSeparator}.join(str(x) for x in {value_or_expr})', quote))
                 elif prefix and not separate:   # -i=A,B,C
-                    arg = f'"{prefix}"'
-                    arg += f'{itemSeparator}.join(str(x) for x in {value_or_expr})'
+                    s = f'{prefix}{itemSeparator}.join(str(x) for x in {value_or_expr})'
+                    arg = [(s, quote)]
                 else:                           # A,B,C
-                    arg = f'{itemSeparator}.join(str(x) for x in {value_or_expr})' 
+                    arg = [(f'{itemSeparator}.join(str(x) for x in {value_or_expr})', quote)]
             else:
                 if prefix and separate:         # -i= A B C
-                    arg = f'"{prefix}", '
-                    arg += f'*[str(v) for v in {value_or_expr}]'
+                    arg = [(prefix, quote)]
+                    arg.append((f'*[str(x) for x in {value_or_expr}]', quote))
                 if prefix and not separate:     # -i=A -i=B -i=C
-                    arg = f'*["{prefix}" + str(v) for v in {value_or_expr}]'
+                    arg = [(f'*["{prefix}" + str(x) for x in {value_or_expr}]', quote)]
                 else:                           # A B C
-                    arg = f'*[str(v) for v in {value_or_expr}]'
+                    arg = [(f'*[str(x) for x in {value_or_expr}]', quote)]
         else:
             if prefix:
                 if separate:
                     if var_cast:
-                        arg = f'"{prefix}", str({value_or_expr})'
+                        arg = [(prefix, quote), (f'str({value_or_expr})', quote)]
                     else:
-                        arg = f'"{prefix}", {value_or_expr}'
+                        arg = [(prefix, quote), (f'{value_or_expr}', quote)]
                 else:
-                    arg = f'"{prefix}" + {value_or_expr}'
+                    arg = [(f'"{prefix}" + {value_or_expr}', quote)]
             else:
-                arg = f'str({value_or_expr})' if var_cast else value_or_expr
+                if var_cast:
+                    arg = [(f'str({value_or_expr})', False)]
+                else:
+                    arg = [(value_or_expr, False)]
         return arg
 
     # Each tuple stores:
@@ -708,30 +720,57 @@ def parse_commandline(
                 value_or_expr = f'"{valueFrom}"'
         ordered_items.append((pos, len(ordered_items), value_or_expr, t.is_array, binding, var_cast))
 
+    shell = False
+    if "ShellCommandRequirement" in requirements:
+        shell = requirements["ShellCommandRequirement"]
+
     # Both the inputs with an inputBinding as well as the tool arguments are
     # sorted, prefixed with the baseCommand to produce the final command.
     command_items: list[str] = []
     if exists(tool, "baseCommand"):
         baseCommand = tool.baseCommand
         if isinstance(baseCommand, str):
-            command_items.append(f"'{baseCommand}'")
+            # if shell:
+            if shell:
+                command_items.append((f'{baseCommand}', True))
+            else:
+                command_items.append((f"'{baseCommand}'", True))
         elif isinstance(baseCommand, list):
-            command_items.extend([f"'{s}'"  for s in baseCommand])
+            if shell:
+                command_items.extend([(f'{s}', True)  for s in baseCommand])
+            else:
+                command_items.extend([(f"'{s}'", True)  for s in baseCommand])
         else:
             raise TypeError(f"Unsupported baseCommand type: {type(baseCommand)}")
     
     # Sort and apply the commandline bindings from arguments/inputs
     ordered_items.sort(key=lambda item: (item[0], item[1]))
     for _, _, value_or_expr, is_array, binding, var_cast in ordered_items:
-        command_items.append(compose_cmd_arg(value_or_expr, is_array, binding, var_cast))
+        command_items.extend(compose_cmd_arg(value_or_expr, is_array, binding,
+                                             var_cast, shell))
+    lines: list[str]
 
-    if len(command_items) > 1:
-        lines = [tab("cmd = [")]
-        for item in command_items:
-            lines.append(tab(f"{item},", 2))
-        lines.append(tab("]"))
+    if len(command_items) == 1:
+        item, quote = command_items[0]
+        if shell and quote:
+            lines = [tab(f'cmd = ["{item}"]')]
+        else:
+            lines = [tab(f'cmd = [{item}]')]
+        return lines 
+
+    if shell:
+        lines = [tab("cmd = [' \\")]
+        for item, quote in command_items:
+            if quote:
+                lines.append(tab(f'"{item}" \\', 2))
+            else:
+                lines.append(tab(f'{item} \\', 2))
+        lines.append(tab("']"))
     else:
-        lines = [tab(f'cmd = [{command_items[0]}]')]
+        lines = [tab('cmd = [')]
+        for item, _ in command_items:
+            lines.append(tab(f'{item},', 2))
+        lines.append(tab(']'))
     return lines
 
 
@@ -871,6 +910,10 @@ def parse_run(
             envValue = envVar_handler(var)
             lines.append(tab(f'env = {{"{var.envName}": {envValue}}}'))
         # run_lines.append("env=env")
+
+    # Parse ShellCommandRequirement
+    if "ShellCommandRequirement" in requirements:
+        run_lines.append("shell=True")
 
     # If there are optional command-line arguments, we need to filter for None
     if any([CWLType(i.type_).optional for i in tool.inputs]):
@@ -1037,7 +1080,7 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
 
     # Parse command
     command.extend(comment(tab("# Ready the commandline and execute the tool")))
-    command.extend(parse_commandline(tool, exprs, js))
+    command.extend(parse_commandline(tool, exprs, js, requirements))
     command.extend(parse_run(tool, requirements, exprs, js))
     command.append("")
 
