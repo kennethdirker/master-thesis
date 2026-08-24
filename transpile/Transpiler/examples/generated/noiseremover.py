@@ -11,7 +11,7 @@ from dask.distributed import Client
 
 
 @dask.delayed
-def noiseremover(input_obj: dict, context: dict, env: dict) -> dict:
+def _noiseremover(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	label: noiseremover
@@ -52,7 +52,7 @@ def main():
 	client = Client()
 
 	# Submit to DASK
-	result = client.compute(noiseremover(input_obj, {}, env)).result()
+	result = client.compute(_noiseremover(input_obj, {}, env)).result()
 	print(finalize(result, env, preserve_tmpdir))
 
 if __name__ == "__main__":

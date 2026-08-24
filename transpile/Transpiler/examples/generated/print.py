@@ -11,7 +11,7 @@ from dask.distributed import Client
 
 
 @dask.delayed
-def print(input_obj: dict, context: dict, env: dict) -> dict:
+def _print(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
@@ -59,7 +59,7 @@ def main():
 	client = Client()
 
 	# Submit to DASK
-	result = client.compute(print(input_obj, {}, env)).result()
+	result = client.compute(_print(input_obj, {}, env)).result()
 	print(finalize(result, env, preserve_tmpdir))
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ from dask.distributed import Client
 
 
 @dask.delayed
-def env(input_obj: dict, context: dict, env: dict) -> dict:
+def _env(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
@@ -19,7 +19,7 @@ def env(input_obj: dict, context: dict, env: dict) -> dict:
 	checkout(env)
 
 	def env_HELLO(context):
-		return js_eval(inputs.message, context)
+		return js_eval("inputs.message", context)
 	def outputs_example_out(context):
 		return FileObject(glob("output.txt")[0])
 
@@ -54,7 +54,7 @@ def main():
 	client = Client()
 
 	# Submit to DASK
-	result = client.compute(env(input_obj, {}, env)).result()
+	result = client.compute(_env(input_obj, {}, env)).result()
 	print(finalize(result, env, preserve_tmpdir))
 
 if __name__ == "__main__":

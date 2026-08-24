@@ -822,7 +822,7 @@ def parse_run(
             envValue = multiline_to_list(envValue)
             exprs.append(tab(f'def env_{var.envName}(context):'))
             if len(envValue) == 1:
-                exprs.append(tab(f'return js_eval({envValue[0]}, context{js})', 2))
+                exprs.append(tab(f'return js_eval("{envValue[0]}", context{js})', 2))
             else:
                 exprs.append(tab("expr = [", 2))
                 for line in envValue:
@@ -1028,7 +1028,8 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
         raise Exception(f"CWL file {tool_id} misses an ID, which is required!")
     
     header.append('@dask.delayed')
-    header.append(f'def {tool_id}(input_obj: dict, context: dict, env: dict) -> dict:')
+    # Prepend function name with underscore '_' to reduce keyword overrides
+    header.append(f'def _{tool_id}(input_obj: dict, context: dict, env: dict) -> dict:')
     
     # Metadata
     header.append(tab('"""'))
@@ -1260,7 +1261,8 @@ def parse_workflow_step(
         lines.append(tab(f'if {step_id}_when(wf_context):'))
 
     # Parse step context and execution
-    subprocess_id = step.subprocess.id.split("#")[-1]
+    # Prepend function name with underscore '_' to reduce keyword overrides
+    subprocess_id = '_' + step.subprocess.id.split("#")[-1]
     use_valueFrom = any(exists(i, "valueFrom") for i in step.in_)
     if exists(step, "scatter"):
         IM.add_from(SDK, "scatterizer")
@@ -1356,7 +1358,8 @@ def parse_workflow(wf: Workflow):
     # header
     wf_id = wf.id.split("#")[-1]
     # header.append('@dask.delayed')
-    header.append(f'def {wf_id}(input_obj: dict, context: dict, env: dict) -> dict:')
+    # Prepend function name with underscore '_' to reduce keyword overrides
+    header.append(f'def _{wf_id}(input_obj: dict, context: dict, env: dict) -> dict:')
     
     # Metadata
     header.append(tab('"""'))
@@ -1484,7 +1487,8 @@ def parse_cwl(cwl_path):
         body_lines.append("")
         body_lines.append("")
 
-    main_id = processes[cwl_path].id.split("#")[-1]
+    # Prepend function names with underscore '_'
+    main_id = "_" + processes[cwl_path].id.split("#")[-1]
     return IM.get_lines() + body_lines + parse_main(main_id)
 
 

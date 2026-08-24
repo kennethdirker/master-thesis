@@ -11,7 +11,7 @@ from dask.distributed import Client
 
 
 @dask.delayed
-def imageplotter(input_obj: dict, context: dict, env: dict) -> dict:
+def _imageplotter(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	label: imageplotter
@@ -44,7 +44,7 @@ def imageplotter(input_obj: dict, context: dict, env: dict) -> dict:
 	}
 
 
-def process_images_vf_array(input_obj: dict, context: dict, env: dict) -> dict:
+def _process_images_vf_array(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: Workflow
 	label: process_images_vf_array
@@ -64,7 +64,7 @@ def process_images_vf_array(input_obj: dict, context: dict, env: dict) -> dict:
 		],
 		"output_image": "before_noise_remover.png",
 	}
-	imageplotter_out = imageplotter(imageplotter_in, context, env)
+	imageplotter_out = _imageplotter(imageplotter_in, context, env)
 
 	# Compute outputs
 	return {
@@ -80,7 +80,7 @@ def main():
 	client = Client()
 
 	# Submit to DASK
-	result = client.compute(process_images_vf_array(input_obj, {}, env)).result()
+	result = client.compute(_process_images_vf_array(input_obj, {}, env)).result()
 	print(finalize(result, env, preserve_tmpdir))
 
 if __name__ == "__main__":

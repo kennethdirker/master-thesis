@@ -10,7 +10,7 @@ from dask.distributed import Client
 
 
 @dask.delayed
-def hostname(input_obj: dict, context: dict, env: dict) -> dict:
+def _hostname(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
@@ -50,7 +50,7 @@ def main():
 	client = Client()
 
 	# Submit to DASK
-	result = client.compute(hostname(input_obj, {}, env)).result()
+	result = client.compute(_hostname(input_obj, {}, env)).result()
 	print(finalize(result, env, preserve_tmpdir))
 
 if __name__ == "__main__":

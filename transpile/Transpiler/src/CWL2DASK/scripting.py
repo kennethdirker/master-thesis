@@ -681,6 +681,7 @@ def initial_work_dir_requirement(listing: list | Mapping | FileObject | Director
 
             # If the entry is a list, it may be file literal lines or a list
             # of files/directories.
+            # TODO Check validity. Can entry be list/list of files/dirs?
             if isinstance(entry, list) and len(entry) > 0:
                 first = entry[0]
                 if isinstance(first, str):

@@ -1,1 +1,1 @@
-Hallo o zo mooie wereld
+HELLO=This is an example CWL tool that prints an environment variable.

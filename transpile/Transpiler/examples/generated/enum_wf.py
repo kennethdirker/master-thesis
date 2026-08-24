@@ -11,7 +11,7 @@ from dask.distributed import Client
 
 
 @dask.delayed
-def enum(input_obj: dict, context: dict, env: dict) -> dict:
+def _enum(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
@@ -48,7 +48,7 @@ def enum(input_obj: dict, context: dict, env: dict) -> dict:
 	}
 
 
-def enum_wf(input_obj: dict, context: dict, env: dict) -> dict:
+def _enum_wf(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: Workflow
 	"""
@@ -61,7 +61,7 @@ def enum_wf(input_obj: dict, context: dict, env: dict) -> dict:
 	enum_in = {
 		"bound": inputs["foo"],
 	}
-	enum_out = enum(enum_in, context, env)
+	enum_out = _enum(enum_in, context, env)
 
 	# Compute outputs
 	return {
@@ -77,7 +77,7 @@ def main():
 	client = Client()
 
 	# Submit to DASK
-	result = client.compute(enum_wf(input_obj, {}, env)).result()
+	result = client.compute(_enum_wf(input_obj, {}, env)).result()
 	print(finalize(result, env, preserve_tmpdir))
 
 if __name__ == "__main__":

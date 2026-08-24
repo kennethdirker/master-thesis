@@ -10,7 +10,7 @@ from dask.distributed import Client
 
 
 @dask.delayed
-def download_images(input_obj: dict, context: dict, env: dict) -> dict:
+def _download_images(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	label: download_images
@@ -48,7 +48,7 @@ def main():
 	client = Client()
 
 	# Submit to DASK
-	result = client.compute(download_images(input_obj, {}, env)).result()
+	result = client.compute(_download_images(input_obj, {}, env)).result()
 	print(finalize(result, env, preserve_tmpdir))
 
 if __name__ == "__main__":

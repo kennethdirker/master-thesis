@@ -16,7 +16,7 @@ from dask.distributed import Client
 
 
 @dask.delayed
-def noiseremover(input_obj: dict, context: dict, env: dict) -> dict:
+def _noiseremover(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	label: noiseremover
@@ -50,7 +50,7 @@ def noiseremover(input_obj: dict, context: dict, env: dict) -> dict:
 
 
 @dask.delayed
-def imageplotter(input_obj: dict, context: dict, env: dict) -> dict:
+def _imageplotter(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	label: imageplotter
@@ -83,7 +83,7 @@ def imageplotter(input_obj: dict, context: dict, env: dict) -> dict:
 	}
 
 
-def process_images(input_obj: dict, context: dict, env: dict) -> dict:
+def _process_images(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: Workflow
 	label: process_images
@@ -106,7 +106,7 @@ def process_images(input_obj: dict, context: dict, env: dict) -> dict:
 		"input_fits": inputs["fit_list"],
 		"output_image": "before_noise_remover.png",
 	}
-	imageplotter_out = imageplotter(imageplotter_in, context, env)
+	imageplotter_out = _imageplotter(imageplotter_in, context, env)
 
 	# Step ID:    noiseremover
 	# Step label: noiseremover
@@ -117,7 +117,7 @@ def process_images(input_obj: dict, context: dict, env: dict) -> dict:
 	for scattered_inputs in scatterizer(noiseremover_in, "input"):
 		wf_context["inputs"] = inputs | scattered_inputs
 		scattered_inputs["output_file_name"] = noiseremover_output_file_name(wf_context)
-		noiseremover_scattered_out.append(noiseremover(scattered_inputs, context, env))
+		noiseremover_scattered_out.append(_noiseremover(scattered_inputs, context, env))
 	noiseremover_out = dask.delayed(transpose)(noiseremover_scattered_out)
 
 	# Step ID:    mockup
@@ -131,7 +131,7 @@ def process_images(input_obj: dict, context: dict, env: dict) -> dict:
 		for scattered_inputs in scatterizer(mockup_in, "input"):
 			wf_context["inputs"] = inputs | scattered_inputs
 			scattered_inputs["output_file_name"] = mockup_output_file_name(wf_context)
-			mockup_scattered_out.append(noiseremover(scattered_inputs, context, env))
+			mockup_scattered_out.append(_noiseremover(scattered_inputs, context, env))
 		mockup_out = dask.delayed(transpose)(mockup_scattered_out)
 	else:
 		mockup_out = {
@@ -144,7 +144,7 @@ def process_images(input_obj: dict, context: dict, env: dict) -> dict:
 		"input_fits": all_non_null(merge_flattened(noiseremover_out["output"], mockup_out["output"], inputs["fit_list"])),
 		"output_image": "after_noise_remover.png",
 	}
-	after_plot_inspect_out = imageplotter(after_plot_inspect_in, context, env)
+	after_plot_inspect_out = _imageplotter(after_plot_inspect_in, context, env)
 
 	# Compute outputs
 	return {
@@ -162,7 +162,7 @@ def main():
 	client = Client()
 
 	# Submit to DASK
-	result = client.compute(process_images(input_obj, {}, env)).result()
+	result = client.compute(_process_images(input_obj, {}, env)).result()
 	print(finalize(result, env, preserve_tmpdir))
 
 if __name__ == "__main__":
