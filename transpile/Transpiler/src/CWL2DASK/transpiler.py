@@ -11,8 +11,6 @@ CommandLineTool
 Workflow
 
 CommandLineTool AND Workflow
-    TODO work directory
-    TODO InitialWorkDirRequirement
     TODO? Mutlityping
     TODO? ResourceRequirement
 
@@ -524,7 +522,7 @@ def parse_init_work_dir_req(
                     lines.append(tab(f'"{k}": "{v}",', 3))
                 lines.append(tab(f'"{k}": "{v}",', 3))
                 lines.append(tab("}),", 2))
-        lines.append(tab("])"))
+        lines.append(tab("], env)"))
     return lines  + [""]
 
 

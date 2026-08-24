@@ -69,7 +69,7 @@ def _losoto_clocktec(input_obj: dict, context: dict, env: dict) -> dict:
 			"entry": stage_expr_2(tool_context),
 			"writable": "True",
 		},
-	])
+	], env)
 
 	# Ready the commandline and execute the tool
 	cmd = [

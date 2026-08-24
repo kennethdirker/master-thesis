@@ -43,7 +43,7 @@ def _InitialWorkDirRequirement(input_obj: dict, context: dict, env: dict) -> dic
 		{
 			"entry": stage_expr_1(tool_context),
 		},
-	])
+	], env)
 
 	# Ready the commandline and execute the tool
 	cmd = [' \
