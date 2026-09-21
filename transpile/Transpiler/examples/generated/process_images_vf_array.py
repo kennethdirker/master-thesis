@@ -51,6 +51,7 @@ def _process_images_vf_array(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	# Create a clean temporary working directory and switch to it
 	checkout(env)
+
 	# Gather inputs in their correct format
 	inputs = {}
 	inputs.update(input_obj)

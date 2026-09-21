@@ -87,6 +87,7 @@ def _process_images(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	# Create a clean temporary working directory and switch to it
 	checkout(env)
+
 	def noiseremover_output_file_name(context):
 		return js_eval("'no_noise_' + inputs.input.basename", context)
 
@@ -137,6 +138,7 @@ def _top_process_images(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	# Create a clean temporary working directory and switch to it
 	checkout(env)
+
 	def noiseremover_input(context):
 		return js_eval("self[0]", context)
 	def noiseremover_output_file_name(context):

@@ -87,6 +87,7 @@ def _process_images(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	# Create a clean temporary working directory and switch to it
 	checkout(env)
+
 	def imageplotter_when(context):
 		return js_eval("true", context)
 	def noiseremover_when(context):
