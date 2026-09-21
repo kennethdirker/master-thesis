@@ -169,6 +169,10 @@ def multiline_to_list(string: str, normalize_js_expr: bool = True) -> list[str]:
         return lines
 
 class ImportManager:
+    """
+    Manages module imports and object imports from modules that should be added
+    to PWF scripts. Use `get_lines` to generate the import statements.
+    """
     imports: set
     from_imports: dict[str, set]
 
@@ -183,17 +187,27 @@ class ImportManager:
         self.add_from(SDK, "checkout")
         self.add_from(SDK, "finalize")
 
-    def add(self, module):
+    def add(self, module: str):
+        """
+        Add a module that should be imported to the import set.
+        """
         self.imports.add(module)
 
-    def add_from(self, module, obj):
+    def add_from(self, module: str, obj: str):
+        """ 
+        Add a module and an object that should be imported from it to the
+        import set.
+        """
         if module in self.from_imports:
             self.from_imports[module].add(obj)
         else:
             self.from_imports[module] = set([obj])
     
     def get_lines(self) -> list[str]:
-        # Generate and return the import statements
+        """
+        Generate and return the import statements as a list of strings. Imports
+        are sorted alphabetically.
+        """
         ls = ["import " + ', '.join(sorted(self.imports))]
         sorted_from_imports = sorted(self.from_imports.items())
         for k, v in sorted_from_imports:
