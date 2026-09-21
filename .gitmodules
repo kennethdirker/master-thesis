@@ -1,0 +1,3 @@
+[submodule "writing"]
+	path = writing
+	url = git@github.com:kennethdirker/master-thesis-writing.git
