@@ -1050,7 +1050,7 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
         header.append(tab('label: ' + tool.label))
     header.append(tab('"""'))
 
-    header.extend(comment(tab("# Create a clean temporary working directory for this tool and switch to it")))
+    header.extend(comment(tab("# Create a clean temporary working directory and switch to it")))
     header.append(tab("checkout(env)"))
     header.append("")
 
@@ -1379,6 +1379,10 @@ def parse_workflow(wf: Workflow):
     if exists(wf, "label"):
         header.append(tab('label: ' + wf.label))
     header.append(tab('"""'))
+
+    header.extend(comment(tab("# Create a clean temporary working directory and switch to it")))
+    header.append(tab("checkout(env)"))
+    header.append("")
 
     # Insert InlineJavascriptRequirement before expression functions so we can
     # omit access the code without providing it via function parameters.

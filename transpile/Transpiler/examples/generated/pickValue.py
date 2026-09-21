@@ -21,7 +21,7 @@ def _noiseremover(input_obj: dict, context: dict, env: dict) -> dict:
 	class: CommandLineTool
 	label: noiseremover
 	"""
-	# Create a clean temporary working directory for this tool and switch to it
+	# Create a clean temporary working directory and switch to it
 	checkout(env)
 
 	def outputs_output(context):
@@ -55,7 +55,7 @@ def _imageplotter(input_obj: dict, context: dict, env: dict) -> dict:
 	class: CommandLineTool
 	label: imageplotter
 	"""
-	# Create a clean temporary working directory for this tool and switch to it
+	# Create a clean temporary working directory and switch to it
 	checkout(env)
 
 	def outputs_output(context):
@@ -88,6 +88,8 @@ def _process_images(input_obj: dict, context: dict, env: dict) -> dict:
 	class: Workflow
 	label: process_images
 	"""
+	# Create a clean temporary working directory and switch to it
+	checkout(env)
 	def noiseremover_output_file_name(context):
 		return js_eval("'no_noise_' + inputs.input.basename", context)
 	def mockup_when(context):

@@ -15,7 +15,7 @@ def _args(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
-	# Create a clean temporary working directory for this tool and switch to it
+	# Create a clean temporary working directory and switch to it
 	checkout(env)
 
 	def expr_handler_0(context: dict) -> str:

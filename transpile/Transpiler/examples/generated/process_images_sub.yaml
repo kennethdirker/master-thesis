@@ -1,2 +1,4 @@
 list_of_fits:
-  - {class: File, path: image_mf_02.fits}
+  - {class: File, path: /home/kennethdirker/Leiden/2024-2025/Thesis/transpile/Transpiler/examples/generated/image_mf_01.fits}
+  - {class: File, path: /home/kennethdirker/Leiden/2024-2025/Thesis/transpile/Transpiler/examples/generated/image_mf_02.fits}
+  - {class: File, path: /home/kennethdirker/Leiden/2024-2025/Thesis/transpile/Transpiler/examples/generated/image_mf_04.fits}
