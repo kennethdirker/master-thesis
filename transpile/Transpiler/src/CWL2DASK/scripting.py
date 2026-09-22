@@ -221,7 +221,7 @@ def scatterizer(
             inputs_copy[key] = value
         yield inputs_copy
 
-
+@delayed
 def transpose(list_of_dicts: list[dict]) -> dict[list]:
     """
     Transform a list of homogeneous dicts to a dict of lists. 

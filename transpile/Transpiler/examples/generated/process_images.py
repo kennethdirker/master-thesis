@@ -114,7 +114,7 @@ def _process_images(input_obj: dict, context: dict, env: dict) -> dict:
 		wf_context["inputs"] = inputs | scattered_inputs
 		scattered_inputs["output_file_name"] = noiseremover_output_file_name(wf_context)
 		noiseremover_scattered_out.append(_noiseremover(scattered_inputs, context, env))
-	noiseremover_out = dask.delayed(transpose)(noiseremover_scattered_out)
+	noiseremover_out = transpose(noiseremover_scattered_out)
 
 	# Step ID:    after_plot_inspect
 	# Step label: imageplotter

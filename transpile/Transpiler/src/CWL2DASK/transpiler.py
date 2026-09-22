@@ -1284,7 +1284,8 @@ def parse_workflow_step(
         lines.append(tab(f'wf_context["inputs"] = inputs | scattered_inputs', 2 + x))
         lines.extend(parse_valueFrom(True, 2 + x))
         lines.append(tab(f'{step_id}_scattered_out.append({subprocess_id}(scattered_inputs, context, env))', 2 + x))
-        lines.append(tab(f"{step_id}_out = dask.delayed(transpose)({step_id}_scattered_out)", 1 + x))
+        lines.append(tab(f"{step_id}_out = transpose({step_id}_scattered_out)", 1 + x))
+        # lines.append(tab(f"{step_id}_out = dask.delayed(transpose)({step_id}_scattered_out)", 1 + x))
     else:
         if use_valueFrom:
             lines.append(tab(f'wf_context["inputs"] = inputs | {step_id}_in'))
