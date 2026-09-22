@@ -3,4 +3,4 @@ env/
 test_env/
 data/
 __pycache__/
-
+*.fits
