@@ -11,6 +11,7 @@ python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/print.cwl -o examples/g
 python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/stdout.cwl -o examples/generated/stdout.py
 python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/touch.cwl -o examples/generated/touch.py
 python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/optional.cwl -o examples/generated/optional.py
+python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/echo.cwl -o examples/generated/echo.py
 # python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/multitype.cwl -o examples/generated/multitype.py
 python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/LoSoTo.ClockTec.cwl -o examples/generated/LoSoTo.ClockTec.py
 python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/InlineJavascriptRequirement.cwl -o examples/generated/InlineJavascriptRequirement.py
