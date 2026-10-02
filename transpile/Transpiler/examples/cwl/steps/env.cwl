@@ -6,6 +6,7 @@ requirements:
   EnvVarRequirement:
     envDef:
       HELLO: $(inputs.message)
+      WORLD: $(inputs.message)
 inputs:
   message: string
 outputs:

@@ -911,17 +911,19 @@ def parse_run(
 
     # Parse EnvVarRequirement
     if "EnvVarRequirement" in requirements:
-        if len(requirements["EnvVarRequirement"].envDef) > 1:
-            lines.append(tab("env = {"))
-            for var in requirements["EnvVarRequirement"].envDef:
-                envValue = envVar_handler(var)
-                lines.append(tab(f'"{var.envName}": {envValue},', 2))
-            lines.append(tab("}"))
-        else:
-            var = requirements["EnvVarRequirement"].envDef[0]
+        # if len(requirements["EnvVarRequirement"].envDef) > 1:
+        #     lines.append(tab("env = {"))
+        #     for var in requirements["EnvVarRequirement"].envDef:
+        #         envValue = envVar_handler(var)
+        #         lines.append(tab(f'"{var.envName}": {envValue},', 2))
+        #     lines.append(tab("}"))
+        # else:
+        #     var = requirements["EnvVarRequirement"].envDef[0]
+        #     envValue = envVar_handler(var)
+        #     lines.append(tab(f'env = {{"{var.envName}": {envValue}}}'))
+        for var in requirements["EnvVarRequirement"].envDef:
             envValue = envVar_handler(var)
-            lines.append(tab(f'env = {{"{var.envName}": {envValue}}}'))
-        # run_lines.append("env=env")
+            lines.append(tab(f'env["{var.envName}"] = {envValue}'))
 
     # Parse ShellCommandRequirement
     if "ShellCommandRequirement" in requirements:

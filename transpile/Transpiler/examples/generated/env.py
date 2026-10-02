@@ -20,6 +20,8 @@ def _env(input_obj: dict, context: dict, env: dict) -> dict:
 
 	def env_HELLO(context):
 		return js_eval("inputs.message", context)
+	def env_WORLD(context):
+		return js_eval("inputs.message", context)
 	def outputs_example_out(context):
 		return FileObject(glob("output.txt")[0])
 
@@ -31,7 +33,8 @@ def _env(input_obj: dict, context: dict, env: dict) -> dict:
 	# Ready the commandline and execute the tool
 	cmd = ['env']
 	stdout = open("output.txt", "w")
-	env = {"HELLO": env_HELLO(tool_context)}
+	env["HELLO"] = env_HELLO(tool_context)
+	env["WORLD"] = env_WORLD(tool_context)
 	print("Running:",  *cmd)
 	subprocess.run(
 		args=cmd,
