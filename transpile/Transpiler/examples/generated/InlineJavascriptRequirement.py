@@ -29,6 +29,7 @@ def _InlineJavascriptRequirement(input_obj: dict, context: dict, env: dict) -> d
 		"};",
 	]
 
+	# Expression functions: js_eval should be replaced with Python
 	def outputs_hostname(context):
 		return FileObject(glob("hostname.txt")[0])
 

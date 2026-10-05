@@ -15,6 +15,7 @@ def _touch(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
+	# Expression functions: js_eval should be replaced with Python
 	def stdout_handler(context):
 		return js_eval("inputs.filename", context)
 	def outputs_file_content(context):

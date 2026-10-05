@@ -15,6 +15,7 @@ def _print(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
+	# Expression functions: js_eval should be replaced with Python
 	def stdout_handler(context):
 		return js_eval("inputs.str", context)
 	def outputs_echo(context):

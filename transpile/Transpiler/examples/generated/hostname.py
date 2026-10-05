@@ -14,6 +14,7 @@ def _hostname(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
+	# Expression functions: js_eval should be replaced with Python
 	def outputs_hostname(context):
 		return FileObject(glob("hostname.txt")[0])
 

@@ -14,6 +14,7 @@ def _stdout(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
+	# Expression functions: js_eval should be replaced with Python
 	def outputs_example_out(context):
 		return FileObject(glob("output.txt")[0])
 

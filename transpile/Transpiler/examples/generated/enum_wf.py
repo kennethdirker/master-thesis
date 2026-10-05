@@ -15,6 +15,7 @@ def _enum(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
+	# Expression functions: js_eval should be replaced with Python
 	def outputs_out(context):
 		matches = glob("enum.stdout")
 		context["self"] = [FileObject(m, loadContents = True) for m in matches]

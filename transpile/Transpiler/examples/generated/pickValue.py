@@ -21,6 +21,7 @@ def _noiseremover(input_obj: dict, context: dict, env: dict) -> dict:
 	class: CommandLineTool
 	label: noiseremover
 	"""
+	# Expression functions: js_eval should be replaced with Python
 	def outputs_output(context):
 		pattern = js_eval("inputs.output_file_name", context)
 		return FileObject(glob(pattern)[0])
@@ -55,6 +56,7 @@ def _imageplotter(input_obj: dict, context: dict, env: dict) -> dict:
 	class: CommandLineTool
 	label: imageplotter
 	"""
+	# Expression functions: js_eval should be replaced with Python
 	def outputs_output(context):
 		pattern = js_eval("inputs.output_image", context)
 		return FileObject(glob(pattern)[0])
@@ -88,6 +90,7 @@ def _process_images(input_obj: dict, context: dict, env: dict) -> dict:
 	class: Workflow
 	label: process_images
 	"""
+	# Expression functions: js_eval should be replaced with Python
 	def noiseremover_output_file_name(context):
 		return js_eval("'no_noise_' + inputs.input.basename", context)
 	def mockup_when(context):

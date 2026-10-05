@@ -16,6 +16,7 @@ def _echo(input_obj: dict, context: dict, env: dict) -> dict:
 	class: CommandLineTool
 	label: echo_to_stdout
 	"""
+	# Expression functions: js_eval should be replaced with Python
 	def outputs_outfile(context):
 		return FileObject(glob("greeting.txt")[0])
 	def outputs_outmessage(context):

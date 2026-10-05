@@ -15,6 +15,7 @@ def _download_images(input_obj: dict, context: dict, env: dict) -> dict:
 	class: CommandLineTool
 	label: download_images
 	"""
+	# Expression functions: js_eval should be replaced with Python
 	def outputs_output(context):
 		return FileObject(glob("*.fits"))
 

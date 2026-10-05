@@ -1110,6 +1110,9 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
     # Remove tool_context statement if no expressions are used
     if len(exprs) == 0:
         inputs.pop(context_pos - 1)
+    else:
+        exprs.insert(0, tab("# Expression functions: js_eval should be replaced with Python"))
+
     exprs.append("")
 
     return header + exprs + switch + inputs + iwr + command + outputs
@@ -1435,6 +1438,7 @@ def parse_workflow(wf: Workflow):
     # if len(exprs) == 0:
     #     inputs.pop(context_pos - 1)
     if len(exprs) > 0:
+        exprs.insert(0, tab("# Expression functions: js_eval should be replaced with Python"))
         exprs.append("")
         
     return header + exprs + switch + inputs + steps  + outputs

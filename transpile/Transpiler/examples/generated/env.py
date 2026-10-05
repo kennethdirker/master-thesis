@@ -15,6 +15,7 @@ def _env(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
+	# Expression functions: js_eval should be replaced with Python
 	def env_HELLO(context):
 		return js_eval("inputs.message", context)
 	def env_WORLD(context):

@@ -29,6 +29,7 @@ def _losoto_clocktec(input_obj: dict, context: dict, env: dict) -> dict:
 		"};",
 	]
 
+	# Expression functions: js_eval should be replaced with Python
 	def stage_expr_0(context):
 		return js_eval("get_losoto_config('CLOCKTEC').join('\n')", context, js_context)
 	def stage_expr_1(context):

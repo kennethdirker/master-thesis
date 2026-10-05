@@ -15,6 +15,7 @@ def _args(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
+	# Expression functions: js_eval should be replaced with Python
 	def expr_handler_0(context: dict) -> str:
 		expr = [
 			"This is some",

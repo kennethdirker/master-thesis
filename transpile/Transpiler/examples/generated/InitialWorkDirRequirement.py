@@ -15,6 +15,7 @@ def _InitialWorkDirRequirement(input_obj: dict, context: dict, env: dict) -> dic
 	"""
 	class: CommandLineTool
 	"""
+	# Expression functions: js_eval should be replaced with Python
 	def stage_expr_0(context):
 		return js_eval("'MSG=\"${PREFIX} ' + inputs.message + '\"'", context)
 	def stage_expr_1(context):
