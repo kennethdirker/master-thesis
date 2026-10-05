@@ -750,7 +750,7 @@ def initial_work_dir_requirement(
         if isinstance(obj, FileObject):
             target = cwd / obj.basename
             # If source exists, either copy (writable) or link (read-only)
-            print("AAAAAAAAAAH", obj.path)
+            # print("AAAAAAAAAAH", obj.path)
             if obj.exists():
                 if getattr(obj, "writable", False):
                     obj.copy(target)

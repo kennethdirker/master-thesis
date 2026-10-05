@@ -15,9 +15,6 @@ def _args(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
-
 	def expr_handler_0(context: dict) -> str:
 		expr = [
 			"This is some",
@@ -32,6 +29,9 @@ def _args(input_obj: dict, context: dict, env: dict) -> dict:
 		return js_eval("inputs.beautiful", context)
 	def outputs_output(context):
 		return FileObject(glob("output.txt")[0])
+
+	# Create a clean temporary working directory and switch to it
+	checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}

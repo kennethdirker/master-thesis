@@ -15,9 +15,6 @@ def _touch(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
-
 	def expr_handler_0(context: dict) -> str:
 		return js_eval("'test_' + inputs.filename", context)
 	def stdout_handler(context):
@@ -30,6 +27,9 @@ def _touch(input_obj: dict, context: dict, env: dict) -> dict:
 	def outputs_file_name(context):
 		pattern = js_eval("inputs.filename", context)
 		return FileObject(glob(pattern)[0])
+
+	# Create a clean temporary working directory and switch to it
+	checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}

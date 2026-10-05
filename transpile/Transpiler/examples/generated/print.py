@@ -15,9 +15,6 @@ def _print(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
-
 	def stdout_handler(context):
 		return js_eval("inputs.str", context)
 	def outputs_echo(context):
@@ -25,6 +22,9 @@ def _print(input_obj: dict, context: dict, env: dict) -> dict:
 		matches = glob(pattern)
 		context["self"] = [FileObject(m, loadContents = True) for m in matches]
 		return js_eval("self[0].contents.trim()", context)
+
+	# Create a clean temporary working directory and switch to it
+	checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}

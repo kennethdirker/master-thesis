@@ -16,9 +16,6 @@ def _losoto_clocktec(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
-
 	js_context = [
 		"/**",
 		" * A merely illustrative example function that uses a function",
@@ -52,6 +49,9 @@ def _losoto_clocktec(input_obj: dict, context: dict, env: dict) -> dict:
 	def outputs_log(context):
 		pattern = js_eval("inputs.input_h5parm.basename + '-losoto*.log'", context, js_context)
 		return FileObject(glob(pattern))
+
+	# Create a clean temporary working directory and switch to it
+	checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}

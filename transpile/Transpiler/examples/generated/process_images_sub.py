@@ -18,12 +18,12 @@ def _noiseremover(input_obj: dict, context: dict, env: dict) -> dict:
 	class: CommandLineTool
 	label: noiseremover
 	"""
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
-
 	def outputs_output(context):
 		pattern = js_eval("inputs.output_file_name", context)
 		return FileObject(glob(pattern)[0])
+
+	# Create a clean temporary working directory and switch to it
+	checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}
@@ -52,12 +52,12 @@ def _imageplotter(input_obj: dict, context: dict, env: dict) -> dict:
 	class: CommandLineTool
 	label: imageplotter
 	"""
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
-
 	def outputs_output(context):
 		pattern = js_eval("inputs.output_image", context)
 		return FileObject(glob(pattern)[0])
+
+	# Create a clean temporary working directory and switch to it
+	checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}
@@ -85,11 +85,11 @@ def _process_images(input_obj: dict, context: dict, env: dict) -> dict:
 	class: Workflow
 	label: process_images
 	"""
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
-
 	def noiseremover_output_file_name(context):
 		return js_eval("'no_noise_' + inputs.input.basename", context)
+
+	# Create a clean temporary working directory and switch to it
+	checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}
@@ -136,15 +136,15 @@ def _top_process_images(input_obj: dict, context: dict, env: dict) -> dict:
 	class: Workflow
 	label: process_images
 	"""
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
-
 	def noiseremover_input(context):
 		return js_eval("self[0]", context)
 	def noiseremover_output_file_name(context):
 		return js_eval("'top_no_noise_' + inputs.input[0].basename", context)
 	def after_plot_inspect_input_fits(context):
 		return js_eval("[self]", context)
+
+	# Create a clean temporary working directory and switch to it
+	checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}

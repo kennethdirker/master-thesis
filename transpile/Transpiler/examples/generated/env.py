@@ -15,15 +15,15 @@ def _env(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
-
 	def env_HELLO(context):
 		return js_eval("inputs.message", context)
 	def env_WORLD(context):
 		return js_eval("inputs.message", context)
 	def outputs_example_out(context):
 		return FileObject(glob("output.txt")[0])
+
+	# Create a clean temporary working directory and switch to it
+	checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}

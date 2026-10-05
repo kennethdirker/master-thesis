@@ -16,12 +16,12 @@ def _noiseremover(input_obj: dict, context: dict, env: dict) -> dict:
 	class: CommandLineTool
 	label: noiseremover
 	"""
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
-
 	def outputs_output(context):
 		pattern = js_eval("inputs.output_file_name", context)
 		return FileObject(glob(pattern)[0])
+
+	# Create a clean temporary working directory and switch to it
+	checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}

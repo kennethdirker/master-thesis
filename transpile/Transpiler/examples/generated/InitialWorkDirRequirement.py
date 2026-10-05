@@ -15,13 +15,13 @@ def _InitialWorkDirRequirement(input_obj: dict, context: dict, env: dict) -> dic
 	"""
 	class: CommandLineTool
 	"""
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
-
 	def stage_expr_0(context):
 		return js_eval("'MSG=\"${PREFIX} ' + inputs.message + '\"'", context)
 	def stage_expr_1(context):
 		return js_eval("inputs.stage", context)
+
+	# Create a clean temporary working directory and switch to it
+	checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {

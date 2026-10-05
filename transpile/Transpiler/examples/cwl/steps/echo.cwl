@@ -14,6 +14,10 @@ inputs:
     type: string
     inputBinding:
       position: 1
+  surname:
+    type: string?
+    inputBinding:
+      position: 2
 outputs:
   - id: outfile
     type: stdout

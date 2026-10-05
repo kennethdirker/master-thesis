@@ -15,13 +15,13 @@ def _enum(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
 	"""
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
-
 	def outputs_out(context):
 		matches = glob("enum.stdout")
 		context["self"] = [FileObject(m, loadContents = True) for m in matches]
 		return js_eval("self[0].contents", context)
+
+	# Create a clean temporary working directory and switch to it
+	checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}

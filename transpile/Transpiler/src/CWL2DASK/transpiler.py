@@ -1026,6 +1026,7 @@ def parse_tool_output_binding(
 def parse_tool(tool: CommandLineTool) -> list[str]:
     header:  list[str] = []
     exprs:   list[str] = []
+    switch:  list[str] = []
     inputs:  list[str] = []
     iwr:     list[str] = [] # InitialWorkdirRequirement 
     command: list[str] = []
@@ -1052,9 +1053,9 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
         header.append(tab('label: ' + tool.label))
     header.append(tab('"""'))
 
-    header.extend(comment(tab("# Create a clean temporary working directory and switch to it")))
-    header.append(tab("checkout(env)"))
-    header.append("")
+    switch.extend(comment(tab("# Create a clean temporary working directory and switch to it")))
+    switch.append(tab("checkout(env)"))
+    switch.append("")
 
     # Insert InlineJavascriptRequirement before expression functions so we can
     # omit access the code without providing it via function parameters.
@@ -1111,7 +1112,7 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
         inputs.pop(context_pos - 1)
     exprs.append("")
 
-    return header + exprs + inputs + iwr + command + outputs
+    return header + exprs + switch + inputs + iwr + command + outputs
 
 
 def extract_source(source: str):
@@ -1361,6 +1362,7 @@ def parse_workflow(wf: Workflow):
     """
     header:  list[str] = []
     exprs:   list[str] = []
+    switch:  list[str] = []
     inputs:  list[str] = []
     steps:   list[str] = []
     outputs: list[str] = []
@@ -1383,9 +1385,9 @@ def parse_workflow(wf: Workflow):
         header.append(tab('label: ' + wf.label))
     header.append(tab('"""'))
 
-    header.extend(comment(tab("# Create a clean temporary working directory and switch to it")))
-    header.append(tab("checkout(env)"))
-    header.append("")
+    switch.extend(comment(tab("# Create a clean temporary working directory and switch to it")))
+    switch.append(tab("checkout(env)"))
+    switch.append("")
 
     # Insert InlineJavascriptRequirement before expression functions so we can
     # omit access the code without providing it via function parameters.
@@ -1435,7 +1437,7 @@ def parse_workflow(wf: Workflow):
     if len(exprs) > 0:
         exprs.append("")
         
-    return header + exprs + inputs + steps  + outputs
+    return header + exprs + switch + inputs + steps  + outputs
 
 
 def parse_main(main_id: str) -> list[str]:

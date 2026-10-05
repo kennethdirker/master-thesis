@@ -16,9 +16,6 @@ def _echo(input_obj: dict, context: dict, env: dict) -> dict:
 	class: CommandLineTool
 	label: echo_to_stdout
 	"""
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
-
 	def outputs_outfile(context):
 		return FileObject(glob("greeting.txt")[0])
 	def outputs_outmessage(context):
@@ -26,8 +23,13 @@ def _echo(input_obj: dict, context: dict, env: dict) -> dict:
 		context["self"] = [FileObject(m) for m in matches]
 		return js_eval("self.contents", context)
 
+	# Create a clean temporary working directory and switch to it
+	checkout(env)
+
 	# Gather inputs in their correct format
-	inputs = {}
+	inputs = {
+		"surname": None,
+	}
 	inputs.update(input_obj)
 	tool_context = {"inputs": inputs} | context
 
@@ -36,8 +38,10 @@ def _echo(input_obj: dict, context: dict, env: dict) -> dict:
 		'echo',
 		"Greetings,",
 		str(inputs["username"]),
+		str(inputs["surname"]),
 	]
 	stdout = open("greeting.txt", "w")
+	cmd = [x for x in cmd if x]
 	print("Running:",  *cmd)
 	subprocess.run(
 		args=cmd,

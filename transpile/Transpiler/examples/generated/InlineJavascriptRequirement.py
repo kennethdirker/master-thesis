@@ -14,9 +14,6 @@ def _InlineJavascriptRequirement(input_obj: dict, context: dict, env: dict) -> d
 	"""
 	class: CommandLineTool
 	"""
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
-
 	js_context = [
 		"var foo = 1",
 		"var bar = 2",
@@ -34,6 +31,9 @@ def _InlineJavascriptRequirement(input_obj: dict, context: dict, env: dict) -> d
 
 	def outputs_hostname(context):
 		return FileObject(glob("hostname.txt")[0])
+
+	# Create a clean temporary working directory and switch to it
+	checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}

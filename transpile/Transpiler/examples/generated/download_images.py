@@ -15,11 +15,11 @@ def _download_images(input_obj: dict, context: dict, env: dict) -> dict:
 	class: CommandLineTool
 	label: download_images
 	"""
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
-
 	def outputs_output(context):
 		return FileObject(glob("*.fits"))
+
+	# Create a clean temporary working directory and switch to it
+	checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}
