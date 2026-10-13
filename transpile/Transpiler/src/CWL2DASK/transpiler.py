@@ -1219,9 +1219,21 @@ def parse_workflow_step(
     global IM
     step_id = step.id.split("/")[-1]
 
+    def parse_when(when, exprs: list):
+        IM.add_from(SDK, "js_eval")
+        when = multiline_to_list(when)
+        exprs.append(tab(f'def {step_id}_when(context):'))
+        if len(when) == 1:
+            exprs.append(tab(f'return js_eval("{when[0]}", context{js})', 2))
+        else:
+            exprs.append(tab("expr = [", 2))
+            for line in when:
+                exprs.append(tab(f'"{line}",', 3))
+            exprs.append(tab("]", 2))
+            exprs.append(tab(f'return js_eval(expr, context{js})', 2))
+
     def parse_valueFrom(scattered: bool, tabs: int = 1) -> list[str]:
         input_dict = "scattered_inputs" if scattered else step_id + "_in"
-
         lines: list[str] = []
         for input in step.in_:
             if exists(input, "valueFrom"):
@@ -1249,6 +1261,15 @@ def parse_workflow_step(
                 else:
                     lines.append(tab(f'{input_dict}["{input_id}"] = "{valueFrom}"', tabs))
         return lines
+
+    def parse_when_false(lines, step, step_id, x):
+        # Parse when null results
+        lines.append(tab("else:", 1 + x))
+        lines.append(tab(f'{step_id}_out = {{', 2 + x))
+        for out in step.out:
+            out_id = out if isinstance(out, str) else out.id
+            lines.append(tab(f'"{out_id.split("/")[-1]}": None,', 3 + x))
+        lines.append(tab("}", 2 + x))
     
     # Parse step metadata
     lines = []
@@ -1259,25 +1280,6 @@ def parse_workflow_step(
     # Parse step inputs (source/default)
     lines.extend(parse_workflow_step_inputs(step, step_id))
 
-    # Parse when
-    x = 0   # Extra tabs to be inserted resulting from the when conditional
-    if exists(step, "when"):
-        IM.add_from(SDK, "js_eval")
-        x = 1
-        when = multiline_to_list(step.when)
-        exprs.append(tab(f'def {step_id}_when(context):'))
-        if len(when) == 1:
-            exprs.append(tab(f'return js_eval("{when[0]}", context{js})', 2))
-        else:
-            exprs.append(tab("expr = [", 2))
-            for line in when:
-                exprs.append(tab(f'"{line}",', 3))
-            exprs.append(tab("]", 2))
-            exprs.append(tab(f'return js_eval(expr, context{js})', 2))
-
-        lines.append(tab(f'wf_context["inputs"] = {step_id}_in'))
-        lines.append(tab(f'if {step_id}_when(wf_context):'))
-
     # Parse step context and execution
     # Prepend function name with underscore '_' to reduce keyword overrides
     subprocess_id = '_' + step.subprocess.id.split("#")[-1]
@@ -1285,27 +1287,50 @@ def parse_workflow_step(
     if exists(step, "scatter"):
         IM.add_from(SDK, "scatterizer")
         IM.add_from(SDK, "transpose")
-        lines.append(tab(f'{step_id}_scattered_out = []', 1 + x))
-        lines.append(tab(f'for scattered_inputs in scatterizer({step_id}_in, "input"):', 1 + x))
-        lines.append(tab(f'wf_context["inputs"] = inputs | scattered_inputs', 2 + x))
+        lines.append(tab(f'{step_id}_scattered_out = []'))
+        lines.append(tab(f'for scattered_inputs in scatterizer({step_id}_in, "input"):'))
+        lines.append(tab(f'wf_context["inputs"] = inputs | scattered_inputs', 2))
+        x = 0
+        if exists(step, "when"):
+            x = 1
+            lines.append(tab(f'if {step_id}_when(wf_context):', 2))
+            parse_when(step.when, exprs)
+
         lines.extend(parse_valueFrom(True, 2 + x))
         lines.append(tab(f'{step_id}_scattered_out.append({subprocess_id}(scattered_inputs, context, env))', 2 + x))
-        lines.append(tab(f"{step_id}_out = transpose({step_id}_scattered_out)", 1 + x))
-        # lines.append(tab(f"{step_id}_out = dask.delayed(transpose)({step_id}_scattered_out)", 1 + x))
+
+        if x == 1:
+            # Parse when null results
+            lines.append(tab("else:", 2))
+            lines.append(tab(f'{step_id}_scattered_out.append({{', 3))
+            for out in step.out:
+                out_id = out if isinstance(out, str) else out.id
+                lines.append(tab(f'"{out_id.split("/")[-1]}": None,', 4))
+            lines.append(tab("})", 3))
+
+        lines.append(tab(f"{step_id}_out = transpose({step_id}_scattered_out)"))
     else:
+        # Parse when
+        x = 0   # Extra tabs to be inserted resulting from the when conditional
+        if exists(step, "when"):
+            x = 1
+            parse_when(step.when, exprs)
+            lines.append(tab(f'wf_context["inputs"] = {step_id}_in'))
+            lines.append(tab(f'if {step_id}_when(wf_context):'))
+
         if use_valueFrom:
             lines.append(tab(f'wf_context["inputs"] = inputs | {step_id}_in'))
         lines.extend(parse_valueFrom(False, 1 + x))
         lines.append(tab(f'{step_id}_out = {subprocess_id}({step_id}_in, context, env)', 1 + x))
-
-    # Parse when null results
-    if x == 1:
-        lines.append(tab("else:"))
-        lines.append(tab(f'{step_id}_out = {{', 2))
-        for out in step.out:
-            out_id = out if isinstance(out, str) else out.id
-            lines.append(tab(f'"{out_id.split("/")[-1]}": None,', 3))
-        lines.append(tab("}", 2))
+        
+        if x == 1:
+            # Parse when null results
+            lines.append(tab("else:"))
+            lines.append(tab(f'{step_id}_out = {{', 2))
+            for out in step.out:
+                out_id = out if isinstance(out, str) else out.id
+                lines.append(tab(f'"{out_id.split("/")[-1]}": None,', 3))
+            lines.append(tab("}", 2))
 
     lines.append("")
     return lines

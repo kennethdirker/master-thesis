@@ -131,18 +131,17 @@ def _process_images(input_obj: dict, context: dict, env: dict) -> dict:
 	mockup_in = {
 		"input": noiseremover_out["output"],
 	}
-	wf_context["inputs"] = mockup_in
-	if mockup_when(wf_context):
-		mockup_scattered_out = []
-		for scattered_inputs in scatterizer(mockup_in, "input"):
-			wf_context["inputs"] = inputs | scattered_inputs
+	mockup_scattered_out = []
+	for scattered_inputs in scatterizer(mockup_in, "input"):
+		wf_context["inputs"] = inputs | scattered_inputs
+		if mockup_when(wf_context):
 			scattered_inputs["output_file_name"] = mockup_output_file_name(wf_context)
 			mockup_scattered_out.append(_noiseremover(scattered_inputs, context, env))
-		mockup_out = transpose(mockup_scattered_out)
-	else:
-		mockup_out = {
-			"output": None,
-		}
+		else:
+			mockup_scattered_out.append({
+				"output": None,
+			})
+	mockup_out = transpose(mockup_scattered_out)
 
 	# Step ID:    after_plot_inspect
 	# Step label: imageplotter

@@ -122,18 +122,17 @@ def _process_images(input_obj: dict, context: dict, env: dict) -> dict:
 	noiseremover_in = {
 		"input": inputs["fit_list"],
 	}
-	wf_context["inputs"] = noiseremover_in
-	if noiseremover_when(wf_context):
-		noiseremover_scattered_out = []
-		for scattered_inputs in scatterizer(noiseremover_in, "input"):
-			wf_context["inputs"] = inputs | scattered_inputs
+	noiseremover_scattered_out = []
+	for scattered_inputs in scatterizer(noiseremover_in, "input"):
+		wf_context["inputs"] = inputs | scattered_inputs
+		if noiseremover_when(wf_context):
 			scattered_inputs["output_file_name"] = noiseremover_output_file_name(wf_context)
 			noiseremover_scattered_out.append(_noiseremover(scattered_inputs, context, env))
-		noiseremover_out = transpose(noiseremover_scattered_out)
-	else:
-		noiseremover_out = {
-			"output": None,
-		}
+		else:
+			noiseremover_scattered_out.append({
+				"output": None,
+			})
+	noiseremover_out = transpose(noiseremover_scattered_out)
 
 	# Step ID:    after_plot_inspect
 	# Step label: imageplotter
