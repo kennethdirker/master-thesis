@@ -1,9 +1,7 @@
-#!/usr/bin/env cwl-runner
-
 cwlVersion: v1.2
 class: CommandLineTool
-id: echo
-label: echo_to_stdout
+id: greet
+label: greet_user
 doc: Tool that writes a greeting to the user to stdout.
 baseCommand: echo
 arguments: 

@@ -11,10 +11,10 @@ from dask.distributed import Client
 
 
 @dask.delayed
-def _echo(input_obj: dict, context: dict, env: dict) -> dict:
+def _greet(input_obj: dict, context: dict, env: dict) -> dict:
 	"""
 	class: CommandLineTool
-	label: echo_to_stdout
+	label: greet_user
 	"""
 	# Expression functions: js_eval should be replaced with Python
 	def outputs_outfile(context):
@@ -66,7 +66,7 @@ def main():
 	client = Client()
 
 	# Submit to DASK
-	result = client.compute(_echo(input_obj, {}, env)).result()
+	result = client.compute(_greet(input_obj, {}, env)).result()
 	print(finalize(result, env, preserve_tmpdir))
 
 if __name__ == "__main__":
