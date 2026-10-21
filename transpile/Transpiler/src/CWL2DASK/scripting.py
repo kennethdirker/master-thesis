@@ -13,6 +13,7 @@ import stat
 import yaml
 
 from argparse import ArgumentParser, Namespace
+from copy import deepcopy
 from dask import delayed
 from glob import glob as globglob
 from itertools import product
@@ -230,18 +231,19 @@ def transpose(list_of_dicts: list[dict]) -> dict[list]:
             for k in list_of_dicts[0]}
 
 
-def glob(pattern: str | list[str]) -> list:
+def glob(pattern: str | list[str], cwd: str) -> list:
     """
     Takes one or more patterns and returns a list of all matched files and
     directories. This is a helper function that wraps `glob.glob` to allow
     searching for multiple patterns per call. 
     """
     if isinstance(pattern, str):
-        return globglob(pattern)
+        return [cwd + "/" + p for p in globglob(pattern, root_dir=cwd)]
     elif isinstance(pattern, list):
         matches = []
         for p in pattern:
-            matches.extend(globglob(p))
+            matches.extend([cwd + "/" + p for p in globglob(p, root_dir=cwd)])
+        return matches
     raise TypeError("'pattern' must be 'str' or 'list[str]', but found", type(pattern))
 
 
@@ -393,6 +395,8 @@ class FileObject:
                 #     self.contents = contents
             elif hasattr(self, "contents"):
                 f.write(self.contents)
+
+            # Make created files (e.g. generated scripts) executable
             os.chmod(self.path, os.stat(self.path).st_mode | stat.S_IEXEC)
 
     def load_contents(self):
@@ -588,7 +592,6 @@ def process_cli_args() -> tuple[dict, dict[str, str], bool]:
     out_dir_path.mkdir(parents=True, exist_ok=True)  # Create out dir if needed
     env["OUTDIR"] = str(out_dir_path)
     env["HOME"] = os.getcwd()
-    # env["HOME"] = out_dir_path
 
     # Configure designated temporary directory
     tmp_dir_path = Path(args.tmpdir).resolve()
@@ -598,19 +601,16 @@ def process_cli_args() -> tuple[dict, dict[str, str], bool]:
         raise Exception(f'{tmp_dir_path} must be empty!')
     tmp_dir_path.mkdir(parents=True, exist_ok=True)  # Create tmp dir if needed
     env["TMPDIR"] = str(tmp_dir_path)
-    # env["TMPDIR"] = tmp_dir_path
 
     env["PATH"] = os.getenv("VIRTUAL_ENV") + "/bin:" + os.getenv("PATH")
-    # env["PYTHONPATH"] = sys.executable + ":" + env["PATH"]
-    env["VIRTUAL_ENV"] = os.getenv("VIRTUAL_ENV")
-    # print(os.getenv("VIRTUAL_ENV"))
-    # exit()
+    env["VIRTUAL_ENV"] = os.getenv("VIRTUAL_ENV") # FIXME needed?
 
     return load_input_object(args.input_object), env, args.leave_tmpdir
 
 
-def checkout(env: dict) -> Path:
+def checkout(env: dict) -> tuple[dict, str]:
     """
+    TODO update desc
     Create a new temporary directory and set it as the current working 
     directory. The new directory is created by taking `env["TMPDIR"]` and 
     appending a random uuid generated with `uuid.uuid4()`. `env["PATH"]` is
@@ -619,17 +619,20 @@ def checkout(env: dict) -> Path:
     Returns:
         `Path` to the new current working directory.
     """
-    tmp_path: Path = Path(env["TMPDIR"]) / str(uuid4())
-    env["PATH"] = str(tmp_path) + ":" + env["PATH"]
+    env_copy = deepcopy(env)
+    tmp_path: Path = Path(env_copy["TMPDIR"]) / str(uuid4())
+    env_copy["TMPCWD"] = str(tmp_path)   # Save CWD path, as we can't use os.getcwd
+    env_copy["PATH"] = str(tmp_path) + ":" + env_copy["PATH"]
     tmp_path.mkdir()
     os.chdir(tmp_path)
-
-    return tmp_path
+    return env_copy, str(tmp_path)
 
 
 def initial_work_dir_requirement(
         listing: list | Mapping | FileObject | DirectoryObject | CWLFile | CWLDirectory | None,
         env: dict
+        # HOME: str,
+        # TMPCWD: str
     ) -> None:
     """
     Stage files and directories from a CWL InitialWorkDirRequirement listing
@@ -647,23 +650,23 @@ def initial_work_dir_requirement(
     stage entries into the current working directory. Expressions are assumed
     to have been evaluated by the caller.
     """
-    def create_file_literal(contents: str, entryname: str | None):
+    home = Path(env["HOME"])
+    cwd = Path(env["TMPCWD"])
+
+
+    def create_file_literal(contents: str, entryname: str | None, cwd):
         if entryname is None:
             raise Exception("Dirent with file literal must have an entryname")
-        cwd = Path.cwd()
         entry_path = (cwd / Path(entryname)).resolve()
         if not entry_path.is_relative_to(cwd):
-        # if os.path.commonpath((cwd.resolve(), entry_path)) != cwd.resolve():
             raise Exception("Must create file/directory within working folder", cwd, entry_path)
         print("dirent create", entry_path)
         FileObject(entry_path).create(contents)
 
-    cwd = Path.cwd()
-
     # Normalize input to a list
     if listing is None:
         return
-    if isinstance(listing, (FileObject, DirectoryObject, CWLFile, CWLDirectory)):
+    if isinstance(listing, (FileObject, DirectoryObject, CWLFile, CWLDirectory, str)):
         listing = [listing]
     elif isinstance(listing, dict):
         # Single dirent mapping or File/Directory dict
@@ -683,6 +686,7 @@ def initial_work_dir_requirement(
         if (not isinstance(l, Mapping) or 
             (isinstance(l, Mapping) and not "entry" in l)):
             stage.append(l)
+            continue
 
         entry = l["entry"]
         entryname = l.get("entryname", None)
@@ -697,7 +701,7 @@ def initial_work_dir_requirement(
             first = entry[0]
             if isinstance(first, str):
                 # file literal: join lines
-                create_file_literal("\n".join(entry), entryname)
+                create_file_literal("\n".join(entry), entryname, cwd)
                 continue
 
             # list of files/directories: add them to staged list
@@ -717,14 +721,15 @@ def initial_work_dir_requirement(
         # If entry is a string, treat it as a file literal with single
         # line content
         if isinstance(entry, str):
-            create_file_literal(entry, entryname)
+            create_file_literal(entry, entryname, cwd)
             continue
 
         # Otherwise, serialize to JSON and create the file
-        create_file_literal(json.dumps(entry, indent=4), entryname)
+        create_file_literal(json.dumps(entry, indent=4), entryname, cwd)
 
-    # Convert any remaining map-form File/Directory entries to objects
-    # Also convert any remaining CWLFile / CWLDirectory entries to SDK objects
+    # Convert any remaining map-form File/Directory entries to objects.
+    # Also convert any remaining CWLFile / CWLDirectory entries to SDK objects.
+    # Strings are paths that should be checked if they are a file or directory.
     for idx, item in enumerate(stage):
         if isinstance(item, Mapping) and "class" in item:
             if "File" in item["class"]:
@@ -735,9 +740,17 @@ def initial_work_dir_requirement(
             stage[idx] = FileObject(item)
         elif isinstance(item, CWLDirectory):
             stage[idx] = DirectoryObject(item)
+        elif isinstance(item, str):
+            path = Path(item)
+            if not path.exists():
+                continue
+            if path.is_file():
+                stage[idx] = FileObject(item)
+            elif path.is_dir():
+                stage[idx] = DirectoryObject(item)
 
     # Stage remaining FileObject and DirectoryObject entries into cwd
-    home = Path(env["HOME"])
+    # home = Path(env["HOME"])
     for obj in stage:
         if obj is None:
             continue
@@ -746,18 +759,16 @@ def initial_work_dir_requirement(
 
         if not Path(obj.path).is_absolute():
             obj.rebase(home / obj.path)
-
         if isinstance(obj, FileObject):
             target = cwd / obj.basename
             # If source exists, either copy (writable) or link (read-only)
-            # print("AAAAAAAAAAH", obj.path)
             if obj.exists():
                 if getattr(obj, "writable", False):
-                    obj.copy(target)
                     print("File copy", target)
+                    obj.copy(target)
                 else:
-                    obj.link(target)
                     print("File link", target)
+                    obj.link(target)
             else:
                 # Create a new file at the target path using the object's
                 # contents/attributes

@@ -455,7 +455,8 @@ def parse_default(default, cwl_type: CWLType) -> str | list[str]:
 def parse_init_work_dir_req(
         req,
         exprs: list[str],
-        js: list[str]
+        js: list[str],
+        tool_or_workflow
     ) -> list[str]:
     global IM
     IM.add_from(SDK, "initial_work_dir_requirement")
@@ -465,7 +466,10 @@ def parse_init_work_dir_req(
         IM.add_from(SDK, "js_eval")
         exprs.append(tab(f"def stage_expr_{num_exprs}(context):"))
         if len(expr) == 1:
-            exprs.append(tab(f'return js_eval({expr[0]}, context{js})', 2))
+            s = expr[0]
+            if is_expr(s):
+                s = s[2:-1]
+            exprs.append(tab(f'return js_eval("{s}", context{js})', 2))
         else:
             exprs.append(tab("expr = [", 2))
             for line in expr:
@@ -485,7 +489,7 @@ def parse_init_work_dir_req(
         for e in listing:
             if isinstance(e, str):
                 # File/Dir(s) come from expression
-                lines.append(tab(f'{add_expr(e, num_exprs)},', 2))
+                lines.append(tab(f'{add_expr([e], num_exprs)},', 2))
             elif isinstance(e, Dirent):
                 lines.append(tab('{', 2))
                 if exists(e, "entryname"):
@@ -525,18 +529,18 @@ def parse_init_work_dir_req(
                 file_dict = e.save()
                 lines.append(tab("FileObject({", 2))
                 for k, v in file_dict.items():
+                    v = v.split("://")[-1]
                     lines.append(tab(f'"{k}": "{v}",', 3))
-                lines.append(tab(f'"{k}": "{v}",', 3))
                 lines.append(tab("}),", 2))
             elif isinstance(e, CWLDirectory):
                 IM.add_from(SDK, "DirectoryObject")
                 dir_dict = e.save()
                 lines.append(tab("DirectoryObject({", 2))
                 for k, v in dir_dict.items():
+                    v = v.split("://")[-1]
                     lines.append(tab(f'"{k}": "{v}",', 3))
-                lines.append(tab(f'"{k}": "{v}",', 3))
                 lines.append(tab("}),", 2))
-        lines.append(tab("], env)"))
+        lines.append(tab(f"], {tool_or_workflow}_env)"))
     return lines  + [""]
 
 
@@ -923,7 +927,7 @@ def parse_run(
         #     lines.append(tab(f'env = {{"{var.envName}": {envValue}}}'))
         for var in requirements["EnvVarRequirement"].envDef:
             envValue = envVar_handler(var)
-            lines.append(tab(f'env["{var.envName}"] = {envValue}'))
+            lines.append(tab(f'tool_env["{var.envName}"] = {envValue}'))
 
     # Parse ShellCommandRequirement
     if "ShellCommandRequirement" in requirements:
@@ -933,14 +937,15 @@ def parse_run(
     if any([CWLType(i.type_).optional for i in tool.inputs]):
         lines.append(tab('cmd = [x for x in cmd if x]'))
 
-    lines.append(tab('print("Running:",  *cmd)'))
+    lines.append(tab('print("Running:", *cmd)'))
     if len(run_lines) == 0:
-        return lines + [tab("subprocess.run(cmd, env=env)")] + clean_up
+        return lines + [tab("subprocess.run(cmd, env=tool_env, cwd=cwd)")] + clean_up
     else:
         return lines + [
             tab("subprocess.run("),
             tab("args=cmd,", 2),
-            tab("env=env,", 2),
+            tab("env=tool_env,", 2),
+            tab("cwd=cwd,", 2),
             *[tab(f'{l},', 2) for l in run_lines],
             tab(")"),
         ] + clean_up
@@ -966,7 +971,7 @@ def parse_tool_output_binding(
     # Create expression handler that handles an output's glob matching
     # and outputEval.
     binding = output.outputBinding
-    exprs.append(tab(f"def outputs_{id}(context):"))
+    exprs.append(tab(f"def outputs_{id}(context, cwd):"))
     glob_flag = False
     x = ""
     if exists(binding, "glob"):
@@ -986,15 +991,15 @@ def parse_tool_output_binding(
                         exprs.append(tab(f'"{line}",', 3))
                     exprs.append(tab("]", 2))
                     exprs.append(tab(f'pattern = js_eval(expr, context{js})', 2))
-                x = "glob(pattern)"
+                x = "glob(pattern, cwd)"
             else:
                 # Simple string
-                x = f'glob("{g}")'
+                x = f'glob("{g}", cwd)'
         else:
             # List of simple strings
             patterns = ", ".join([f'"{p}"' for p in g])
             exprs.append(tab(f'pattern = [{patterns}]'), 2)
-            x = "glob(pattern)"
+            x = "glob(pattern, cwd)"
 
     if exists(binding, "outputEval"):
         IM.add_from(SDK, "js_eval")
@@ -1020,7 +1025,7 @@ def parse_tool_output_binding(
         p = "" if t.is_array else "[0]"
         exprs.append(tab(f"return {t.types}({x}{p})", 2))
 
-    return tab(f'"{id}": outputs_{id}(tool_context),', 2)
+    return tab(f'"{id}": outputs_{id}(tool_context, cwd),', 2)
 
 
 def parse_tool(tool: CommandLineTool) -> list[str]:
@@ -1053,8 +1058,8 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
         header.append(tab('label: ' + tool.label))
     header.append(tab('"""'))
 
-    switch.extend(comment(tab("# Create a clean temporary working directory and switch to it")))
-    switch.append(tab("checkout(env)"))
+    switch.extend(comment(tab("# Create a clean temporary working directory and fitted environment dict")))
+    switch.append(tab("tool_env, cwd = checkout(env)"))
     switch.append("")
 
     # Insert InlineJavascriptRequirement before expression functions so we can
@@ -1090,9 +1095,8 @@ def parse_tool(tool: CommandLineTool) -> list[str]:
     if "InitialWorkDirRequirement" in requirements:
         # print(tab("InitialWorkdirRequirement parsing is not yet supported!"))
         iwr.extend(comment(tab("# Stage files and directories to the temporary working directory")))
-        iwr.extend(parse_init_work_dir_req(
-                        requirements["InitialWorkDirRequirement"],
-                        exprs, js))
+        iwr.extend(parse_init_work_dir_req(requirements["InitialWorkDirRequirement"],
+                                           exprs, js, "tool"))
 
     # Parse command
     command.extend(comment(tab("# Ready the commandline and execute the tool")))
@@ -1414,7 +1418,7 @@ def parse_workflow(wf: Workflow):
     header.append(tab('"""'))
 
     switch.extend(comment(tab("# Create a clean temporary working directory and switch to it")))
-    switch.append(tab("checkout(env)"))
+    switch.append(tab("workflow_env, cwd = checkout(env)"))
     switch.append("")
 
     # Insert InlineJavascriptRequirement before expression functions so we can
