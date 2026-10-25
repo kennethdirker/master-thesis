@@ -4,3 +4,8 @@ test_env/
 data/
 __pycache__/
 *.fits
+
+
+.cache
+.config
+.astropy
