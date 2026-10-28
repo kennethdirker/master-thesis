@@ -13,7 +13,6 @@ if test -d $TMPDIR; then rm -rf $TMPDIR; fi
 
 source env/bin/activate
 toil-cwl-runner \
-    # --jobStore my_jobStore \
     --batchSystem slurm \
     --workDir $TMPDIR \
     --outdir $OUTDIR \
@@ -24,3 +23,4 @@ toil-cwl-runner \
     --stats \
     process_images.cwl \
     process_images-job.yaml
+    # --jobStore my_jobStore \
