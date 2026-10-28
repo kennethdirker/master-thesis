@@ -1,0 +1,144 @@
+config_version: 1.0
+## This is the configuration file for Toil. To set an option, uncomment an existing option and set its value. The current values are the defaults. If the default configuration file is outdated, it can be refreshed with `toil config ~/.toil/default.yaml`.
+
+## BASE TOIL OPTIONS
+## Logging Options
+#logTrace: INFO
+#logLevel: INFO
+#logFile:
+#logColors: true
+## Toil core options
+#jobstore:
+#workDir:
+#coordinationDir:
+#runDir:
+#clean: onSuccess
+#cleanWorkDir: always
+#clusterStats:
+## Toil options for specifying the batch system
+#batchSystem: single_machine
+#disableAutoDeployment: false
+#maxJobs: 9223372036854775807
+#maxLocalJobs:
+#coalesceStatusCalls: true
+#statePollingWait:
+#statePollingTimeout: 1200
+#batchLogsDir:
+#scale: 1
+#slurmAllocateMem: true
+#slurmDefaultAllMem: false
+#slurmTime:
+#slurmPartition:
+#slurmQOS:
+#slurmGPUPartition:
+#slurmGPUQOS:
+#slurmPE:
+#slurmArgs: ''
+## Toil options for configuring storage
+#symlinkImports: true
+#moveOutputs: false
+#caching:
+#symlinkJobStoreReads: true
+## Toil options for autoscaling the cluster of worker nodes
+#nodeTypes: []
+#minNodes:
+#- 0
+#preemptibleCompensation: 0.0
+## Toil options for limiting the number of service jobs and detecting service deadlocks
+#maxServiceJobs: 9223372036854775807
+#maxPreemptibleServiceJobs: 9223372036854775807
+#deadlockWait: 60
+#deadlockCheckInterval: 30
+## Toil options for cores/memory requirements
+#defaultMemory: 2.0 Gi
+#defaultCores: 1
+#defaultDisk: 2.0 Gi
+#defaultAccelerators: []
+#defaultPreemptible: false
+#maxCores: 9223372036854775807
+#maxMemory: 9223372036854775807
+#maxDisk: 9223372036854775807
+#defaultWalltime: '0'
+## Toil options for rescuing/killing/restarting jobs
+#retryCount: 1
+#retryBackoffSeconds: 2
+#retryBackoffFactor: 3
+#stopOnFirstFailure: false
+#enableUnlimitedPreemptibleRetries: false
+#doubleMem: false
+#doubleTime: false
+#maxJobDuration: 9223372036854775807
+#rescueJobsFrequency: 60
+#jobStoreTimeout: 30
+## Toil log management options
+#maxLogFileSize: 104857600
+#writeLogs:
+#writeLogsGzip:
+#writeLogsFromAllJobs: false
+#writeMessages:
+#realTimeLogging: false
+## Toil miscellaneous options
+#disableChaining: false
+#disableJobStoreChecksumVerification: false
+#sseKey:
+#setEnv: {}
+#servicePollingInterval: 60.0
+#forceDockerAppliance: false
+#statusWait: 3600
+#publishWorkflowMetrics:
+## Toil debug options
+#badWorker: 0.0
+#badWorkerFailInterval: 0.01
+
+## TOIL SHARED CWL AND WDL RUNNER OPTIONS
+## options
+#importWorkersBatchSize: 1 GiB
+#importWorkersThreshold:
+#importWorkersDisk: 1 MiB
+
+## TOIL CWL RUNNER OPTIONS
+## options
+#basedir:
+#outdir:
+#log-dir: ''
+#user-space-docker-cmd:
+#custom-net:
+## Options for recording the Docker container identifier into a file.
+#cidfile-dir:
+#cidfile-prefix:
+#preserve-environment:
+#- PATH
+#beta-dependency-resolvers-configuration:
+#beta-dependencies-directory:
+#beta-use-biocontainers:
+#beta-conda-dependencies:
+#tmpdir-prefix:
+#tmp-outdir-prefix:
+#rm-tmpdir: true
+#default-container:
+#compute-checksum: true
+#eval-timeout: 20
+#overrides:
+#mpi-config-file:
+## Options for recording provenance information of the execution
+#provenance:
+#disable-user-provenance: false
+#disable-host-provenance: false
+#orcid: ''
+#full-name: ''
+#cwl-default-ram: true
+#cwl-min-ram:
+#destBucket:
+#cachedir:
+#cwl-loop-iteration-limit: 1000
+
+## TOIL WDL RUNNER OPTIONS
+## options
+#wdlOutputDialect: cromwell
+#wdlOutputDirectory:
+#wdlOutputFile:
+#wdlReferenceInputs: false
+#wdlContainer: auto
+#wdlAllCallOutputs:
+#wdlStrict: false
+#wdlQuantCheck: true

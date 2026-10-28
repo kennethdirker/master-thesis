@@ -2,7 +2,7 @@ class: CommandLineTool
 cwlVersion: v1.2
 id: noiseremover
 baseCommand:
-  - /var/scratch/kdirker/master-thesis/experiments/run_test/process_images/env/bin/python3.11
+  - python
   - noiseremover.py
 inputs:
   - id: input
