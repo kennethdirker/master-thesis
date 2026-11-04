@@ -19,12 +19,12 @@ def _noiseremover(input_obj: dict, context: dict, env: dict) -> dict:
 	label: noiseremover
 	"""
 	# Expression functions: js_eval should be replaced with Python
-	def outputs_output(context):
+	def outputs_output(context, cwd):
 		pattern = js_eval("inputs.output_file_name", context)
-		return FileObject(glob(pattern)[0])
+		return FileObject(glob(pattern, cwd)[0])
 
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
+	# Create a clean temporary working directory and fitted environment dict
+	tool_env, cwd = checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}
@@ -38,12 +38,12 @@ def _noiseremover(input_obj: dict, context: dict, env: dict) -> dict:
 		str(inputs["input"]),
 		str(inputs["output_file_name"]),
 	]
-	print("Running:",  *cmd)
-	subprocess.run(cmd, env=env)
+	print("Running:", *cmd)
+	subprocess.run(cmd, env=tool_env, cwd=cwd)
 
 	# Collect and generate outputs
 	return {
-		"output": outputs_output(tool_context),
+		"output": outputs_output(tool_context, cwd),
 	}
 
 
@@ -54,12 +54,12 @@ def _imageplotter(input_obj: dict, context: dict, env: dict) -> dict:
 	label: imageplotter
 	"""
 	# Expression functions: js_eval should be replaced with Python
-	def outputs_output(context):
+	def outputs_output(context, cwd):
 		pattern = js_eval("inputs.output_image", context)
-		return FileObject(glob(pattern)[0])
+		return FileObject(glob(pattern, cwd)[0])
 
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
+	# Create a clean temporary working directory and fitted environment dict
+	tool_env, cwd = checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}
@@ -73,12 +73,12 @@ def _imageplotter(input_obj: dict, context: dict, env: dict) -> dict:
 		*[str(x) for x in inputs["input_fits"]],
 		str(inputs["output_image"]),
 	]
-	print("Running:",  *cmd)
-	subprocess.run(cmd, env=env)
+	print("Running:", *cmd)
+	subprocess.run(cmd, env=tool_env, cwd=cwd)
 
 	# Collect and generate outputs
 	return {
-		"output": outputs_output(tool_context),
+		"output": outputs_output(tool_context, cwd),
 	}
 
 
@@ -96,7 +96,7 @@ def _process_images(input_obj: dict, context: dict, env: dict) -> dict:
 		return js_eval("'no_noise_' + inputs.input.basename", context)
 
 	# Create a clean temporary working directory and switch to it
-	checkout(env)
+	workflow_env, cwd = checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}

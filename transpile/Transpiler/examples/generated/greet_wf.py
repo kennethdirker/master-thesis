@@ -16,11 +16,11 @@ def _capitalize(input_obj: dict, context: dict, env: dict) -> dict:
 	class: CommandLineTool
 	"""
 	# Expression functions: js_eval should be replaced with Python
-	def outputs_output(context):
+	def outputs_output(context, cwd):
 		return js_eval("inputs.str.toUpperCase()", context)
 
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
+	# Create a clean temporary working directory and fitted environment dict
+	tool_env, cwd = checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}
@@ -30,10 +30,11 @@ def _capitalize(input_obj: dict, context: dict, env: dict) -> dict:
 	# Ready the commandline and execute the tool
 	cmd = [":"]
 	stdout = open("out.txt", "w")
-	print("Running:",  *cmd)
+	print("Running:", *cmd)
 	subprocess.run(
 		args=cmd,
-		env=env,
+		env=tool_env,
+		cwd=cwd,
 		stdout=stdout,
 		shell=True,
 	)
@@ -41,7 +42,7 @@ def _capitalize(input_obj: dict, context: dict, env: dict) -> dict:
 
 	# Collect and generate outputs
 	return {
-		"output": outputs_output(tool_context),
+		"output": outputs_output(tool_context, cwd),
 	}
 
 
@@ -52,15 +53,15 @@ def _greet(input_obj: dict, context: dict, env: dict) -> dict:
 	label: greet_user
 	"""
 	# Expression functions: js_eval should be replaced with Python
-	def outputs_outfile(context):
-		return FileObject(glob("greeting.txt")[0])
-	def outputs_outmessage(context):
-		matches = glob("greeting.txt")
+	def outputs_outfile(context, cwd):
+		return FileObject(glob("greeting.txt", cwd)[0])
+	def outputs_outmessage(context, cwd):
+		matches = glob("greeting.txt", cwd)
 		context["self"] = [FileObject(m) for m in matches]
 		return js_eval("self.contents", context)
 
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
+	# Create a clean temporary working directory and fitted environment dict
+	tool_env, cwd = checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {
@@ -78,18 +79,19 @@ def _greet(input_obj: dict, context: dict, env: dict) -> dict:
 	]
 	stdout = open("greeting.txt", "w")
 	cmd = [x for x in cmd if x]
-	print("Running:",  *cmd)
+	print("Running:", *cmd)
 	subprocess.run(
 		args=cmd,
-		env=env,
+		env=tool_env,
+		cwd=cwd,
 		stdout=stdout,
 	)
 	stdout.close()
 
 	# Collect and generate outputs
 	return {
-		"outfile": outputs_outfile(tool_context),
-		"outmessage": outputs_outmessage(tool_context),
+		"outfile": outputs_outfile(tool_context, cwd),
+		"outmessage": outputs_outmessage(tool_context, cwd),
 	}
 
 
@@ -98,7 +100,7 @@ def _greet_wf(input_obj: dict, context: dict, env: dict) -> dict:
 	class: Workflow
 	"""
 	# Create a clean temporary working directory and switch to it
-	checkout(env)
+	workflow_env, cwd = checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}
@@ -106,7 +108,6 @@ def _greet_wf(input_obj: dict, context: dict, env: dict) -> dict:
 	wf_context = {"inputs": inputs} | context
 
 	# Step ID:    greet_smith
-	# Step label: imageplotter
 	greet_smith_in = {
 		"username": inputs["username"],
 		"surname": "Smith",
@@ -122,7 +123,7 @@ def _greet_wf(input_obj: dict, context: dict, env: dict) -> dict:
 
 	# Compute outputs
 	return {
-		"before_noise_remover": capitalize_string_out["output"],
+		"greeting": capitalize_string_out["output"],
 	}
 
 

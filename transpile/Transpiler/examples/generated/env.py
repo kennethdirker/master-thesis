@@ -20,11 +20,11 @@ def _env(input_obj: dict, context: dict, env: dict) -> dict:
 		return js_eval("inputs.message", context)
 	def env_WORLD(context):
 		return js_eval("inputs.message", context)
-	def outputs_example_out(context):
-		return FileObject(glob("output.txt")[0])
+	def outputs_example_out(context, cwd):
+		return FileObject(glob("output.txt", cwd)[0])
 
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
+	# Create a clean temporary working directory and fitted environment dict
+	tool_env, cwd = checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}
@@ -34,19 +34,20 @@ def _env(input_obj: dict, context: dict, env: dict) -> dict:
 	# Ready the commandline and execute the tool
 	cmd = ['env']
 	stdout = open("output.txt", "w")
-	env["HELLO"] = env_HELLO(tool_context)
-	env["WORLD"] = env_WORLD(tool_context)
-	print("Running:",  *cmd)
+	tool_env["HELLO"] = env_HELLO(tool_context)
+	tool_env["WORLD"] = env_WORLD(tool_context)
+	print("Running:", *cmd)
 	subprocess.run(
 		args=cmd,
-		env=env,
+		env=tool_env,
+		cwd=cwd,
 		stdout=stdout,
 	)
 	stdout.close()
 
 	# Collect and generate outputs
 	return {
-		"example_out": outputs_example_out(tool_context),
+		"example_out": outputs_example_out(tool_context, cwd),
 	}
 
 

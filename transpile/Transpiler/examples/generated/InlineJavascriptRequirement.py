@@ -30,11 +30,11 @@ def _InlineJavascriptRequirement(input_obj: dict, context: dict, env: dict) -> d
 	]
 
 	# Expression functions: js_eval should be replaced with Python
-	def outputs_hostname(context):
-		return FileObject(glob("hostname.txt")[0])
+	def outputs_hostname(context, cwd):
+		return FileObject(glob("hostname.txt", cwd)[0])
 
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
+	# Create a clean temporary working directory and fitted environment dict
+	tool_env, cwd = checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}
@@ -44,17 +44,18 @@ def _InlineJavascriptRequirement(input_obj: dict, context: dict, env: dict) -> d
 	# Ready the commandline and execute the tool
 	cmd = ['hostname']
 	stdout = open("hostname.txt", "w")
-	print("Running:",  *cmd)
+	print("Running:", *cmd)
 	subprocess.run(
 		args=cmd,
-		env=env,
+		env=tool_env,
+		cwd=cwd,
 		stdout=stdout,
 	)
 	stdout.close()
 
 	# Collect and generate outputs
 	return {
-		"hostname": outputs_hostname(tool_context),
+		"hostname": outputs_hostname(tool_context, cwd),
 	}
 
 

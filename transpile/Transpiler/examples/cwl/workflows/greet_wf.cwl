@@ -5,7 +5,7 @@ inputs:
   - id: username
     type: string
 outputs:
-  - id: before_noise_remover
+  - id: greeting
     outputSource:
       - capitalize_string/output
     type: File
@@ -21,7 +21,6 @@ steps:
       - id: outfile
       - id: outmessage
     run: ../steps/greet.cwl
-    label: imageplotter
   - id: capitalize_string
     in:
       - id: outmessage

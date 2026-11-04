@@ -31,28 +31,28 @@ def _losoto_clocktec(input_obj: dict, context: dict, env: dict) -> dict:
 
 	# Expression functions: js_eval should be replaced with Python
 	def stage_expr_0(context):
-		return js_eval("get_losoto_config('CLOCKTEC').join('\n')", context, js_context)
+		return js_eval(""get_losoto_config('CLOCKTEC').join('\n')"", context, js_context)
 	def stage_expr_1(context):
-		return js_eval("inputs.input_h5parm.basename", context, js_context)
+		return js_eval(""inputs.input_h5parm.basename"", context, js_context)
 	def stage_expr_2(context):
-		return js_eval("inputs.input_h5parm", context, js_context)
+		return js_eval(""inputs.input_h5parm"", context, js_context)
 	def expr_handler_0(context: dict) -> str:
 		return js_eval("inputs.input_h5parm.basename", context, js_context)
 	def stdout_handler(context):
 		return js_eval("inputs.input_h5parm.basename + '-losoto.log'", context, js_context)
 	def stderr_handler(context):
 		return js_eval("inputs.input_h5parm.basename + '-losoto_err.log'", context, js_context)
-	def outputs_output_h5parm(context):
+	def outputs_output_h5parm(context, cwd):
 		pattern = js_eval("inputs.input_h5parm.basename", context, js_context)
-		return FileObject(glob(pattern)[0])
-	def outputs_parset(context):
-		return FileObject(glob("parset.config")[0])
-	def outputs_log(context):
+		return FileObject(glob(pattern, cwd)[0])
+	def outputs_parset(context, cwd):
+		return FileObject(glob("parset.config", cwd)[0])
+	def outputs_log(context, cwd):
 		pattern = js_eval("inputs.input_h5parm.basename + '-losoto*.log'", context, js_context)
-		return FileObject(glob(pattern))
+		return FileObject(glob(pattern, cwd))
 
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
+	# Create a clean temporary working directory and fitted environment dict
+	tool_env, cwd = checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}
@@ -70,7 +70,7 @@ def _losoto_clocktec(input_obj: dict, context: dict, env: dict) -> dict:
 			"entry": stage_expr_2(tool_context),
 			"writable": "True",
 		},
-	], env)
+	], tool_env)
 
 	# Ready the commandline and execute the tool
 	cmd = [
@@ -82,10 +82,11 @@ def _losoto_clocktec(input_obj: dict, context: dict, env: dict) -> dict:
 	stdout = open(stdout_handler(tool_context), "w")
 	stderr = open(stderr_handler(tool_context), "w")
 	cmd = [x for x in cmd if x]
-	print("Running:",  *cmd)
+	print("Running:", *cmd)
 	subprocess.run(
 		args=cmd,
-		env=env,
+		env=tool_env,
+		cwd=cwd,
 		stdout=stdout,
 		stderr=stderr,
 	)
@@ -94,9 +95,9 @@ def _losoto_clocktec(input_obj: dict, context: dict, env: dict) -> dict:
 
 	# Collect and generate outputs
 	return {
-		"output_h5parm": outputs_output_h5parm(tool_context),
-		"parset": outputs_parset(tool_context),
-		"log": outputs_log(tool_context),
+		"output_h5parm": outputs_output_h5parm(tool_context, cwd),
+		"parset": outputs_parset(tool_context, cwd),
+		"log": outputs_log(tool_context, cwd),
 	}
 
 

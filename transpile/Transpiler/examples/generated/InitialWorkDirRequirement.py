@@ -17,12 +17,12 @@ def _InitialWorkDirRequirement(input_obj: dict, context: dict, env: dict) -> dic
 	"""
 	# Expression functions: js_eval should be replaced with Python
 	def stage_expr_0(context):
-		return js_eval("'MSG=\"${PREFIX} ' + inputs.message + '\"'", context)
+		return js_eval(""'MSG=\"${PREFIX} ' + inputs.message + '\"'"", context)
 	def stage_expr_1(context):
-		return js_eval("inputs.stage", context)
+		return js_eval(""inputs.stage"", context)
 
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
+	# Create a clean temporary working directory and fitted environment dict
+	tool_env, cwd = checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {
@@ -44,7 +44,7 @@ def _InitialWorkDirRequirement(input_obj: dict, context: dict, env: dict) -> dic
 		{
 			"entry": stage_expr_1(tool_context),
 		},
-	], env)
+	], tool_env)
 
 	# Ready the commandline and execute the tool
 	cmd = [' \
@@ -53,10 +53,11 @@ def _InitialWorkDirRequirement(input_obj: dict, context: dict, env: dict) -> dic
 		"cat" \
 		"InitialWorkDirRequirement.yaml" \
 	']
-	print("Running:",  *cmd)
+	print("Running:", *cmd)
 	subprocess.run(
 		args=cmd,
-		env=env,
+		env=tool_env,
+		cwd=cwd,
 		shell=True,
 	)
 

@@ -18,14 +18,14 @@ def _print(input_obj: dict, context: dict, env: dict) -> dict:
 	# Expression functions: js_eval should be replaced with Python
 	def stdout_handler(context):
 		return js_eval("inputs.str", context)
-	def outputs_echo(context):
+	def outputs_echo(context, cwd):
 		pattern = js_eval("inputs.str", context)
-		matches = glob(pattern)
+		matches = glob(pattern, cwd)
 		context["self"] = [FileObject(m, loadContents = True) for m in matches]
 		return js_eval("self[0].contents.trim()", context)
 
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
+	# Create a clean temporary working directory and fitted environment dict
+	tool_env, cwd = checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}
@@ -38,17 +38,18 @@ def _print(input_obj: dict, context: dict, env: dict) -> dict:
 		str(inputs["str"]),
 	]
 	stdout = open(stdout_handler(tool_context), "w")
-	print("Running:",  *cmd)
+	print("Running:", *cmd)
 	subprocess.run(
 		args=cmd,
-		env=env,
+		env=tool_env,
+		cwd=cwd,
 		stdout=stdout,
 	)
 	stdout.close()
 
 	# Collect and generate outputs
 	return {
-		"echo": outputs_echo(tool_context),
+		"echo": outputs_echo(tool_context, cwd),
 	}
 
 

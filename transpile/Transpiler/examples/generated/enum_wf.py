@@ -16,13 +16,13 @@ def _enum(input_obj: dict, context: dict, env: dict) -> dict:
 	class: CommandLineTool
 	"""
 	# Expression functions: js_eval should be replaced with Python
-	def outputs_out(context):
-		matches = glob("enum.stdout")
+	def outputs_out(context, cwd):
+		matches = glob("enum.stdout", cwd)
 		context["self"] = [FileObject(m, loadContents = True) for m in matches]
 		return js_eval("self[0].contents", context)
 
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
+	# Create a clean temporary working directory and fitted environment dict
+	tool_env, cwd = checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}
@@ -35,17 +35,18 @@ def _enum(input_obj: dict, context: dict, env: dict) -> dict:
 		str(inputs["bound"]),
 	]
 	stdout = open("enum.stdout", "w")
-	print("Running:",  *cmd)
+	print("Running:", *cmd)
 	subprocess.run(
 		args=cmd,
-		env=env,
+		env=tool_env,
+		cwd=cwd,
 		stdout=stdout,
 	)
 	stdout.close()
 
 	# Collect and generate outputs
 	return {
-		"out": outputs_out(tool_context),
+		"out": outputs_out(tool_context, cwd),
 	}
 
 
@@ -54,7 +55,7 @@ def _enum_wf(input_obj: dict, context: dict, env: dict) -> dict:
 	class: Workflow
 	"""
 	# Create a clean temporary working directory and switch to it
-	checkout(env)
+	workflow_env, cwd = checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}

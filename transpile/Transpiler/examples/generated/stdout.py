@@ -15,11 +15,11 @@ def _stdout(input_obj: dict, context: dict, env: dict) -> dict:
 	class: CommandLineTool
 	"""
 	# Expression functions: js_eval should be replaced with Python
-	def outputs_example_out(context):
-		return FileObject(glob("output.txt")[0])
+	def outputs_example_out(context, cwd):
+		return FileObject(glob("output.txt", cwd)[0])
 
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
+	# Create a clean temporary working directory and fitted environment dict
+	tool_env, cwd = checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}
@@ -32,17 +32,18 @@ def _stdout(input_obj: dict, context: dict, env: dict) -> dict:
 		str(inputs["message"]),
 	]
 	stdout = open("output.txt", "w")
-	print("Running:",  *cmd)
+	print("Running:", *cmd)
 	subprocess.run(
 		args=cmd,
-		env=env,
+		env=tool_env,
+		cwd=cwd,
 		stdout=stdout,
 	)
 	stdout.close()
 
 	# Collect and generate outputs
 	return {
-		"example_out": outputs_example_out(tool_context),
+		"example_out": outputs_example_out(tool_context, cwd),
 	}
 
 

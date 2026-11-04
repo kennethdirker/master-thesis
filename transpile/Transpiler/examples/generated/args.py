@@ -28,11 +28,11 @@ def _args(input_obj: dict, context: dict, env: dict) -> dict:
 		return js_eval("inputs.world", context)
 	def expr_handler_2(context: dict) -> str:
 		return js_eval("inputs.beautiful", context)
-	def outputs_output(context):
-		return FileObject(glob("output.txt")[0])
+	def outputs_output(context, cwd):
+		return FileObject(glob("output.txt", cwd)[0])
 
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
+	# Create a clean temporary working directory and fitted environment dict
+	tool_env, cwd = checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}
@@ -49,17 +49,18 @@ def _args(input_obj: dict, context: dict, env: dict) -> dict:
 		"Bazinga",
 	]
 	stdout = open("output.txt", "w")
-	print("Running:",  *cmd)
+	print("Running:", *cmd)
 	subprocess.run(
 		args=cmd,
-		env=env,
+		env=tool_env,
+		cwd=cwd,
 		stdout=stdout,
 	)
 	stdout.close()
 
 	# Collect and generate outputs
 	return {
-		"output": outputs_output(tool_context),
+		"output": outputs_output(tool_context, cwd),
 	}
 
 

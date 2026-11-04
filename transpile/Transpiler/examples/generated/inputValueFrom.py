@@ -20,17 +20,17 @@ def _touch(input_obj: dict, context: dict, env: dict) -> dict:
 		return js_eval("'test_' + inputs.filename", context)
 	def stdout_handler(context):
 		return js_eval("inputs.filename", context)
-	def outputs_file_content(context):
+	def outputs_file_content(context, cwd):
 		pattern = js_eval("inputs.filename", context)
-		matches = glob(pattern)
+		matches = glob(pattern, cwd)
 		context["self"] = [FileObject(m, loadContents = True) for m in matches]
 		return js_eval("self[0].contents.trim().split()", context)
-	def outputs_file_name(context):
+	def outputs_file_name(context, cwd):
 		pattern = js_eval("inputs.filename", context)
-		return FileObject(glob(pattern)[0])
+		return FileObject(glob(pattern, cwd)[0])
 
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
+	# Create a clean temporary working directory and fitted environment dict
+	tool_env, cwd = checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}
@@ -43,18 +43,19 @@ def _touch(input_obj: dict, context: dict, env: dict) -> dict:
 		str(expr_handler_0(tool_context)),
 	]
 	stdout = open(stdout_handler(tool_context), "w")
-	print("Running:",  *cmd)
+	print("Running:", *cmd)
 	subprocess.run(
 		args=cmd,
-		env=env,
+		env=tool_env,
+		cwd=cwd,
 		stdout=stdout,
 	)
 	stdout.close()
 
 	# Collect and generate outputs
 	return {
-		"file_content": outputs_file_content(tool_context),
-		"file_name": outputs_file_name(tool_context),
+		"file_content": outputs_file_content(tool_context, cwd),
+		"file_name": outputs_file_name(tool_context, cwd),
 	}
 
 

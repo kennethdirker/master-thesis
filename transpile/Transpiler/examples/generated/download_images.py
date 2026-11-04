@@ -16,11 +16,11 @@ def _download_images(input_obj: dict, context: dict, env: dict) -> dict:
 	label: download_images
 	"""
 	# Expression functions: js_eval should be replaced with Python
-	def outputs_output(context):
-		return FileObject(glob("*.fits"))
+	def outputs_output(context, cwd):
+		return FileObject(glob("*.fits", cwd))
 
-	# Create a clean temporary working directory and switch to it
-	checkout(env)
+	# Create a clean temporary working directory and fitted environment dict
+	tool_env, cwd = checkout(env)
 
 	# Gather inputs in their correct format
 	inputs = {}
@@ -32,12 +32,12 @@ def _download_images(input_obj: dict, context: dict, env: dict) -> dict:
 		'wget',
 		"-i" + inputs["url_list"],
 	]
-	print("Running:",  *cmd)
-	subprocess.run(cmd, env=env)
+	print("Running:", *cmd)
+	subprocess.run(cmd, env=tool_env, cwd=cwd)
 
 	# Collect and generate outputs
 	return {
-		"output": outputs_output(tool_context),
+		"output": outputs_output(tool_context, cwd),
 	}
 
 
