@@ -3,7 +3,7 @@ cwlVersion: v1.2
 id: imageplotter
 baseCommand:
   - python
-  - imageplotter.py
+  - /var/scratch/kdirker/master-thesis/experiments/run_test/parsl/imageplotter.py
 inputs:
   - id: input_fits
     type: File[]
@@ -17,11 +17,7 @@ outputs:
   - id: output
     type: File
     outputBinding:
-      glob: $(inputs.output_image)
+      glob: before_noise_remover.png
 label: imageplotter
 requirements:
   - class: InlineJavascriptRequirement
-  - class: InitialWorkDirRequirement
-    listing:
-      - class: File
-        path: imageplotter.py
