@@ -1291,8 +1291,23 @@ def parse_workflow_step(
     if exists(step, "scatter"):
         IM.add_from(SDK, "scatterizer")
         IM.add_from(SDK, "transpose")
+
+        keys = ""
+        if isinstance(step.scatter, str):
+            keys = str(step.scatter.split("/")[-1])
+        elif isinstance(step.scatter, list):
+            keys = str([k.split("/")[-1] for k in step.scatter])
+        else:
+            raise Exception(f"Step {step_id} scatter expects 'str' or 'list[str]'")
+
+        method = ""
+        if step.scatterMethod:
+            if not "dotproduct" in step.scatterMethod:
+                method = ", scatter_method=" + step.scatterMethod
+
         lines.append(tab(f'{step_id}_scattered_out = []'))
-        lines.append(tab(f'for scattered_inputs in scatterizer({step_id}_in, "input"):'))
+        lines.append(tab(f'for scattered_inputs in scatterizer({step_id}_in, {keys}{method}):'))
+        # lines.append(tab(f'for scattered_inputs in scatterizer({step_id}_in, "input"):'))
         lines.append(tab(f'wf_context["inputs"] = inputs | scattered_inputs', 2))
         x = 0
         if exists(step, "when"):
