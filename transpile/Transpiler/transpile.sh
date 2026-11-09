@@ -1,5 +1,7 @@
+
+source env/bin/activate
+
 # Transpile each CWL workflow and tool to a Python DASK script
-# 
 python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/download_images.cwl -o examples/generated/download_images.py
 python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/env.cwl -o examples/generated/env.py
 python src/CWL2DASK/transpiler.py -ci examples/cwl/steps/args.cwl -o examples/generated/args.py

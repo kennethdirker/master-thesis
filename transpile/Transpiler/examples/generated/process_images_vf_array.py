@@ -62,9 +62,9 @@ def _process_images_vf_array(input_obj: dict, context: dict, env: dict) -> dict:
 	# Step label: imageplotter
 	imageplotter_in = {
 		"input_fits": [
-			FileObject({"path":"file:///home/kennethdirker/Leiden/2024-2025/Thesis/transpile/Transpiler/examples/cwl/workflows/image_mf_01.fits"}),
-			FileObject({"path":"file:///home/kennethdirker/Leiden/2024-2025/Thesis/transpile/Transpiler/examples/cwl/workflows/image_mf_02.fits"}),
-			FileObject({"path":"file:///home/kennethdirker/Leiden/2024-2025/Thesis/transpile/Transpiler/examples/cwl/workflows/image_mf_04.fits"}),
+			FileObject({"path":"image_mf_01.fits"}),
+			FileObject({"path":"image_mf_02.fits"}),
+			FileObject({"path":"image_mf_04.fits"}),
 		],
 		"output_image": "before_noise_remover.png",
 	}

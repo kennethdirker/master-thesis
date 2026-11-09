@@ -73,7 +73,7 @@ def _scatter_no_op_wf(input_obj: dict, context: dict, env: dict) -> dict:
 		"input_int": inputs["range"],
 	}
 	scatter_step_scattered_out = []
-	for scattered_inputs in scatterizer(scatter_step_in, ['input_int']):
+	for scattered_inputs in scatterizer(scatter_step_in, "input_int"):
 		wf_context["inputs"] = inputs | scattered_inputs
 		scatter_step_scattered_out.append(_no_op(scattered_inputs, context, env))
 	scatter_step_out = transpose(scatter_step_scattered_out)

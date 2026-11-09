@@ -295,6 +295,7 @@ class CWLType:
 
 def convert_to_CWLType(value) -> CWLType:
     def convert_primitive(value):
+        t = ""
         if isinstance(value, NoneType):
             t = "null"
         elif isinstance(value, bool):
@@ -310,13 +311,17 @@ def convert_to_CWLType(value) -> CWLType:
         elif isinstance(value, CWLDirectory):
             t = "directory"
         elif isinstance(value, dict):
-            if exists(value, "type"):
-                if value.type in "File":
+            if "class" in value:
+                if "File" in value["class"]:
                     t = "file"
-                elif value.type in "Directory":
+                elif "Directory" in value["class"]:
                     t = "directory"
                 else:
-                    raise NotImplementedError("Dicts are not supported")
+                    raise TypeError("Found unsupported type" + str(type(value)))
+            else:
+                raise NotImplementedError("Dicts are not supported")
+        else:
+            raise TypeError("Found unsupported type" + str(type(value)))
         return t
 
     if isinstance(value, list):
@@ -1294,9 +1299,12 @@ def parse_workflow_step(
 
         keys = ""
         if isinstance(step.scatter, str):
-            keys = str(step.scatter.split("/")[-1])
+            keys = f'"{step.scatter.split("/")[-1]}"'
         elif isinstance(step.scatter, list):
-            keys = str([k.split("/")[-1] for k in step.scatter])
+            if len(step.scatter) == 1:
+                keys = f'"{step.scatter[0].split("/")[-1]}"'
+            else:
+                keys = str([k.split("/")[-1] for k in step.scatter])
         else:
             raise Exception(f"Step {step_id} scatter expects 'str' or 'list[str]'")
 
