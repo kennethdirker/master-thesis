@@ -1,1 +1,0 @@
-/var/scratch/kdirker/master-thesis/experiments/run_test/process_images/imageplotter.py

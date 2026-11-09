@@ -11,9 +11,8 @@ if test -d $OUTDIR; then rm -rf $OUTDIR; fi
 if test -d $TMPDIR; then rm -rf $TMPDIR; fi
 
 source env/bin/activate
-python3 \
-    --outdir $OUTDIR \
-    --tmpdir $TMPDIR \
-    --leave_tmp \
-    process_images_sub.py \
-    process_images_sub.yaml
+python3 process_images_sub.py \
+       process_images_sub.yaml \
+        --outdir $OUTDIR \
+        --tmpdir $TMPDIR \
+        --leave_tmp
