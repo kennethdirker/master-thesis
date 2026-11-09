@@ -11,7 +11,7 @@ LOGDIR="./log"
 # fi
 
 if test -d $OUTDIR; then rm -rf $OUTDIR; fi
-if test -d $TMPDIR; then rm -rf $TMPDIR; fi
+# if test -d $TMPDIR; then rm -rf $TMPDIR; fi
 if test -d $WRKDIR; then rm -rf $WRKDIR; fi
 if test -d $JOBSTORE; then rm -rf $JOBSTORE; fi
 if test -d $LOGDIR; then rm -rf $LOGDIR; fi
@@ -21,7 +21,7 @@ if test -d $LOGDIR; then rm -rf $LOGDIR; fi
 
 source toil_env/bin/activate
 toil-cwl-runner \
-    --batchSystem slurm \
+    --batchSystem single_machine \
     --slurmAllocateMem False \
     --defaultCores 10 \
     --defaultWalltime 900 \
@@ -32,7 +32,7 @@ toil-cwl-runner \
     --writeLogs $LOGDIR \
     --batchLogsDir $LOGDIR \
     --bypass-file-store \
-    serial_wf.cwl \
+    scatter_wf.cwl \
     input_object.yaml
     # --clean always \
     # --workDir $WRKDIR \

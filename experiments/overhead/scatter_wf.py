@@ -9,8 +9,6 @@ from CWL2DASK.scripting import (
 )
 from dask.distributed import Client
 
-from dask_jobqueue.slurm import SLURMCluster
-
 
 @dask.delayed
 def _no_op(input_obj: dict, context: dict, env: dict) -> dict:
@@ -75,7 +73,7 @@ def _scatter_no_op_wf(input_obj: dict, context: dict, env: dict) -> dict:
 		"input_int": inputs["range"],
 	}
 	scatter_step_scattered_out = []
-	for scattered_inputs in scatterizer(scatter_step_in, "input"):
+	for scattered_inputs in scatterizer(scatter_step_in, ['input_int']):
 		wf_context["inputs"] = inputs | scattered_inputs
 		scatter_step_scattered_out.append(_no_op(scattered_inputs, context, env))
 	scatter_step_out = transpose(scatter_step_scattered_out)
@@ -91,20 +89,7 @@ def main():
 	input_obj, env, preserve_tmpdir = process_cli_args()
 
 	# Initialize cluster
-	# NOTE: Memory argument is forced by the SLURMCluster 
-	# initializer. This causes problems on systems that disable
-	# setting memory requirements (DAS6 has this restriction). The
-	# band-aid is to ignore the memory setting line with
-	# 'job_directives_skip'.
-	cluster = SLURMCluster(
-		cores=16,
-		memory="16GB",
-		walltime="00:15:00",
-		job_directives_skip=['--mem']
-	)
-	cluster.scale(4)
-	client = Client(cluster)
-	client=client()
+	client = Client()
 
 	# Submit to DASK
 	result = client.compute(_scatter_no_op_wf(input_obj, {}, env)).result()

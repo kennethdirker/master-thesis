@@ -6,6 +6,7 @@ if [ -d $ENV_NAME ]; then
 fi
 
 python3.12 -m venv --copies $ENV_NAME
+
 source ./$ENV_NAME/bin/activate
 python -m pip install pip --upgrade
 python -m pip install cwl_utils==0.35 \
